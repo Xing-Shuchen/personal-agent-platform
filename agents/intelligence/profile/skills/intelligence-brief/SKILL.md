@@ -13,9 +13,9 @@ Scheduled procedure:
 5. Reject generic relevance based only on keyword overlap.
 6. Select at most one interruption-worthy item per run.
 7. Create a stable dedupe key for the underlying development.
-8. Call:
+8. Call (absolute paths — cron sessions have no repo cwd):
 
-   `pap gate --agent intelligence --dedupe-key '<key>' --priority <0..100> --message '<brief>'`
+   `/home/xingzeng/personal-agent-platform/.venv/bin/pap gate --agent intelligence --dedupe-key '<key>' --priority <0..100> --message '<brief>' --db /home/xingzeng/personal-agent-platform/var/state/gate-state.json`
 
 9. If denied or no worthy item exists, output exactly `[SILENT]`.
 10. If allowed, output a compact brief:

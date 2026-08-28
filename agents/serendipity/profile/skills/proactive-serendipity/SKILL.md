@@ -20,9 +20,9 @@ Procedure:
    - surprise 0..100.
 6. Choose at most one candidate.
 7. Create a stable dedupe key from the two concepts/events, not from message wording.
-8. Call the shared gate, e.g.:
+8. Call the shared gate (absolute paths — cron sessions have no repo cwd):
 
-   `pap gate --agent serendipity --dedupe-key '<key>' --priority <0..100> --message '<candidate message>'`
+   `/home/xingzeng/personal-agent-platform/.venv/bin/pap gate --agent serendipity --dedupe-key '<key>' --priority <0..100> --message '<candidate message>' --db /home/xingzeng/personal-agent-platform/var/state/gate-state.json`
 
 9. If gate denies, final response must be exactly `[SILENT]`.
 10. If gate allows, output only a concise user-facing observation containing:

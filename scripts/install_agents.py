@@ -183,6 +183,10 @@ def cmd_apply(specs: list[AgentSpec], root: Path, profile: str, dry_run: bool) -
             print(f"[{spec.name}] {'DRY-RUN ' if dry_run else ''}cron create: "
                   f"{job['name']} ({job['schedule']})")
             if not dry_run:
+                if job["name"] in _existing_job_names():
+                    print(f"  skipped: job '{job['name']}' already exists "
+                          f"(update via 'hermes cron edit' or remove first)")
+                    continue
                 result = subprocess.run(cmd, capture_output=True, text=True)
                 if result.returncode != 0:
                     print(f"  FAILED: {result.stderr.strip() or result.stdout.strip()}",
@@ -198,6 +202,16 @@ def cmd_apply(specs: list[AgentSpec], root: Path, profile: str, dry_run: bool) -
     if dry_run:
         print("\nDry run only. Re-run with --apply to write changes.")
     return 0
+
+
+def _existing_job_names() -> set[str]:
+    """Names of current Hermes cron jobs (for idempotent installs)."""
+    try:
+        result = subprocess.run(["hermes", "cron", "list"], capture_output=True,
+                                text=True, timeout=30)
+    except (OSError, subprocess.TimeoutExpired):
+        return set()
+    return set(re.findall(r"Name:\s+(\S+)", result.stdout))
 
 
 def main(argv: list[str] | None = None) -> int:
