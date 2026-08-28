@@ -1,0 +1,30 @@
+apiVersion: pap/v1
+kind: Agent
+metadata:
+  name: intelligence
+  description: Monitors external developments and reports only information likely to update the user's world model.
+spec:
+  profile:
+    name: intelligence
+    source: profile
+  capabilities:
+    - personal_context.read
+    - web.search
+    - web.read
+    - local_state.write
+  proactive:
+    enabled: true
+    class: conversational
+    desired_jobs:
+      - name: intelligence-pulse
+        schedule: every 1h
+        skill: intelligence-brief
+        attach_to_session: true
+        delivery: user-home
+  state:
+    private:
+      - watchlist
+      - source-registry
+      - story-clusters
+      - alert-history
+      - open-questions

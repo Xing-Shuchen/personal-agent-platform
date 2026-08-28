@@ -1,0 +1,4 @@
+name: intelligence
+version: 0.1.0
+description: "Personal intelligence officer for high-signal external developments."
+hermes_requires: ">=0.12.0"

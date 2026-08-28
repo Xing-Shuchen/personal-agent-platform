@@ -1,0 +1,20 @@
+apiVersion: pap/v1
+kind: Agent
+metadata:
+  name: red-team
+  description: Adversarial reviewer for arguments, designs, assumptions and plans.
+spec:
+  profile:
+    name: red-team
+    source: profile
+  capabilities:
+    - personal_context.read
+    - web.read
+    - repo.read
+    - local_state.write
+  proactive:
+    enabled: false
+  state:
+    private:
+      - claim-ledger
+      - unresolved-challenges

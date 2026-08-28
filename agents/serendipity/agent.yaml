@@ -1,0 +1,26 @@
+apiVersion: pap/v1
+kind: Agent
+metadata:
+  name: serendipity
+  description: Surfaces rare, non-obvious connections across the user's own history and current context.
+spec:
+  profile:
+    name: serendipity
+    source: profile
+  capabilities:
+    - personal_context.read
+    - local_state.write
+  proactive:
+    enabled: true
+    class: conversational
+    desired_jobs:
+      - name: serendipity-pulse
+        schedule: every 4h
+        skill: proactive-serendipity
+        attach_to_session: true
+        delivery: user-home
+  state:
+    private:
+      - candidate-connections
+      - delivered-connections
+      - feedback
