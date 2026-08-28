@@ -1,0 +1,16 @@
+# Python
+__pycache__/
+*.pyc
+*.egg-info/
+.venv/
+.pytest_cache/
+
+# Runtime state (gate db, audit logs)
+var/state/
+
+# Local secrets / editor
+.env
+.env.*
+*.sqlite
+*.sqlite3
+.DS_Store

@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pap"
+version = "0.1.0"
+description = "Personal Agent Platform: declarative agent specs with a shared proactive gate."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = ["PyYAML>=6.0"]
+
+[project.scripts]
+pap = "pap.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["pap*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
