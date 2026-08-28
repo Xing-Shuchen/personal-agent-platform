@@ -17,6 +17,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -52,7 +53,16 @@ HERMES_HOME = Path(_real_home()) / ".hermes"
 
 
 def cron_schedule(spec_schedule: str) -> str | None:
-    return SCHEDULE_TO_CRON.get(spec_schedule.strip())
+    """Pass the spec schedule through verbatim.
+
+    NOTE: the Hermes cron CLI treats a bare '1h' as a ONE-SHOT job
+    ('once in 1h', Repeat: 1) while 'every 1h' is recurring (Repeat: ∞).
+    Verified live 2026-08-28.
+    """
+    s = spec_schedule.strip()
+    if s.startswith(("every ", "cron ")) or re.match(r"^\d{2}:\d{2}", s):
+        return s
+    return None
 
 
 def hermes_profile_dir(profile: str) -> Path:
