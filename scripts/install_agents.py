@@ -84,6 +84,22 @@ def plan_profile_copy(spec: AgentSpec, root: Path, profile_dir: Path) -> dict:
     return {"src": str(src), "dst": str(dst), "exists": src.is_dir()}
 
 
+def plan_skill_copies(spec: AgentSpec, root: Path, profile_dir: Path) -> list[dict]:
+    """Hermes loads skills from <profile>/skills/, so each agent skill must be
+    installed there by name (not left under the copied profile tree)."""
+    src_root = root / "agents" / spec.name / "profile" / "skills"
+    plans = []
+    if src_root.is_dir():
+        for skill_dir in sorted(src_root.iterdir()):
+            if (skill_dir / "SKILL.md").is_file():
+                plans.append({
+                    "name": skill_dir.name,
+                    "src": str(skill_dir),
+                    "dst": str(profile_dir / "skills" / skill_dir.name),
+                })
+    return plans
+
+
 def cmd_list(specs: list[AgentSpec], root: Path, profile: str) -> int:
     profile_dir = hermes_profile_dir(profile)
     print(f"Hermes profile: {profile_dir}")
@@ -101,6 +117,8 @@ def cmd_list(specs: list[AgentSpec], root: Path, profile: str) -> int:
                       f"delivery={job['delivery']}")
         copy = plan_profile_copy(spec, root, profile_dir)
         print(f"  profile copy: {copy['src']} -> {copy['dst']}")
+        for sk in plan_skill_copies(spec, root, profile_dir):
+            print(f"  skill install: {sk['src']} -> {sk['dst']}")
     return 0
 
 
@@ -123,6 +141,14 @@ def cmd_apply(specs: list[AgentSpec], root: Path, profile: str, dry_run: bool) -
                 shutil.copytree(src, dst)
         else:
             print(f"[{spec.name}] WARNING: profile dir missing: {src}", file=sys.stderr)
+
+        # 1b. Install agent skills into the Hermes profile skills dir (shared
+        # destination -> merge, never wipe).
+        for sk in plan_skill_copies(spec, root, profile_dir):
+            print(f"[{spec.name}] {'DRY-RUN ' if dry_run else ''}skill install: "
+                  f"{sk['name']} -> {sk['dst']}")
+            if not dry_run:
+                shutil.copytree(sk["src"], sk["dst"], dirs_exist_ok=True)
 
         # 2. Create cron jobs for proactive schedules.
         if not spec.proactive_enabled:
