@@ -133,14 +133,12 @@ def cmd_apply(specs: list[AgentSpec], root: Path, profile: str, dry_run: bool) -
                       f"{job['spec_schedule']!r}", file=sys.stderr)
                 continue
             cmd = [
-                "hermes", "cronjob", "create",
+                "hermes", "cron", "create",
+                job["schedule"],
+                job["prompt"],
                 "--name", job["name"],
-                "--schedule", job["schedule"],
-                "--prompt", job["prompt"],
-                "--skills", job["skill"],
+                "--skill", job["skill"],
             ]
-            if job["attach_to_session"]:
-                cmd.append("--attach-to-session")
             if job["delivery"] == "user-home":
                 cmd += ["--deliver", "feishu"]
             elif job["delivery"] == "local":
@@ -154,10 +152,11 @@ def cmd_apply(specs: list[AgentSpec], root: Path, profile: str, dry_run: bool) -
                     print(f"  FAILED: {result.stderr.strip() or result.stdout.strip()}",
                           file=sys.stderr)
                 else:
-                    try:
-                        job_id = json.loads(result.stdout).get("job_id", "?")
-                    except json.JSONDecodeError:
-                        job_id = "?"
+                    job_id = "?"
+                    for line in result.stdout.splitlines():
+                        if line.startswith("Created job:"):
+                            job_id = line.split(":", 1)[1].strip()
+                            break
                     print(f"  created job_id={job_id}")
 
     if dry_run:
