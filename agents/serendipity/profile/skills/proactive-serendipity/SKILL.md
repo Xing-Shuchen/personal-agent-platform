@@ -31,3 +31,7 @@ Procedure:
     - enough evidence anchors to make it inspectable.
 
 Do not mention the gate, score, cron, or internal procedure to the user.
+
+## Output language
+
+The final user-facing observation MUST be in Chinese (simplified). Evidence anchors (paths, identifiers, quotes) stay in their original language.

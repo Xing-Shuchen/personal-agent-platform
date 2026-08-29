@@ -26,3 +26,7 @@ Scheduled procedure:
     - uncertainty if material.
 
 Do not produce a ten-item news list unless explicitly asked.
+
+## Output language
+
+The final brief MUST be written in Chinese (simplified). Source titles, evidence anchors and identifiers stay in their original language.

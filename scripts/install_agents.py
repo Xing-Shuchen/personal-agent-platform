@@ -82,7 +82,9 @@ def plan_jobs(spec: AgentSpec) -> list[dict]:
             "prompt": (
                 f"Run the '{job.skill}' skill exactly as written and follow its "
                 f"procedure. Remember the agent SOUL discipline: if no candidate "
-                f"passes the shared gate, respond with exactly [SILENT]."
+                f"passes the shared gate, respond with exactly [SILENT]. "
+                f"IMPORTANT: all user-facing output MUST be in simplified Chinese "
+                f"(简体中文); evidence anchors and identifiers stay in their original form."
             ),
         })
     return plan
