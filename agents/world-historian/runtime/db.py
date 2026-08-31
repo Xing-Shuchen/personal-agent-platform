@@ -82,6 +82,12 @@ def _stable(prefix: str, *parts: object) -> str:
     return f"{prefix}_{digest}"
 
 
+def stable_id(prefix: str, *parts: object) -> str:
+    """Public stable-id helper (same scheme as ``_stable``) for runtime modules
+    that must insert rows with IDs consistent with ``store_bundle``."""
+    return _stable(prefix, *parts)
+
+
 def _json(value: object, default: object) -> str:
     return json.dumps(default if value is None else value, ensure_ascii=False, sort_keys=True)
 

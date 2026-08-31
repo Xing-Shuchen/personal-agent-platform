@@ -29,6 +29,7 @@ from db import (
     thread_detail,
     thread_snapshot,
 )
+import feeds as feeds_mod
 import obsidian
 
 
@@ -85,6 +86,17 @@ def build_parser() -> argparse.ArgumentParser:
     p_sync.add_argument("--thread", action="append", default=[],
                         help="limit to these thread ids (repeatable; default all)")
 
+    p_feeds = sub.add_parser("feeds", help="deterministic RSS/Atom ingestion")
+    feeds_sub = p_feeds.add_subparsers(dest="feeds_command", required=True)
+    p_feeds_update = feeds_sub.add_parser("update",
+                                          help="fetch configured RSS sources into sources")
+    p_feeds_update.add_argument("--max-entries", type=int, default=30,
+                                help="max entries ingested per feed (default 30)")
+    p_feeds_recent = feeds_sub.add_parser("recent",
+                                          help="list recently ingested RSS entries")
+    p_feeds_recent.add_argument("--hours", type=int, default=24)
+    p_feeds_recent.add_argument("--limit", type=int, default=50)
+
     p_search = sub.add_parser("search", help="search thread, event, and entity labels")
     p_search.add_argument("query")
     p_search.add_argument("--limit", type=int, default=20)
@@ -120,6 +132,14 @@ def main(argv: list[str] | None = None) -> int:
                 thread_ids = args.thread or all_thread_ids(conn)
                 _print(_sync(conn, db_path, thread_ids,
                              db_overridden=args.db is not None))
+            elif args.command == "feeds" and args.feeds_command == "update":
+                _print(feeds_mod.ingest_all(conn, max_entries=args.max_entries))
+            elif args.command == "feeds" and args.feeds_command == "recent":
+                _print({
+                    "hours": args.hours,
+                    "entries": feeds_mod.recent_sources(conn, hours=args.hours,
+                                                        limit=args.limit),
+                })
             elif args.command == "search":
                 _print(search(conn, args.query, args.limit))
             elif args.command == "thread":

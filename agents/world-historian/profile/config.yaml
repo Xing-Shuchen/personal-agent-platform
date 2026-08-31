@@ -66,3 +66,9 @@ sources:
   - name: MIT Technology Review
     kind: rss
     url: https://www.technologyreview.com/feed/
+  - name: 我爱计算机
+    kind: rss
+    url: http://www.52cs.org/?feed=rss2
+  - name: Google Research Blog
+    kind: rss
+    url: https://feeds.feedburner.com/blogspot/gJZg/

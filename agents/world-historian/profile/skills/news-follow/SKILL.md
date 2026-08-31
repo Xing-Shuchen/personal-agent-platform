@@ -7,12 +7,30 @@ description: Follow active World Historian threads for material new evidence, co
 
 Use the requested priority as the work-set filter.
 
+## Local increments first
+
+RSS sources are ingested hourly into the Chronicle by the `news-feeds` job.
+Before any web search, check what is already local:
+
+```bash
+"$PAP_ROOT/.venv/bin/python" \
+  "$PAP_ROOT/agents/world-historian/runtime/cli.py" feeds recent --hours 24
+```
+
+Match those entries against each due thread's title, entities, watch queries,
+and open questions. Only if the local window does not answer a lane, go to the
+web. This keeps follow work cheap, reproducible, and independent of search
+engine variance.
+
+## Preferred outlets and search order
+
 First read `config.yaml` from this profile directory and note the `sources`
 list. These are the user's preferred outlets (远川研究所矩阵、腾讯科技、新潮
 沉思录、36氪、量子位、机器之心、智能涌现、凤凰网) plus vetted RSS feeds.
 Check them before generic web search, in this order:
 
-1. `kind: rss` — fetch the feed URL directly for the newest items.
+1. `kind: rss` — entries are already ingested locally (see above); fetch the
+   feed directly only if fresher data is needed.
 2. `kind: site` — browse or search the site for the thread's keywords.
 3. `kind: wechat` — 公众号 has no public RSS: search
    `site:mp.weixin.qq.com <keywords>` or rely on reposts by aggregators.
