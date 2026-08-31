@@ -24,3 +24,12 @@ the report before delivery.
 If the window contains no reportable delta, return exactly `[SILENT]`. Otherwise
 pass the report through `"$PAP_ROOT/.venv/bin/pap" gate --agent world-historian` using a stable window
 key, then return a compact simplified-Chinese report only when allowed.
+
+End every daily/weekly report with this fixed footer line:
+
+```text
+——回复条目编号或主题，即可让 World Historian 开始长期追踪。
+```
+
+Do not start tracking from the trailer itself; tracking only begins when the
+user actually replies (the reply is then handled as a `news-capture` seed).
