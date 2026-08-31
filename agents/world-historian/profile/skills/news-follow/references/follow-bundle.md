@@ -20,3 +20,8 @@ top-level `questions` item with `thread_ref`, the same `question`,
 Potential expansions belong in `discovery_candidates` with `candidate_type`,
 `title`, `relation_score`, `payload`, and `status: candidate`. Promote them to
 threads only within the expansion budget.
+
+When a committed bundle modifies an existing thread (attached events, claim
+changes, answered questions, watch queries), the runtime automatically
+re-renders that thread's Obsidian file — no extra step is needed. Bundles
+that touch no thread write nothing.
