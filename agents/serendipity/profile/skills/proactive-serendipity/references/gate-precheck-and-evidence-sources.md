@@ -12,6 +12,7 @@ The skill says "inspect recent personal-context evidence" without naming files. 
 | Cross-domain older material | Other active repos, e.g. `~/personal-historian-handoff` (docs/PRINCIPLES.md, docs/DECISIONS.md, `historian/derivation/engine.py`, daily-collection commit history) | The deliberately-different-time/different-domain material step 2 asks for |
 | Obsidian Second Brain vault | `/home/xingzeng/文档/Obsidian/Second_Brain/Dairies/<YYYY>/YYYY-MM-DD.md` (ethnography-daily, e.g. `Dairies/2026/2026-08-29.md`) | Richest personal-context source: YAML frontmatter carries `sleep_hours`, `day_type`, `threads`, `people`; body sections 对影成/怪现状/观自在 carry open questions and self-interpretations usable as concept pairs |
 | Obsidian Second Brain vault (domains) | `2Area/` topic files, e.g. `2Area/10 健康与体能/训练记录.md` | Domain state for cross-domain pairing (health logs, projects, interests) |
+| Obsidian WeRead highlights | `2Area/WeRead Notes/<书名>.md` (e.g. `中国历史地理十五讲.md`, 📌 highlight lines; plugin-synced, mtimes can be months old) | The "deliberately different time range" vein for step 2: an old reading highlight pairs with a fresh diary event (worked 2026-08-30: May 高亮 × 8-29 diary 敕勒歌 → 战败叙事 structure). `rg` the vault for topical keys to find these |
 
 ## Zero-candidate runs: silence without gate calls
 
@@ -29,6 +30,10 @@ Pre-check recipe (read-only, no gate interaction):
 2. Last attempt **allowed** → no backoff applies; proceed to the normal gate call (step 8 of the skill).
 3. Last attempt **denied** → streak = trailing denied attempts; floor = min(4 · 2^(streak−1), 32) h; floor_until = last attempt ts + floor.
 4. now < floor_until → end the run `[SILENT]` **without calling the gate**. No priority is high enough to pass: the backoff check runs before the priority bar and is priority-independent.
+
+   **Compute floor_until arithmetically — never eyeball it.** Observed failure (2026-08-30 11:14 run): the attempts tail showed the last denial at "07:02" and the model assumed the 4h floor had long passed — but the denial was 07:02:43 and the streak was already 2 (the 07:01 quiet-hours denial before it), so floor was 8h → floor_until 15:02:43. The doomed gate call was denied in-floor, streak went 2→3, floor became 16h, pushing the next legitimate daytime shot into the 15:02–22:00 window. Verify with a one-liner before ANY gate call:
+   `python3 -c "from datetime import datetime,timedelta; last=datetime.fromisoformat('<last-denied-ts>'); floor_h=<floor>; print(last+timedelta(hours=floor_h), 'elapsed:', datetime.now().astimezone()>=last+timedelta(hours=floor_h))"`.
+   The tail shows only the last attempt: the streak (and hence floor length) counts ALL trailing denials — consecutive cron runs each landing a denial double the floor every time.
 
 ## Worked example (2026-08-29 02:16 CST)
 

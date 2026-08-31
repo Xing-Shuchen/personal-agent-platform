@@ -1,0 +1,10 @@
+# Provider/model and messaging targets remain deployment-local.
+# pap exports PAP_AGENT_STATE_DIR for deterministic runtime commands.
+
+chronicle:
+  expansion:
+    max_new_events_per_run: 5
+    max_new_threads_per_day: 2
+  significance:
+    report_threshold: 0.70
+    record_threshold: 0.25
