@@ -8,3 +8,61 @@ chronicle:
   significance:
     report_threshold: 0.70
     record_threshold: 0.25
+
+# Preferred news sources. news-follow / news-capture should check these
+# before generic web search and treat them as authoritative where relevant.
+# `kind`: rss (fetch feed directly) | site (browse/search site) | wechat
+# (公众号：无公开 RSS，只能用 site:mp.weixin.qq.com 检索或等转发)
+sources:
+  # 用户常看（远川研究所矩阵）
+  - name: 远川研究所
+    kind: wechat
+    note: 公众号「远川研究所」矩阵：远川研究所/远川科技评论/远川出海研究/远川制造等，主号内容偏产业深度
+  - name: 腾讯科技
+    kind: site
+    url: https://tech.qq.com/
+  - name: 新潮沉思录
+    kind: wechat
+    note: 公众号，无官网；以时事评论为主
+  - name: 36氪
+    kind: rss
+    url: https://www.36kr.com/feed
+  - name: 量子位
+    kind: site
+    url: https://www.jiqizhixin.com/
+    note: 量子位无独立官网，内容同步于机器之心/36氪等平台
+  - name: 机器之心
+    kind: site
+    url: https://www.jiqizhixin.com/
+    note: 官网 RSS 已失效（404），用站内搜索/浏览
+  - name: 智能涌现
+    kind: wechat
+    note: 36氪旗下公众号，聚焦 AI 产业
+  - name: 凤凰网
+    kind: rss
+    url: https://news.ifeng.com/rss/
+  # 已验证可用的高质量补充源
+  - name: BBC 中文
+    kind: rss
+    url: https://feeds.bbci.co.uk/zhongwen/simp/rss.xml
+  - name: FT 中文网
+    kind: rss
+    url: https://www.ftchinese.com/rss/news
+  - name: 少数派
+    kind: rss
+    url: https://sspai.com/feed
+  - name: Solidot
+    kind: rss
+    url: https://www.solidot.org/index.rss
+  - name: TechCrunch
+    kind: rss
+    url: https://techcrunch.com/feed/
+  - name: The Verge
+    kind: rss
+    url: https://www.theverge.com/rss/index.xml
+  - name: Ars Technica
+    kind: rss
+    url: https://feeds.arstechnica.com/arstechnica/index
+  - name: MIT Technology Review
+    kind: rss
+    url: https://www.technologyreview.com/feed/
