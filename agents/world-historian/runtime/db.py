@@ -108,13 +108,22 @@ def _confidence(value: object, where: str, default: float = 0.5) -> float:
 
 
 def store_bundle(conn: sqlite3.Connection, bundle: dict[str, Any]) -> dict[str, Any]:
-    """Validate and atomically upsert one cross-referenced Chronicle bundle."""
+    """Validate and atomically upsert one cross-referenced Chronicle bundle.
+
+    Returns ``touched_threads``: threads whose stored content was created or
+    modified by this bundle (thread upserts, events attached to a thread,
+    claim changes on member events, thread-scoped questions/queries, and
+    relations with a thread endpoint). Pure event-level or candidate-level
+    writes return an empty list, so callers can skip side effects such as
+    the Obsidian export.
+    """
     if not isinstance(bundle, dict):
         raise ChronicleError("bundle must be a JSON object")
     migrate(conn)
     now = _now()
     refs: dict[str, str] = {}
     counts: dict[str, int] = {}
+    touched: set[str] = set()
 
     def remember(item: dict[str, Any], identifier: str) -> None:
         ref = item.get("ref")
@@ -197,6 +206,7 @@ def store_bundle(conn: sqlite3.Connection, bundle: dict[str, Any]) -> dict[str, 
             title = str(_required(item, "title", "thread"))
             identifier = str(item.get("id") or _stable("thr", title))
             remember(item, identifier)
+            touched.add(identifier)
             conn.execute(
                 """INSERT INTO threads
                    (id, title, status, priority, seed_type, seed_text, last_checked_at,
@@ -276,6 +286,7 @@ def store_bundle(conn: sqlite3.Connection, bundle: dict[str, Any]) -> dict[str, 
                     (thread_id, identifier,
                      _confidence(item.get("membership_confidence"), "membership_confidence", 1.0), now),
                 )
+                touched.add(thread_id)
             for raw_entity in item.get("entity_names", []):
                 entity_id, role = ensure_entity(raw_entity, "event.entity_names")
                 conn.execute(
@@ -304,11 +315,16 @@ def store_bundle(conn: sqlite3.Connection, bundle: dict[str, Any]) -> dict[str, 
                  resolve(superseded, "claim.superseded_by") if superseded else None, now, now),
             )
             counts["claims"] = counts.get("claims", 0) + 1
+            for row in conn.execute(
+                "SELECT thread_id FROM thread_events WHERE event_id = ?", (event_id,)
+            ):
+                touched.add(row[0])
 
         for item in _items(bundle, "questions"):
             thread_id = resolve(_required(item, "thread_ref", "question"), "question.thread_ref")
             question = str(_required(item, "question", "question"))
             identifier = str(item.get("id") or _stable("qst", thread_id, question))
+            touched.add(thread_id)
             answer_ref = item.get("answer_event_ref")
             conn.execute(
                 """INSERT INTO open_questions
@@ -327,6 +343,7 @@ def store_bundle(conn: sqlite3.Connection, bundle: dict[str, Any]) -> dict[str, 
             query = str(_required(item, "query", "watch_query"))
             kind = str(item.get("kind", "exact"))
             identifier = str(item.get("id") or _stable("qry", thread_id, query, kind))
+            touched.add(thread_id)
             conn.execute(
                 """INSERT INTO watch_queries
                    (id, thread_id, query, query_kind, active, created_at)
@@ -355,6 +372,10 @@ def store_bundle(conn: sqlite3.Connection, bundle: dict[str, Any]) -> dict[str, 
                  _json(item.get("evidence"), []), item.get("status", "active"), now, now),
             )
             counts["relations"] = counts.get("relations", 0) + 1
+            if str(item.get("src_type", "event")) == "thread":
+                touched.add(src_id)
+            if str(item.get("dst_type", "event")) == "thread":
+                touched.add(dst_id)
 
         for item in _items(bundle, "interpretations"):
             earlier = resolve(_required(item, "earlier_event_ref", "interpretation"),
@@ -440,7 +461,7 @@ def store_bundle(conn: sqlite3.Connection, bundle: dict[str, Any]) -> dict[str, 
     except Exception:
         conn.rollback()
         raise
-    return {"refs": refs, "counts": counts}
+    return {"refs": refs, "counts": counts, "touched_threads": sorted(touched)}
 
 
 def search(conn: sqlite3.Connection, query: str, limit: int = 20) -> list[dict[str, Any]]:
@@ -476,6 +497,75 @@ def thread_detail(conn: sqlite3.Connection, thread_id: str) -> dict[str, Any] | 
         (thread_id,),
     )]
     return result
+
+
+def thread_snapshot(conn: sqlite3.Connection, thread_id: str) -> dict[str, Any] | None:
+    """Everything the Obsidian projection needs for one thread, or ``None``."""
+    row = conn.execute("SELECT * FROM threads WHERE id = ?", (thread_id,)).fetchone()
+    if row is None:
+        return None
+    snapshot: dict[str, Any] = dict(row)
+    snapshot["thread_entities"] = [dict(item) for item in conn.execute(
+        """SELECT entities.name, entities.kind FROM thread_entities
+           JOIN entities ON entities.id = thread_entities.entity_id
+           WHERE thread_entities.thread_id = ? ORDER BY entities.name""",
+        (thread_id,),
+    )]
+    snapshot["questions"] = [dict(item) for item in conn.execute(
+        "SELECT * FROM open_questions WHERE thread_id = ? ORDER BY created_at",
+        (thread_id,),
+    )]
+    snapshot["watch_queries"] = [dict(item) for item in conn.execute(
+        "SELECT * FROM watch_queries WHERE thread_id = ? AND active = 1 ORDER BY created_at",
+        (thread_id,),
+    )]
+    events = [dict(item) for item in conn.execute(
+        """SELECT events.* FROM events JOIN thread_events
+           ON events.id = thread_events.event_id
+           WHERE thread_events.thread_id = ?
+           ORDER BY COALESCE(occurred_at, reported_at, observed_at)""",
+        (thread_id,),
+    )]
+    for event in events:
+        event["claims"] = [dict(item) for item in conn.execute(
+            """SELECT claims.*, sources.title AS source_title,
+                      sources.publisher AS source_publisher,
+                      sources.source_kind AS source_kind
+               FROM claims JOIN sources ON sources.id = claims.source_id
+               WHERE claims.event_id = ? ORDER BY claims.created_at, claims.id""",
+            (event["id"],),
+        )]
+        event["entities"] = [dict(item) for item in conn.execute(
+            """SELECT entities.name, entities.kind, event_entities.role
+               FROM event_entities JOIN entities ON entities.id = event_entities.entity_id
+               WHERE event_entities.event_id = ? ORDER BY entities.name""",
+            (event["id"],),
+        )]
+    snapshot["events"] = events
+    snapshot["relations"] = [dict(item) for item in conn.execute(
+        """SELECT * FROM relations
+           WHERE (src_type = 'thread' AND src_id = ?)
+              OR (dst_type = 'thread' AND dst_id = ?)
+           ORDER BY created_at""",
+        (thread_id, thread_id),
+    )]
+    event_ids = [event["id"] for event in events]
+    interpretations: list[dict[str, Any]] = []
+    if event_ids:
+        placeholders = ",".join("?" for _ in event_ids)
+        interpretations = [dict(item) for item in conn.execute(
+            f"""SELECT * FROM interpretations
+                WHERE earlier_event_id IN ({placeholders})
+                   OR later_event_id IN ({placeholders})
+                ORDER BY created_at""",
+            (*event_ids, *event_ids),
+        )]
+    snapshot["interpretations"] = interpretations
+    return snapshot
+
+
+def all_thread_ids(conn: sqlite3.Connection) -> list[str]:
+    return [row[0] for row in conn.execute("SELECT id FROM threads ORDER BY id")]
 
 
 def stats(conn: sqlite3.Connection) -> dict[str, int]:

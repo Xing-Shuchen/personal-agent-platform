@@ -1,15 +1,35 @@
 #!/usr/bin/env python3
-"""Inspectable CLI for World Historian's deterministic SQLite runtime."""
+"""Inspectable CLI for World Historian's deterministic SQLite runtime.
+
+Domain writes are validated bundles committed atomically. Threads that a
+committed bundle created or modified are exported to the Obsidian vault
+(one file per thread); bundles that touch no thread trigger no file writes.
+"""
 
 from __future__ import annotations
 
 import argparse
 import json
+import os
 import sqlite3
 import sys
 from pathlib import Path
+from typing import Any
 
-from db import ChronicleError, connect, initialize, migrate, search, stats, store_bundle, thread_detail
+from db import (
+    ChronicleError,
+    all_thread_ids,
+    connect,
+    default_db_path,
+    initialize,
+    migrate,
+    search,
+    stats,
+    store_bundle,
+    thread_detail,
+    thread_snapshot,
+)
+import obsidian
 
 
 def _print(value: object) -> None:
@@ -22,6 +42,32 @@ def _read_json(path: str) -> object:
     return json.loads(Path(path).read_text(encoding="utf-8"))
 
 
+def _index_path(db_path: Path) -> Path:
+    return db_path.parent / "obsidian-index.json"
+
+
+def _sync(conn: sqlite3.Connection, db_path: Path,
+          thread_ids: list[str], *, db_overridden: bool = False) -> dict[str, Any]:
+    """Export the given threads to the vault. Best-effort, never raises.
+
+    When ``--db`` points somewhere other than the default chronicle and no
+    explicit vault override is configured, syncing is skipped: a non-default
+    database must never silently project into the real vault.
+    """
+    vault = obsidian.vault_dir()
+    if vault is None or not thread_ids:
+        return {"written": [], "removed": [], "errors": [], "skipped": True}
+    if db_overridden and os.environ.get("WORLD_HISTORIAN_VAULT_DIR") is None:
+        return {"written": [], "removed": [], "errors": [], "skipped": True,
+                "reason": "non-default --db without WORLD_HISTORIAN_VAULT_DIR"}
+    snapshots = [thread_snapshot(conn, tid) for tid in thread_ids]
+    snapshots = [snapshot for snapshot in snapshots if snapshot is not None]
+    outcome: dict[str, Any] = obsidian.sync_threads(
+        snapshots, vault, _index_path(db_path))
+    outcome["skipped"] = False
+    return outcome
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="world-historian-runtime")
     parser.add_argument("--db", type=Path, default=None, help="override chronicle.sqlite path")
@@ -32,6 +78,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_store = sub.add_parser("store-bundle", help="atomically validate and persist a JSON bundle")
     p_store.add_argument("--json", required=True, help="JSON file path, or - for stdin")
+    p_store.add_argument("--no-sync", action="store_true",
+                         help="skip the Obsidian export even if threads were touched")
+
+    p_sync = sub.add_parser("sync", help="rebuild Obsidian thread files from the database")
+    p_sync.add_argument("--thread", action="append", default=[],
+                        help="limit to these thread ids (repeatable; default all)")
 
     p_search = sub.add_parser("search", help="search thread, event, and entity labels")
     p_search.add_argument("query")
@@ -44,19 +96,30 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    db_path = Path(args.db) if args.db else default_db_path()
     try:
         if args.command == "init":
-            path, applied = initialize(args.db)
+            path, applied = initialize(db_path)
             _print({"database": str(path), "migrations_applied": applied})
             return 0
 
-        with connect(args.db) as conn:
+        with connect(db_path) as conn:
             migrate(conn)
             if args.command == "stats":
                 _print(stats(conn))
             elif args.command == "store-bundle":
                 bundle = _read_json(args.json)
-                _print(store_bundle(conn, bundle))
+                result = store_bundle(conn, bundle)  # type: ignore[arg-type]
+                result["obsidian"] = (
+                    {"skipped": True} if args.no_sync
+                    else _sync(conn, db_path, result["touched_threads"],
+                               db_overridden=args.db is not None)
+                )
+                _print(result)
+            elif args.command == "sync":
+                thread_ids = args.thread or all_thread_ids(conn)
+                _print(_sync(conn, db_path, thread_ids,
+                             db_overridden=args.db is not None))
             elif args.command == "search":
                 _print(search(conn, args.query, args.limit))
             elif args.command == "thread":

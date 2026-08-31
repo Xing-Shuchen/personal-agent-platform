@@ -97,7 +97,12 @@ Important fields:
 - Discovery candidates require `candidate_type`, `title`, and
   `relation_score`. Candidates remain non-active until explicitly promoted.
 - Reports require `mode`, `window_end`, `body`, and `significance`.
+- The store-bundle result includes `touched_threads`: threads this bundle
+  created or modified. Bundles that touch no thread (for example pure
+  discovery candidates) trigger no Obsidian export.
 
 Use `search <query>` before capture and `thread <id>` before updating an
 existing thread. The returned `refs` map from `store-bundle` exposes every
-generated ID used within the transaction.
+generated ID used within the transaction. Refs are bundle-local: a later
+bundle must reference earlier objects by their actual IDs, not by earlier
+refs.

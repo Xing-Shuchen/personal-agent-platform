@@ -123,6 +123,24 @@ World Historian 预留的 artifact 类型：`news.thread.created`、
 
 Schema migration 从 `agents/world-historian/runtime/migrations/` 顺序执行。第一版包含 sources、claims、events、threads、entities、relations、interpretations、open questions、watch queries、discovery candidates、reports 和单向 `personal_links`。
 
+### Obsidian 同步（2Area/41 新闻及事件）
+
+每个 Thread 对应 vault 中 `2Area/41 新闻及事件/` 下的一个 Markdown 文件，作为
+数据库的投影**覆盖式**再生成——数据库是唯一事实源：
+
+- **触发规则**：只有 bundle 新建或修改了 Thread（thread 本体、挂接事件、
+  主张变化、开放问题/监视查询、thread 端点 relation）才写文件；纯
+  discovery candidate 等不触及 Thread 的提交不产生任何文件写入。
+- `store-bundle` 在事务**提交成功后**自动同步被触及的 Thread（回滚则不写）；
+  `--no-sync` 可跳过。
+- `runtime/cli.py sync` 可从数据库全量重建（`--thread <id>` 限定单个）。
+- 文件 frontmatter 带 `thread_id`，重命名 Thread 时文件自动迁移；目标名
+  被无关文件占用时换用带 ID 后缀的名字，绝不删除非本 Thread 的文件。
+- 文末「手工批注」一节供人工批注，重新同步时原样保留；其余机器生成部分
+  请勿手工编辑。
+- 同步索引位于 `var/world-historian/obsidian-index.json`（不进 git）。
+- 目标目录可用 `WORLD_HISTORIAN_VAULT_DIR` 覆盖，设为空字符串则完全关闭同步。
+
 PersonalLink 的隐私流向固定为：
 
 ```text

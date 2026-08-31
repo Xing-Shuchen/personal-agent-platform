@@ -1,0 +1,379 @@
+"""Export World Historian threads to the Obsidian vault.
+
+Target: ``2Area/41 新闻及事件/`` in the user's Second_Brain vault — one file
+per thread. The Chronicle database stays the single source of truth: files
+are projections, overwritten from the database on every sync. A file is
+written only when the corresponding thread is created or modified in a
+committed bundle (``touched_threads``); the caller decides when to sync.
+
+Manual notes: readers may write personal annotations under the final
+「手工批注」section; that section is carried over on re-sync. Thread renames
+migrate the file (the old file is deleted only when its frontmatter
+``thread_id`` matches, never a foreign file).
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import re
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+DEFAULT_VAULT_SUBPATH = Path("文档/Obsidian/Second_Brain/2Area/41 新闻及事件")
+MANUAL_SECTION = "手工批注"
+_INDEX_VERSION = 1
+
+
+class SyncError(RuntimeError):
+    """Raised when a thread file cannot be written."""
+
+
+def _now() -> str:
+    return datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
+
+
+def _real_home() -> Path:
+    """True user home even when $HOME is redirected (sandbox, cron, daemons)."""
+    try:
+        import getpass
+        import pwd
+
+        return Path(pwd.getpwnam(getpass.getuser()).pw_dir)
+    except Exception:
+        return Path.home()
+
+
+def vault_dir() -> Path | None:
+    """Resolve the sync target directory; ``None`` disables syncing.
+
+    ``WORLD_HISTORIAN_VAULT_DIR`` overrides the location; setting it to an
+    empty string disables the Obsidian export entirely.
+    """
+    env = os.environ.get("WORLD_HISTORIAN_VAULT_DIR")
+    if env is not None:
+        value = env.strip()
+        return Path(value) if value else None
+    return _real_home() / DEFAULT_VAULT_SUBPATH
+
+
+_UNSAFE_CHARS = re.compile(r'[\\/:*?"<>|#\[\]^]+')
+_WHITESPACE = re.compile(r"\s+")
+
+
+def thread_filename(title: str, thread_id: str, taken: set[str]) -> str:
+    """Deterministic filename for a thread, avoiding names used by others."""
+    base = _UNSAFE_CHARS.sub("-", title or "").strip().strip(".")
+    base = _WHITESPACE.sub(" ", base).strip()
+    if not base:
+        base = "untitled"
+    base = base[:80].rstrip(" -")
+    name = f"{base}.md"
+    if name in taken:
+        suffix = thread_id.rsplit("_", 1)[-1][:6] or thread_id[:6]
+        name = f"{base}-{suffix}.md"
+    return name
+
+
+def _yaml_str(value: Any) -> str:
+    return json.dumps("" if value is None else str(value), ensure_ascii=False)
+
+
+def _one_line(value: Any) -> str:
+    if value is None:
+        return ""
+    return _WHITESPACE.sub(" ", str(value)).strip()
+
+
+def _fmt(value: Any) -> str:
+    return str(value) if value not in (None, "") else "—"
+
+
+def _frontmatter(snapshot: dict[str, Any], synced_at: str) -> str:
+    created = str(snapshot.get("created_at") or synced_at)[:10]
+    lines = [
+        "---",
+        "type: note",
+        "area: world-historian",
+        f"thread_id: {_yaml_str(snapshot['id'])}",
+        f"status: {_yaml_str(snapshot.get('status', 'active'))}",
+        f"priority: {_yaml_str(snapshot.get('priority', 'normal'))}",
+        f"created: {_yaml_str(created)}",
+        f"updated: {_yaml_str(synced_at)}",
+        "source: world-historian chronicle",
+        "---",
+        "",
+    ]
+    return "\n".join(lines)
+
+
+def _load_evidence(raw: Any) -> list[Any]:
+    if not raw:
+        return []
+    try:
+        loaded = json.loads(raw)
+    except (TypeError, json.JSONDecodeError):
+        return []
+    return loaded if isinstance(loaded, list) else []
+
+
+def _endpoint_label(endpoint_type: str, endpoint_id: str,
+                    snapshot: dict[str, Any]) -> str:
+    if endpoint_type == "thread":
+        if endpoint_id == snapshot["id"]:
+            return "本 Thread"
+        return f"thread `{endpoint_id}`"
+    for event in snapshot.get("events", []):
+        if event["id"] == endpoint_id:
+            return _one_line(event.get("summary")) or f"event `{endpoint_id}`"
+    return f"event `{endpoint_id}`"
+
+
+def render_snapshot(snapshot: dict[str, Any], synced_at: str,
+                    manual_notes: str | None = None) -> str:
+    """Render one thread snapshot (from ``db.thread_snapshot``) as Markdown."""
+    tid = snapshot["id"]
+    lines: list[str] = [_frontmatter(snapshot, synced_at), ""]
+
+    lines.append(f"# {_one_line(snapshot.get('title')) or tid}\n")
+    lines.append(
+        f"> [!info] 本文件由 World Historian 从 Chronicle 数据库自动生成并覆盖同步"
+        f"（thread_id: `{tid}`）。机器生成部分请勿手工编辑；个人批注写在文末"
+        f"「{MANUAL_SECTION}」一节，重新同步时会保留。\n"
+    )
+
+    lines.append(
+        f"- **状态**：`{snapshot.get('status', 'active')}` · "
+        f"**优先级**：`{snapshot.get('priority', 'normal')}`"
+    )
+    lines.append(
+        f"- **最近检查**：{_fmt(snapshot.get('last_checked_at'))} · "
+        f"**静默轮次**：{snapshot.get('quiet_count', 0)}"
+    )
+    if snapshot.get("seed_text"):
+        lines.append(
+            f"- **种子**：{_one_line(snapshot['seed_text'])}"
+            f"（{snapshot.get('seed_type', 'user_instruction')}）"
+        )
+    thread_entities = snapshot.get("thread_entities", [])
+    if thread_entities:
+        names = "、".join(
+            f"{_one_line(e.get('name'))}（{e.get('kind', 'unknown')}）"
+            for e in thread_entities
+        )
+        lines.append(f"- **实体**：{names}")
+    lines.append("")
+
+    events = snapshot.get("events", [])
+    labels = {e["id"]: _one_line(e.get("summary")) or e["id"] for e in events}
+    lines.append("## 时间线\n")
+    if not events:
+        lines.append("_（尚无事件）_\n")
+    for event in events:
+        lines.append(f"### {labels[event['id']]}")
+        occurred = event.get("occurred_at")
+        occurred_text = (
+            f"未知（精度：{event.get('occurred_at_precision', 'unknown')}）"
+            if occurred in (None, "")
+            else str(occurred)
+        )
+        lines.append(
+            f"- 发生时间：{occurred_text} ｜ "
+            f"报道时间：{_fmt(event.get('reported_at'))} ｜ "
+            f"首次观察：{_fmt(event.get('observed_at'))}"
+        )
+        lines.append(
+            f"- 置信度 {float(event.get('confidence', 0.5)):.2f} · "
+            f"状态 {event.get('status', 'active')}"
+        )
+        claims = event.get("claims", [])
+        if claims:
+            lines.append("- 来源主张：")
+            for claim in claims:
+                superseded = (
+                    f"（被 `{claim['superseded_by']}` 取代）"
+                    if claim.get("superseded_by") else ""
+                )
+                source = _one_line(claim.get("source_title")) or "佚名来源"
+                publisher = _one_line(claim.get("source_publisher"))
+                kind = claim.get("source_kind") or "unknown"
+                origin = f"{source}（{publisher}，{kind}）" if publisher \
+                    else f"{source}（{kind}）"
+                lines.append(
+                    f"  - 「{_one_line(claim['statement'])}」—— {origin} · "
+                    f"置信度 {float(claim.get('confidence', 0.5)):.2f} · "
+                    f"{claim.get('status', 'active')}{superseded}"
+                )
+        event_entities = event.get("entities", [])
+        if event_entities:
+            names = "、".join(
+                f"{_one_line(e.get('name'))}（{e.get('kind', 'unknown')}）"
+                for e in event_entities
+            )
+            lines.append(f"- 涉及实体：{names}")
+        lines.append("")
+
+    questions = snapshot.get("questions", [])
+    lines.append("## 开放问题\n")
+    if not questions:
+        lines.append("_（无）_\n")
+    for question in questions:
+        status = question.get("status", "open")
+        if status == "open":
+            lines.append(f"- [ ] {_one_line(question['question'])}")
+        else:
+            marker = "x" if status == "answered" else " "
+            answer = (
+                f" → event `{question['answer_event_id']}`"
+                if question.get("answer_event_id") else ""
+            )
+            lines.append(
+                f"- [{marker}] {_one_line(question['question'])}{answer}"
+                f"（{status}）"
+            )
+    lines.append("")
+
+    queries = [q for q in snapshot.get("watch_queries", []) if q.get("active")]
+    lines.append("## 监视查询\n")
+    if not queries:
+        lines.append("_（无）_\n")
+    for query in queries:
+        lines.append(f"- `{_one_line(query['query'])}`（{query.get('query_kind', 'exact')}）")
+    lines.append("")
+
+    relations = snapshot.get("relations", [])
+    lines.append("## 关联\n")
+    if not relations:
+        lines.append("_（无）_\n")
+    for relation in relations:
+        src = _endpoint_label(relation.get("src_type", "event"),
+                              relation["src_id"], snapshot)
+        dst = _endpoint_label(relation.get("dst_type", "event"),
+                              relation["dst_id"], snapshot)
+        evidence = _load_evidence(relation.get("evidence_json"))
+        evidence_note = f" · 证据 {len(evidence)} 条" if evidence else ""
+        lines.append(
+            f"- {src} —**{relation['relation_type']}**→ {dst} · "
+            f"置信度 {float(relation.get('confidence', 0.5)):.2f} · "
+            f"{relation.get('status', 'active')}{evidence_note}"
+        )
+    lines.append("")
+
+    interpretations = snapshot.get("interpretations", [])
+    lines.append("## 后见解释（Interpretation）\n")
+    if not interpretations:
+        lines.append("_（无）_\n")
+    for item in interpretations:
+        earlier = _endpoint_label("event", item["earlier_event_id"], snapshot)
+        later = _endpoint_label("event", item["later_event_id"], snapshot)
+        lines.append(
+            f"- 「{_one_line(item['statement'])}」"
+            f"（{earlier} → {later}）· 置信度 {float(item.get('confidence', 0.5)):.2f} · "
+            f"{item.get('status', 'active')}"
+        )
+    lines.append("")
+
+    lines.append(f"## {MANUAL_SECTION}\n")
+    lines.append((manual_notes or "（无）").rstrip())
+    lines.append("")
+    return "\n".join(lines)
+
+
+def extract_manual_notes(text: str) -> str | None:
+    """Return the reader's「手工批注」body, or ``None`` when absent."""
+    match = re.search(rf"^## {re.escape(MANUAL_SECTION)}\s*$", text, flags=re.M)
+    if match is None:
+        return None
+    rest = text[match.end():]
+    following = re.search(r"^## ", rest, flags=re.M)
+    body = rest[:following.start()] if following else rest
+    body = body.strip()
+    return body or None
+
+
+def _atomic_write(path: Path, text: str) -> None:
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(text, encoding="utf-8")
+    os.replace(tmp, path)
+
+
+def _load_index(index_path: Path) -> dict[str, Any]:
+    if not index_path.exists():
+        return {"version": _INDEX_VERSION, "threads": {}}
+    try:
+        loaded = json.loads(index_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {"version": _INDEX_VERSION, "threads": {}}
+    if not isinstance(loaded, dict) or not isinstance(loaded.get("threads"), dict):
+        return {"version": _INDEX_VERSION, "threads": {}}
+    loaded.setdefault("version", _INDEX_VERSION)
+    return loaded
+
+
+def _thread_id_marker(thread_id: str) -> str:
+    return f"thread_id: {_yaml_str(thread_id)}"
+
+
+def sync_threads(
+    snapshots: list[dict[str, Any]],
+    vault: Path,
+    index_path: Path,
+    *,
+    synced_at: str | None = None,
+) -> dict[str, list[str]]:
+    """Write/refresh one Obsidian file per snapshot. Never raises."""
+    synced_at = synced_at or _now()
+    outcome: dict[str, list[str]] = {"written": [], "removed": [], "errors": []}
+    if not snapshots:
+        return outcome
+    index = _load_index(index_path)
+    threads = index["threads"]
+    taken = {str(name) for name in threads.values()}
+
+    try:
+        vault.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        outcome["errors"].append(f"vault unavailable: {exc}")
+        return outcome
+
+    dirty = False
+    for snapshot in snapshots:
+        tid = str(snapshot["id"])
+        try:
+            previous = threads.get(tid)
+            # A thread's own previous filename is not a collision.
+            others = taken - ({previous} if previous else set())
+            name = thread_filename(str(snapshot.get("title") or "untitled"),
+                                   tid, others)
+            taken.add(name)
+            taken.discard(previous or "")
+            target = vault / name
+            existing = target.read_text(encoding="utf-8") if target.exists() else None
+            marker = _thread_id_marker(tid)
+            notes = None
+            if existing is not None and marker in existing:
+                notes = extract_manual_notes(existing)
+            _atomic_write(target, render_snapshot(snapshot, synced_at, notes))
+            outcome["written"].append(str(target))
+
+            if previous and previous != name:
+                old_path = vault / str(previous)
+                if old_path.exists():
+                    old_text = old_path.read_text(encoding="utf-8")
+                    if marker in old_text:  # never delete a foreign file
+                        old_path.unlink()
+                        outcome["removed"].append(str(old_path))
+            if previous != name:
+                threads[tid] = name
+                dirty = True
+        except OSError as exc:
+            outcome["errors"].append(f"{tid}: {exc}")
+
+    if dirty:
+        try:
+            _atomic_write(index_path,
+                          json.dumps(index, ensure_ascii=False, indent=2, sort_keys=True))
+        except OSError as exc:
+            outcome["errors"].append(f"index write: {exc}")
+    return outcome

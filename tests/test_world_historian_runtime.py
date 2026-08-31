@@ -1,6 +1,7 @@
 """Black-box tests for the World Historian deterministic runtime."""
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -10,8 +11,9 @@ CLI = REPO / "agents/world-historian/runtime/cli.py"
 
 
 def run_runtime(db: Path, *args: str):
+    env = dict(os.environ, WORLD_HISTORIAN_VAULT_DIR=str(db.parent / "vault"))
     return subprocess.run([sys.executable, str(CLI), "--db", str(db), *args],
-                          capture_output=True, text=True, cwd=REPO)
+                          capture_output=True, text=True, cwd=REPO, env=env)
 
 
 def sample_bundle():
@@ -61,3 +63,35 @@ def test_invalid_personal_relation_rolls_back_whole_bundle(tmp_path):
     counts = json.loads(run_runtime(db, "stats").stdout)
     assert counts["threads"] == 0
     assert counts["events"] == 0
+
+
+def test_non_default_db_without_vault_env_skips_obsidian(tmp_path):
+    """`--db` override with no explicit vault target must not touch the vault."""
+    db = tmp_path / "chronicle.sqlite"
+    bundle = tmp_path / "bundle.json"
+    bundle.write_text(json.dumps(sample_bundle()), encoding="utf-8")
+    env = {k: v for k, v in os.environ.items() if k != "WORLD_HISTORIAN_VAULT_DIR"}
+    result = subprocess.run(
+        [sys.executable, str(CLI), "--db", str(db),
+         "store-bundle", "--json", str(bundle)],
+        capture_output=True, text=True, cwd=REPO, env=env)
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["obsidian"]["skipped"] is True
+    assert "reason" in payload["obsidian"]
+    assert not (tmp_path / "vault").exists()
+
+
+def test_store_bundle_syncs_to_configured_vault(tmp_path):
+    db = tmp_path / "chronicle.sqlite"
+    bundle = tmp_path / "bundle.json"
+    bundle.write_text(json.dumps(sample_bundle()), encoding="utf-8")
+    result = run_runtime(db, "store-bundle", "--json", str(bundle))
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    vault = tmp_path / "vault"
+    files = sorted(p.name for p in vault.glob("*.md"))
+    assert payload["obsidian"]["written"] == [str(vault / files[0])]
+    text = (vault / files[0]).read_text(encoding="utf-8")
+    assert "thread_id:" in text and "## 手工批注" in text
+    assert (tmp_path / "obsidian-index.json").exists()  # index lives next to the DB
