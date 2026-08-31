@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "pap"
 version = "0.1.0"
-description = "Personal Agent Platform: declarative agent specs with a shared proactive gate."
+description = "Personal Agent Platform: declarative agents, scheduling, run audit, and proactive gate."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }

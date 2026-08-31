@@ -1,0 +1,81 @@
+"""Tests for scheduler slot reservation and delivery silence."""
+
+import subprocess
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+
+from pap.scheduler import tick
+
+CST = timezone(timedelta(hours=8))
+
+
+def make_platform(root: Path, schedule: str = "* * * * *") -> None:
+    skill = root / "agents/sample/profile/skills/sample-skill"
+    skill.mkdir(parents=True)
+    (skill / "SKILL.md").write_text(
+        "---\nname: sample-skill\ndescription: Test.\n---\n# Test\n", encoding="utf-8"
+    )
+    (root / "agents/sample/agent.yaml").write_text(
+        f"""apiVersion: pap/v1
+kind: Agent
+metadata:
+  name: sample
+  description: Sample.
+spec:
+  profile:
+    name: sample
+    source: profile
+  proactive:
+    enabled: true
+    class: ambient
+    desired_jobs:
+      - name: sample-job
+        schedule: "{schedule}"
+        skill: sample-skill
+        delivery: local
+""",
+        encoding="utf-8",
+    )
+
+
+def test_tick_claims_slot_once(tmp_path):
+    make_platform(tmp_path)
+    now = datetime(2026, 8, 31, 18, 17, tzinfo=CST)
+    calls = []
+
+    def fake_runner(command, **kwargs):
+        calls.append(command)
+        return subprocess.CompletedProcess(command, 0, stdout="[SILENT]", stderr="")
+
+    first = tick(tmp_path, now=now, command_runner=fake_runner)
+    second = tick(tmp_path, now=now, command_runner=fake_runner)
+    assert len(first) == 1
+    assert first[0].delivery == "silent"
+    assert second == []
+    assert len(calls) == 1
+
+
+def test_dry_run_does_not_create_scheduler_state(tmp_path):
+    make_platform(tmp_path)
+    now = datetime(2026, 8, 31, 18, 17, tzinfo=CST)
+    result = tick(tmp_path, now=now, dry_run=True)
+    assert len(result) == 1
+    assert result[0].delivery == "dry-run"
+    assert not (tmp_path / "var/state/scheduler-state.json").exists()
+
+
+def test_failed_slot_is_retried_after_delay(tmp_path, monkeypatch):
+    make_platform(tmp_path, "17 18 * * *")
+    now = datetime(2026, 8, 31, 18, 17, tzinfo=CST)
+    monkeypatch.setattr("pap.scheduler._now", lambda: now)
+    calls = []
+
+    def failing_runner(command, **kwargs):
+        calls.append(command)
+        return subprocess.CompletedProcess(command, 1, stdout="", stderr="failed")
+
+    first = tick(tmp_path, now=now, command_runner=failing_runner)
+    retry = tick(tmp_path, now=now + timedelta(minutes=6), command_runner=failing_runner)
+    assert first[0].run.status == "failed"
+    assert retry[0].slot == first[0].slot
+    assert len(calls) == 2

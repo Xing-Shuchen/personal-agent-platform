@@ -11,6 +11,9 @@ from pap.spec import SpecError, load_platform, load_spec
 def write_agent(root: Path, name: str, body: str) -> Path:
     d = root / "agents" / name
     d.mkdir(parents=True)
+    skill = d / "profile" / "skills" / "test-skill"
+    skill.mkdir(parents=True)
+    (skill / "SKILL.md").write_text("# Test skill\n", encoding="utf-8")
     p = d / "agent.yaml"
     p.write_text(textwrap.dedent(body), encoding="utf-8")
     return p
@@ -48,6 +51,7 @@ def test_valid_spec(tmp_path: Path):
     assert spec.proactive_enabled is True
     assert spec.jobs[0].schedule == "every 4h"
     assert spec.jobs[0].skill == "test-skill"
+    assert spec.jobs[0].args == {}
     assert spec.private_state == ["notes"]
 
 
@@ -113,6 +117,24 @@ def test_valid_schedules(tmp_path: Path, sched: str):
     assert spec.jobs[0].schedule == sched
 
 
+def test_raw_cron_and_job_args(tmp_path: Path):
+    body = VALID.replace("schedule: every 4h", "schedule: 17 */2 * * *").replace(
+        "            skill: test-skill",
+        "            skill: test-skill\n            args:\n              priority: high",
+    )
+    write_agent(tmp_path, "test-agent", body)
+    spec = load_spec(tmp_path / "agents" / "test-agent" / "agent.yaml")
+    assert spec.jobs[0].schedule == "17 */2 * * *"
+    assert spec.jobs[0].args == {"priority": "high"}
+
+
+def test_bad_job_args(tmp_path: Path):
+    body = VALID.replace("skill: test-skill", "skill: test-skill\n            args: nope")
+    write_agent(tmp_path, "test-agent", body)
+    with pytest.raises(SpecError, match="args"):
+        load_spec(tmp_path / "agents" / "test-agent" / "agent.yaml")
+
+
 def test_duplicate_job_names(tmp_path: Path):
     dup = ("          - name: test-pulse\n            schedule: every 4h\n"
            "            skill: test-skill\n")
@@ -157,6 +179,9 @@ def test_load_platform_duplicate_names(tmp_path: Path):
     p1 = write_agent(tmp_path, "dir-a", VALID)
     d2 = tmp_path / "agents" / "dir-b"
     d2.mkdir(parents=True)
+    skill = d2 / "profile/skills/test-skill"
+    skill.mkdir(parents=True)
+    (skill / "SKILL.md").write_text("# Test skill\n", encoding="utf-8")
     (d2 / "agent.yaml").write_text(p1.read_text(encoding="utf-8"), encoding="utf-8")
     with pytest.raises(SpecError, match="duplicate agent names"):
         load_platform(tmp_path)
@@ -165,4 +190,11 @@ def test_load_platform_duplicate_names(tmp_path: Path):
 def test_load_platform_empty(tmp_path: Path):
     (tmp_path / "agents").mkdir()
     with pytest.raises(SpecError, match="no agent.yaml"):
+        load_platform(tmp_path)
+
+
+def test_load_platform_rejects_missing_job_skill(tmp_path: Path):
+    manifest = write_agent(tmp_path, "test-agent", VALID)
+    (manifest.parent / "profile/skills/test-skill/SKILL.md").unlink()
+    with pytest.raises(SpecError, match="skill file not found"):
         load_platform(tmp_path)

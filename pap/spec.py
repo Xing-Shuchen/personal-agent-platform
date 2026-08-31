@@ -9,9 +9,10 @@ from typing import Any
 
 import yaml
 
+from .schedule import ScheduleError, validate_schedule
+
 API_VERSION = "pap/v1"
 NAME_RE = re.compile(r"^[a-z][a-z0-9-]*$")
-SCHEDULE_RE = re.compile(r"^(every \d+[smhd]|\d{2}:\d{2}(\s+\S+)*|cron .+)$")
 
 
 class SpecError(ValueError):
@@ -23,6 +24,7 @@ class ProactiveJob:
     name: str
     schedule: str
     skill: str
+    args: dict[str, Any] = field(default_factory=dict)
     attach_to_session: bool = True
     delivery: str = "user-home"
 
@@ -126,15 +128,21 @@ def load_spec(path: Path) -> AgentSpec:
                     raise _err(path, f"{where}.name: duplicate job {jname!r}")
                 seen_jobs.add(jname)
                 schedule = _require(path, raw, "schedule", where)
-                if not isinstance(schedule, str) or not SCHEDULE_RE.match(schedule):
+                try:
+                    validate_schedule(schedule)
+                except (ScheduleError, TypeError) as exc:
                     raise _err(
                         path,
-                        f"{where}.schedule: expected 'every Ns/m/h/d', 'HH:MM [tz ...]' "
-                        f"or 'cron ...', got {schedule!r}",
-                    )
+                        f"{where}.schedule: {exc}; got {schedule!r}",
+                    ) from exc
                 skill = _require(path, raw, "skill", where)
                 if not isinstance(skill, str) or not skill.strip():
                     raise _err(path, f"{where}.skill: must be a non-empty string")
+                job_args = raw.get("args", {})
+                if not isinstance(job_args, dict) or not all(
+                    isinstance(key, str) and key for key in job_args
+                ):
+                    raise _err(path, f"{where}.args: must be a mapping with string keys")
                 delivery = raw.get("delivery", "user-home")
                 if delivery not in ("user-home", "origin", "local"):
                     raise _err(path, f"{where}.delivery: unknown delivery {delivery!r}")
@@ -143,6 +151,7 @@ def load_spec(path: Path) -> AgentSpec:
                         name=jname,
                         schedule=schedule,
                         skill=skill,
+                        args=dict(job_args),
                         attach_to_session=bool(raw.get("attach_to_session", True)),
                         delivery=delivery,
                     )
@@ -175,7 +184,12 @@ def load_platform(root: Path) -> list[AgentSpec]:
         raise SpecError(f"no agents/ directory under {root}")
     specs = []
     for agent_yaml in sorted(agents_dir.glob("*/agent.yaml")):
-        specs.append(load_spec(agent_yaml))
+        loaded = load_spec(agent_yaml)
+        for job in loaded.jobs:
+            skill_file = agent_yaml.parent / "profile" / "skills" / job.skill / "SKILL.md"
+            if not skill_file.is_file():
+                raise _err(agent_yaml, f"job {job.name!r}: skill file not found: {skill_file}")
+        specs.append(loaded)
     if not specs:
         raise SpecError(f"no agent.yaml files found under {agents_dir}")
     names = [s.name for s in specs]

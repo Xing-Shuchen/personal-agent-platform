@@ -12,6 +12,32 @@ from pathlib import Path
 from typing import Any
 
 
+def load_json(path: Path, default: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Load a JSON object, returning a shallow copy of *default* if absent."""
+    if not path.exists():
+        return dict(default or {})
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        raise ValueError(f"{path}: expected a JSON object")
+    return data
+
+
+def save_json(path: Path, data: dict[str, Any]) -> None:
+    """Atomically write an arbitrary JSON object."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = _mkstemp(path)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2, sort_keys=True)
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
 def default_state() -> dict[str, Any]:
     return {"version": 1, "agents": {}}
 
@@ -30,18 +56,7 @@ def load_state(path: Path) -> dict[str, Any]:
 
 
 def save_state(path: Path, state: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd, tmp = _mkstemp(path)
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            json.dump(state, f, ensure_ascii=False, indent=2, sort_keys=True)
-        os.replace(tmp, path)
-    except BaseException:
-        try:
-            os.unlink(tmp)
-        except OSError:
-            pass
-        raise
+    save_json(path, state)
 
 
 def append_jsonl(path: Path, record: dict[str, Any]) -> None:
