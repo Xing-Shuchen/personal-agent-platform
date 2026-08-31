@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 """Install agents/*/ profiles into the local Hermes profile.
 
-Reads each ``agents/*/agent.yaml``, then for every agent with proactive jobs
-creates Hermes cron jobs (schedule + skill carried over from the spec), and
-copies the profile directory (SOUL.md, config.yaml, distribution.yaml,
-skills/) into the Hermes profile.
+Reads each ``agents/*/agent.yaml`` and copies the profile directory plus its
+skills into a Hermes profile. Job declarations remain owned by ``pap tick``;
+this installer intentionally creates no Hermes cron jobs.
 
 Dry-run by default; pass ``--apply`` to actually write.
 
@@ -17,26 +16,13 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import re
 import shutil
-import subprocess
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from pap.spec import AgentSpec, load_platform  # noqa: E402
-
-SCHEDULE_TO_CRON = {
-    "every 30m": "30m",
-    "every 1h": "1h",
-    "every 2h": "2h",
-    "every 4h": "4h",
-    "every 6h": "6h",
-    "every 12h": "12h",
-    "every 24h": "24h",
-    "every 1d": "24h",
-}
 
 def _real_home() -> str:
     """True user home even when $HOME is redirected (cron, daemons, sandboxes)."""
@@ -52,40 +38,21 @@ def _real_home() -> str:
 HERMES_HOME = Path(_real_home()) / ".hermes"
 
 
-def cron_schedule(spec_schedule: str) -> str | None:
-    """Pass the spec schedule through verbatim.
-
-    NOTE: the Hermes cron CLI treats a bare '1h' as a ONE-SHOT job
-    ('once in 1h', Repeat: 1) while 'every 1h' is recurring (Repeat: ∞).
-    Verified live 2026-08-28.
-    """
-    s = spec_schedule.strip()
-    if s.startswith(("every ", "cron ")) or re.match(r"^\d{2}:\d{2}", s):
-        return s
-    return None
-
-
 def hermes_profile_dir(profile: str) -> Path:
     return HERMES_HOME / "profiles" / profile
 
 
 def plan_jobs(spec: AgentSpec) -> list[dict]:
+    """Describe platform-owned jobs; the installer never creates cron jobs."""
     plan = []
     for job in spec.jobs:
         plan.append({
             "name": job.name,
-            "schedule": cron_schedule(job.schedule),
-            "spec_schedule": job.schedule,
+            "schedule": job.schedule,
             "skill": job.skill,
+            "args": job.args,
             "attach_to_session": job.attach_to_session,
             "delivery": job.delivery,
-            "prompt": (
-                f"Run the '{job.skill}' skill exactly as written and follow its "
-                f"procedure. Remember the agent SOUL discipline: if no candidate "
-                f"passes the shared gate, respond with exactly [SILENT]. "
-                f"IMPORTANT: all user-facing output MUST be in simplified Chinese "
-                f"(简体中文); evidence anchors and identifiers stay in their original form."
-            ),
         })
     return plan
 
@@ -118,15 +85,10 @@ def cmd_list(specs: list[AgentSpec], root: Path, profile: str) -> int:
     for spec in specs:
         print(f"\nagent: {spec.name}  (proactive={spec.proactive_enabled})")
         if not spec.proactive_enabled:
-            print("  no cron jobs (proactive disabled)")
-            continue
+            print("  no platform jobs (proactive disabled)")
         for job in plan_jobs(spec):
-            if job["schedule"] is None:
-                print(f"  job {job['name']}: UNSUPPORTED schedule {job['spec_schedule']!r} -> skipped")
-            else:
-                print(f"  job {job['name']}: cron '{job['schedule']}' (spec: "
-                      f"{job['spec_schedule']}) skill={job['skill']} "
-                      f"delivery={job['delivery']}")
+            print(f"  platform job {job['name']}: '{job['schedule']}' skill={job['skill']} "
+                  f"delivery={job['delivery']} args={json.dumps(job['args'], ensure_ascii=False)}")
         copy = plan_profile_copy(spec, root, profile_dir)
         print(f"  profile copy: {copy['src']} -> {copy['dst']}")
         for sk in plan_skill_copies(spec, root, profile_dir):
@@ -162,58 +124,10 @@ def cmd_apply(specs: list[AgentSpec], root: Path, profile: str, dry_run: bool) -
             if not dry_run:
                 shutil.copytree(sk["src"], sk["dst"], dirs_exist_ok=True)
 
-        # 2. Create cron jobs for proactive schedules.
-        if not spec.proactive_enabled:
-            continue
-        for job in plan_jobs(spec):
-            if job["schedule"] is None:
-                print(f"[{spec.name}] skip job {job['name']}: unsupported schedule "
-                      f"{job['spec_schedule']!r}", file=sys.stderr)
-                continue
-            cmd = [
-                "hermes", "cron", "create",
-                job["schedule"],
-                job["prompt"],
-                "--name", job["name"],
-                "--skill", job["skill"],
-            ]
-            if job["delivery"] == "user-home":
-                cmd += ["--deliver", "feishu"]
-            elif job["delivery"] == "local":
-                cmd += ["--deliver", "local"]
-            # 'origin' -> omit --deliver (default behavior)
-            print(f"[{spec.name}] {'DRY-RUN ' if dry_run else ''}cron create: "
-                  f"{job['name']} ({job['schedule']})")
-            if not dry_run:
-                if job["name"] in _existing_job_names():
-                    print(f"  skipped: job '{job['name']}' already exists "
-                          f"(update via 'hermes cron edit' or remove first)")
-                    continue
-                result = subprocess.run(cmd, capture_output=True, text=True)
-                if result.returncode != 0:
-                    print(f"  FAILED: {result.stderr.strip() or result.stdout.strip()}",
-                          file=sys.stderr)
-                else:
-                    job_id = "?"
-                    for line in result.stdout.splitlines():
-                        if line.startswith("Created job:"):
-                            job_id = line.split(":", 1)[1].strip()
-                            break
-                    print(f"  created job_id={job_id}")
-
     if dry_run:
         print("\nDry run only. Re-run with --apply to write changes.")
+    print("Scheduling remains platform-owned. Configure one system cron entry for `pap tick`.")
     return 0
-
-
-def _existing_job_names() -> set[str]:
-    """Names of current Hermes cron jobs (for idempotent installs)."""
-    try:
-        result = subprocess.run(["hermes", "cron", "list"], capture_output=True,
-                                text=True, timeout=30)
-    except (OSError, subprocess.TimeoutExpired):
-        return set()
-    return set(re.findall(r"Name:\s+(\S+)", result.stdout))
 
 
 def main(argv: list[str] | None = None) -> int:

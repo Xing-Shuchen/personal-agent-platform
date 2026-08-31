@@ -81,7 +81,9 @@ def test_install_agents_list_only():
     assert "agent: serendipity" in r.stdout
     assert "every 4h" in r.stdout
     assert "agent: intelligence" in r.stdout
-    assert "no cron jobs (proactive disabled)" in r.stdout
+    assert "no platform jobs (proactive disabled)" in r.stdout
+    assert "platform job world-follow-high" in r.stdout
+    assert "cron create" not in r.stdout
 
 
 def test_install_agents_rejects_bad_profile():
