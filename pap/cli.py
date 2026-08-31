@@ -3,12 +3,47 @@
 from __future__ import annotations
 
 import argparse
+from dataclasses import asdict
+from datetime import datetime
 import json
+import os
 import sys
 from pathlib import Path
 
 from . import spec as spec_mod
 from . import gate as gate_mod
+from . import run as run_mod
+from . import artifact as artifact_mod
+from . import scheduler as scheduler_mod
+from .state import load_json
+
+
+def _specs(root: Path) -> list[spec_mod.AgentSpec]:
+    return spec_mod.load_platform(root)
+
+
+def _find_spec(root: Path, name: str) -> spec_mod.AgentSpec:
+    for spec in _specs(root):
+        if spec.name == name:
+            return spec
+    raise spec_mod.SpecError(f"unknown agent {name!r}")
+
+
+def _path_under(root: Path, value: Path) -> Path:
+    return value if value.is_absolute() else root / value
+
+
+def _parse_kv(values: list[str]) -> dict[str, object]:
+    result: dict[str, object] = {}
+    for value in values:
+        key, separator, raw = value.partition("=")
+        if not separator or not key:
+            raise ValueError(f"expected KEY=VALUE, got {value!r}")
+        try:
+            result[key] = json.loads(raw)
+        except json.JSONDecodeError:
+            result[key] = raw
+    return result
 
 
 def _cmd_validate(args: argparse.Namespace) -> int:
@@ -19,7 +54,7 @@ def _cmd_validate(args: argparse.Namespace) -> int:
         print(f"INVALID: {e}", file=sys.stderr)
         return 1
     if args.json:
-        print(json.dumps([s.__dict__ | {"source_path": str(s.source_path)} for s in specs],
+        print(json.dumps([asdict(s) | {"source_path": str(s.source_path)} for s in specs],
                          ensure_ascii=False, indent=2, default=str))
     else:
         for s in specs:
@@ -27,6 +62,156 @@ def _cmd_validate(args: argparse.Namespace) -> int:
             print(f"OK {s.name}: profile={s.profile_name} caps={len(s.capabilities)} "
                   f"proactive={s.proactive_enabled} jobs=[{jobs}]")
         print(f"{len(specs)} agent spec(s) valid.")
+    return 0
+
+
+def _cmd_agents(args: argparse.Namespace) -> int:
+    root = Path(args.root).resolve()
+    try:
+        specs = _specs(root)
+    except spec_mod.SpecError as exc:
+        print(f"INVALID: {exc}", file=sys.stderr)
+        return 1
+    for spec in specs:
+        mode = spec.proactive_class if spec.proactive_enabled else "reactive"
+        print(f"{spec.name}\t{mode}\t{len(spec.jobs)} job(s)\t{spec.description}")
+    return 0
+
+
+def _cmd_jobs(args: argparse.Namespace) -> int:
+    root = Path(args.root).resolve()
+    try:
+        specs = _specs(root)
+    except spec_mod.SpecError as exc:
+        print(f"INVALID: {exc}", file=sys.stderr)
+        return 1
+    for spec in specs:
+        if args.agent and spec.name != args.agent:
+            continue
+        for job in spec.jobs:
+            rendered_args = json.dumps(job.args, ensure_ascii=False, sort_keys=True)
+            print(f"{spec.name}/{job.name}\t{job.schedule}\t{job.skill}\t"
+                  f"delivery={job.delivery}\targs={rendered_args}")
+    return 0
+
+
+def _cmd_invoke(args: argparse.Namespace) -> int:
+    root = Path(args.root).resolve()
+    try:
+        spec = _find_spec(root, args.agent)
+        job_args = _parse_kv(args.arg)
+        result = run_mod.invoke(
+            root=root,
+            spec=spec,
+            skill=args.skill,
+            input_text=args.input or "",
+            args=job_args,
+            trigger={"type": "manual"},
+            run_log=_path_under(root, args.runs),
+        )
+    except (spec_mod.SpecError, ValueError) as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+    if result.response:
+        print(result.response)
+    if result.error:
+        print(result.error, file=sys.stderr)
+    return result.returncode
+
+
+def _cmd_tick(args: argparse.Namespace) -> int:
+    root = Path(args.root).resolve()
+    now = None
+    if args.now:
+        try:
+            now = datetime.fromisoformat(args.now)
+            if now.tzinfo is None:
+                now = now.astimezone()
+        except ValueError as exc:
+            print(f"ERROR: invalid --now: {exc}", file=sys.stderr)
+            return 2
+    try:
+        results = scheduler_mod.tick(
+            root,
+            now=now,
+            state_path=_path_under(root, args.state),
+            run_log=_path_under(root, args.runs),
+            delivery_target=args.delivery_target,
+            dry_run=args.dry_run,
+        )
+    except (spec_mod.SpecError, ValueError) as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+    failed = False
+    for item in results:
+        run_id = item.run.run_id if item.run else "-"
+        status = item.run.status if item.run else "due"
+        print(f"{item.job_key}\t{item.slot}\t{status}\t{run_id}\tdelivery={item.delivery}")
+        if item.run and item.run.status != "success":
+            failed = True
+        if item.delivery in {"failed", "unconfigured"}:
+            failed = True
+    return 1 if failed else 0
+
+
+def _cmd_runs(args: argparse.Namespace) -> int:
+    root = Path(args.root).resolve()
+    records = run_mod.runs(_path_under(root, args.runs))
+    if args.run_id:
+        records = [record for record in records if record.get("run_id") == args.run_id]
+        if not records:
+            print(f"run not found: {args.run_id}", file=sys.stderr)
+            return 1
+    if args.agent:
+        records = [record for record in records if record.get("agent_id") == args.agent]
+    records = records[-args.limit:]
+    if args.json or args.run_id:
+        print(json.dumps(records[0] if args.run_id else records,
+                         ensure_ascii=False, indent=2, default=str))
+    else:
+        for record in records:
+            print(f"{record.get('run_id')}\t{record.get('agent_id')}\t"
+                  f"{record.get('skill')}\t{record.get('status', 'running')}\t"
+                  f"{record.get('started_at')}")
+    return 0
+
+
+def _cmd_artifact(args: argparse.Namespace) -> int:
+    root = Path(args.root).resolve()
+    log_path = _path_under(root, args.log)
+    if args.command == "append":
+        try:
+            payload = json.loads(args.payload) if args.payload else {}
+            provenance = json.loads(args.provenance) if args.provenance else {}
+        except json.JSONDecodeError as exc:
+            print(f"ERROR: invalid JSON: {exc}", file=sys.stderr)
+            return 2
+        try:
+            record = artifact_mod.append(
+                args.type, args.producer, payload,
+                provenance=provenance, log_path=log_path,
+            )
+        except artifact_mod.ArtifactError as exc:
+            print(f"ERROR: {exc}", file=sys.stderr)
+            return 2
+        print(record.id)
+        return 0
+    records = artifact_mod.artifacts(log_path, artifact_type=args.type,
+                                     producer=args.producer)
+    for record in records[-args.limit:]:
+        print(json.dumps(record, ensure_ascii=False, sort_keys=True))
+    return 0
+
+
+def _cmd_status(args: argparse.Namespace) -> int:
+    root = Path(args.root).resolve()
+    state_path = _path_under(root, args.state)
+    state = load_json(state_path, {"version": 1, "jobs": {}})
+    specs = _specs(root)
+    print(f"agents={len(specs)} jobs={sum(len(spec.jobs) for spec in specs)}")
+    print(f"scheduler_state={state_path} last_tick={state.get('last_tick_at', 'never')}")
+    print(f"delivery_target={'configured' if os.environ.get('PAP_DELIVERY_TARGET') else 'unset'}")
+    print(f"hermes_home={'configured' if os.environ.get('PAP_HERMES_HOME') else 'default'}")
     return 0
 
 
@@ -54,6 +239,65 @@ def build_parser() -> argparse.ArgumentParser:
     p_validate.add_argument("--root", default=".", help="platform repo root (default: cwd)")
     p_validate.add_argument("--json", action="store_true", help="machine-readable output")
     p_validate.set_defaults(func=_cmd_validate)
+
+    p_agents = sub.add_parser("agents", help="list declared agents")
+    p_agents.add_argument("--root", default=".")
+    p_agents.set_defaults(func=_cmd_agents)
+
+    p_jobs = sub.add_parser("jobs", help="list manifest-declared jobs")
+    p_jobs.add_argument("--root", default=".")
+    p_jobs.add_argument("--agent")
+    p_jobs.set_defaults(func=_cmd_jobs)
+
+    p_invoke = sub.add_parser("invoke", help="invoke one agent skill through Hermes")
+    p_invoke.add_argument("agent")
+    p_invoke.add_argument("skill")
+    p_invoke.add_argument("input", nargs="?", default="")
+    p_invoke.add_argument("--arg", action="append", default=[], metavar="KEY=VALUE")
+    p_invoke.add_argument("--root", default=".")
+    p_invoke.add_argument("--runs", type=Path, default=run_mod.DEFAULT_RUN_LOG)
+    p_invoke.set_defaults(func=_cmd_invoke)
+
+    p_tick = sub.add_parser("tick", help="run due manifest jobs once")
+    p_tick.add_argument("--root", default=".")
+    p_tick.add_argument("--state", type=Path, default=scheduler_mod.DEFAULT_SCHEDULER_STATE)
+    p_tick.add_argument("--runs", type=Path, default=run_mod.DEFAULT_RUN_LOG)
+    p_tick.add_argument("--delivery-target", help="Hermes send target (or PAP_DELIVERY_TARGET)")
+    p_tick.add_argument("--now", help="ISO timestamp override (testing/operations)")
+    p_tick.add_argument("--dry-run", action="store_true", help="show due jobs without reserving/running")
+    p_tick.set_defaults(func=_cmd_tick)
+
+    p_runs = sub.add_parser("runs", help="inspect append-only run history")
+    p_runs.add_argument("run_id", nargs="?")
+    p_runs.add_argument("--agent")
+    p_runs.add_argument("--limit", type=int, default=20)
+    p_runs.add_argument("--json", action="store_true")
+    p_runs.add_argument("--root", default=".")
+    p_runs.add_argument("--runs", type=Path, default=run_mod.DEFAULT_RUN_LOG)
+    p_runs.set_defaults(func=_cmd_runs)
+
+    p_status = sub.add_parser("status", help="show platform scheduler status")
+    p_status.add_argument("--root", default=".")
+    p_status.add_argument("--state", type=Path, default=scheduler_mod.DEFAULT_SCHEDULER_STATE)
+    p_status.set_defaults(func=_cmd_status)
+
+    p_artifact = sub.add_parser("artifact", help="append-only cross-agent artifacts")
+    artifact_sub = p_artifact.add_subparsers(dest="command", required=True)
+    p_art_append = artifact_sub.add_parser("append", help="append one artifact")
+    p_art_append.add_argument("type", help="artifact type, e.g. news.thread.created")
+    p_art_append.add_argument("producer", help="producing agent id")
+    p_art_append.add_argument("--payload", help="JSON object payload")
+    p_art_append.add_argument("--provenance", help="JSON object provenance")
+    p_art_append.add_argument("--log", type=Path, default=artifact_mod.DEFAULT_ARTIFACT_LOG)
+    p_art_append.add_argument("--root", default=".")
+    p_art_append.set_defaults(func=_cmd_artifact)
+    p_art_list = artifact_sub.add_parser("list", help="list artifacts (JSON lines)")
+    p_art_list.add_argument("--type", help="filter by artifact type")
+    p_art_list.add_argument("--producer", help="filter by producing agent")
+    p_art_list.add_argument("--limit", type=int, default=50)
+    p_art_list.add_argument("--log", type=Path, default=artifact_mod.DEFAULT_ARTIFACT_LOG)
+    p_art_list.add_argument("--root", default=".")
+    p_art_list.set_defaults(func=_cmd_artifact)
 
     p_gate = sub.add_parser("gate", help="shared proactive gate (exit 0 = allow, 1 = deny)")
     p_gate.add_argument("--agent", required=True, help="agent name")
