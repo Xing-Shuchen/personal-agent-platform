@@ -18,42 +18,49 @@ spec:
     class: ambient
     desired_jobs:
       - name: world-follow-high
-        schedule: 17 */2 * * *
+        schedule: "0 8,10,12,14,16,18,20,22 * * *"
+        skill: news-follow
+        args:
+          priority: high
+        attach_to_session: false
+        delivery: user-home
+      - name: world-follow-night
+        schedule: "0 0,4 * * *"
         skill: news-follow
         args:
           priority: high
         attach_to_session: false
         delivery: user-home
       - name: world-follow-normal
-        schedule: 43 */6 * * *
+        schedule: "43 */6 * * *"
         skill: news-follow
         args:
           priority: normal
         attach_to_session: false
         delivery: local
       - name: world-reflect
-        schedule: 20 2 * * *
+        schedule: "20 2 * * *"
         skill: news-reflect
         args:
           window: 30d
         attach_to_session: false
         delivery: local
       - name: world-crosslink
-        schedule: 50 2 * * *
+        schedule: "50 2 * * *"
         skill: personal-crosslink
         args:
           window: 7d
         attach_to_session: false
         delivery: local
       - name: world-daily-report
-        schedule: 30 8 * * *
+        schedule: "30 8 * * *"
         skill: news-synthesize
         args:
           mode: daily
         attach_to_session: true
         delivery: user-home
       - name: world-weekly-report
-        schedule: 0 20 * * 0
+        schedule: "0 20 * * 0"
         skill: news-synthesize
         args:
           mode: weekly
