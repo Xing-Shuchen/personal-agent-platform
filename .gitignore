@@ -8,6 +8,7 @@ __pycache__/
 # Runtime state (gate db, audit logs)
 var/state/
 var/world-historian/
+var/agents/
 agents/*/profile/var/
 
 # Local secrets / editor
