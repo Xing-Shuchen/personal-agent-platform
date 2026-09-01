@@ -58,11 +58,16 @@ spec:
           window: 7d
         attach_to_session: false
         delivery: local
+      - name: world-morning-brief
+        schedule: "0 8 * * *"
+        skill: news-morning-brief
+        args: {}
+        attach_to_session: true
+        delivery: user-home
       - name: world-daily-report
-        schedule: "30 8 * * *"
-        skill: news-synthesize
-        args:
-          mode: daily
+        schedule: "0 0 * * *"
+        skill: news-daily-stats
+        args: {}
         attach_to_session: true
         delivery: user-home
       - name: world-weekly-report
