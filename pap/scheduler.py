@@ -149,8 +149,35 @@ def due_jobs(
 
 
 def _intentional_silence(response: str) -> bool:
-    marker = " ".join(response.strip().upper().replace("_", " ").split())
-    return marker in {"[SILENT]", "SILENT", "NO REPLY"}
+    """Recognize an intentional-silence marker in a run's final response.
+
+    The strict contract is the entire response being exactly one marker, but
+    real agents drift into "body + [SILENT]" or "[SILENT] body" shapes (the
+    news-follow runs leaked to delivery on 2026-09-01).  Mirror Hermes cron's
+    ``_is_cron_silence_response``: suppress when a marker is the whole
+    response, appears as its own first/last line, or is a bracketed
+    ``[SILENT]`` prefix.  A token buried mid-sentence in a genuine report is
+    still delivered.
+    """
+    if not response:
+        return False
+    stripped = response.strip()
+    if not stripped:
+        return False
+
+    def _is_token(line: str) -> bool:
+        return " ".join(line.strip().upper().replace("_", " ").split()) in {
+            "[SILENT]",
+            "SILENT",
+            "NO REPLY",
+        }
+
+    if _is_token(stripped):
+        return True
+    lines = [ln for ln in stripped.splitlines() if ln.strip()]
+    if lines and (_is_token(lines[0]) or _is_token(lines[-1])):
+        return True
+    return stripped.upper().startswith("[SILENT]")
 
 
 def _deliver(

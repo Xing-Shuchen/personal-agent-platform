@@ -55,7 +55,11 @@ only genuine deltas through `runtime/cli.py store-bundle`. Supersede or
 dispute claims explicitly; never overwrite their historical state. Update each
 thread's last-check state even when no event is added.
 
-This is a collection job. End with `[SILENT]` when there is no
-interruption-worthy change. If a change merits proactive interruption, pass it
-through `"$PAP_ROOT/.venv/bin/pap" gate --agent world-historian` with a stable event/thread key before
-returning one concise Chinese update.
+This is a collection job. When there is no interruption-worthy change, the
+ENTIRE final response must be exactly the single marker `[SILENT]` — no work
+summary, no rejection notes, no Chinese「无变化」prose, nothing before or
+after. Any surrounding text makes it a normal delivery and spams the user
+(observed 2026-09-01: a work-summary + [SILENT] response leaked to Feishu). If a change
+merits proactive interruption, pass it through
+`"$PAP_ROOT/.venv/bin/pap" gate --agent world-historian` with a stable
+event/thread key before returning one concise Chinese update.

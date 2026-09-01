@@ -86,7 +86,7 @@ PAP_DELIVERY_TARGET=weixin
 * * * * * cd /home/xingzeng/personal-agent-platform && /home/xingzeng/personal-agent-platform/.venv/bin/pap tick
 ```
 
-`PAP_HERMES_HOME` 选择调用模型、skills 和消息凭据所属的独立 Hermes profile；未设置时使用 Hermes 默认 home。`PAP_DELIVERY_TARGET` 使用 `hermes send --to` 的目标格式，例如 bare platform 或 `platform:chat_id`。返回 `[SILENT]` 的 run 永不投递；`delivery: local` 的 job 只更新本地状态。如果机器上已有旧的 Hermes agent cron，安装器不会擅自删除，迁移到 `pap tick` 后应人工确认并停用旧 job，避免双跑。
+`PAP_HERMES_HOME` 选择调用模型、skills 和消息凭据所属的独立 Hermes profile；未设置时使用 Hermes 默认 home。`PAP_DELIVERY_TARGET` 使用 `hermes send --to` 的目标格式，例如 bare platform 或 `platform:chat_id`。返回 `[SILENT]`（整条响应恰为标记，或标记独占首行/末行、`[SILENT]` 前缀）的 run 永不投递；`delivery: local` 的 job 只更新本地状态。如果机器上已有旧的 Hermes agent cron，安装器不会擅自删除，迁移到 `pap tick` 后应人工确认并停用旧 job，避免双跑。
 
 ## Artifact
 

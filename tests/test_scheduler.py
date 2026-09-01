@@ -79,3 +79,30 @@ def test_failed_slot_is_retried_after_delay(tmp_path, monkeypatch):
     assert first[0].run.status == "failed"
     assert retry[0].slot == first[0].slot
     assert len(calls) == 2
+
+
+def test_intentional_silence_marker_shapes():
+    from pap.scheduler import _intentional_silence
+
+    # strict contract: the whole response is exactly a marker
+    assert _intentional_silence("[SILENT]")
+    assert _intentional_silence("SILENT")
+    assert _intentional_silence("NO REPLY")
+    assert _intentional_silence("NO_REPLY")
+    assert _intentional_silence("  [SILENT]  ")
+
+    # drift shapes that previously leaked to delivery (news-follow 2026-09-01):
+    # marker as its own last line after a work summary
+    assert _intentional_silence("工作集核对完毕：无到期线程。\n[SILENT]")
+    assert _intentional_silence("2 deals filtered\n\n[SILENT]")
+    # marker as its own first line
+    assert _intentional_silence("[SILENT]\n无值得中断的变化")
+    # bracketed marker as same-line prefix
+    assert _intentional_silence("[SILENT] 无值得中断的变化")
+
+    # a token buried mid-sentence is a genuine report and must deliver
+    assert not _intentional_silence("我考虑过保持 [SILENT] 但这里有重要新闻")
+    assert not _intentional_silence("silent retry succeeded")
+    assert not _intentional_silence("正文最后一句提到 silent 字样")
+    assert not _intentional_silence("")
+    assert not _intentional_silence("   ")
