@@ -13,7 +13,8 @@ The input is one JSON object. Top-level keys are optional lists named:
 
 ```text
 sources, entities, threads, events, claims, questions, watch_queries,
-relations, interpretations, personal_links, discovery_candidates, reports
+relations, interpretations, personal_links, discovery_candidates, reports,
+quotes
 ```
 
 Every item may have an `id`. If omitted, the runtime generates a stable ID
@@ -96,6 +97,18 @@ Important fields:
   `relation_type`, `explanation`, `confidence`, and minimal evidence IDs.
 - Discovery candidates require `candidate_type`, `title`, and
   `relation_score`. Candidates remain non-active until explicitly promoted.
+- Quotes store verbatim originals (发言原话、公开信全文/节选) attached to an
+  event: `event_ref` (and optionally `source_ref`), `speaker`, `title`,
+  `quote_text`, `quote_format` (`text` or `markdown`), `url`, `fetched_at`,
+  and optional `slug`. With `slug`, the Obsidian render writes the full text
+  to `原文素材/<slug>.md` (frontmatter: type/thread_id/event_id/speaker/
+  title/url) and the thread file shows only a preview plus an Obsidian link
+  `[[原文素材/<slug>|…]]`. Without `slug`, the quote text is inlined in the
+  thread file. Refs are bundle-local: cross-bundle references must use
+  actual IDs (e.g. `src_...`, `evt_...`, `qte_...`), not earlier refs.
+  For X posts (e.g. @justinsuntron) verbatim full text often has no
+  publicly indexed reprint — use the user's pasted original when provided,
+  or clearly label multi-source-verified excerpts as 节选, never as 全文.
 - Reports require `mode`, `window_end`, `body`, and `significance`.
 - The store-bundle result includes `touched_threads`: threads this bundle
   created or modified. Bundles that touch no thread (for example pure
