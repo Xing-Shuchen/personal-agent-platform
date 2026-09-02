@@ -326,6 +326,46 @@ def store_bundle(conn: sqlite3.Connection, bundle: dict[str, Any]) -> dict[str, 
             ):
                 touched.add(row[0])
 
+        for item in _items(bundle, "quotes"):
+            quote_text = str(_required(item, "quote_text", "quote"))
+            speaker = item.get("speaker")
+            title = item.get("title")
+            event_id = resolve(item["event_ref"], "quote.event_ref") if item.get("event_ref") else None
+            source_id = resolve(item["source_ref"], "quote.source_ref") if item.get("source_ref") else None
+            if event_id is None and source_id is None:
+                raise ChronicleError("quote requires event_ref and/or source_ref")
+            quote_format = item.get("quote_format", "text")
+            if quote_format not in ("text", "markdown"):
+                raise ChronicleError("quote.quote_format must be 'text' or 'markdown'")
+            identifier = str(item.get("id") or _stable(
+                "qte", speaker, title, quote_text[:400]
+            ))
+            remember(item, identifier)
+            slug = item.get("slug")
+            if slug is not None and (not isinstance(slug, str) or not slug.strip()):
+                raise ChronicleError("quote.slug must be a non-empty string when present")
+            conn.execute(
+                """INSERT INTO quotes
+                   (id, event_id, source_id, speaker, title, quote_text, quote_format,
+                    url, slug, fetched_at, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(id) DO UPDATE SET
+                     event_id=excluded.event_id, source_id=excluded.source_id,
+                     speaker=excluded.speaker, title=excluded.title,
+                     quote_text=excluded.quote_text, quote_format=excluded.quote_format,
+                     url=excluded.url, slug=excluded.slug, fetched_at=excluded.fetched_at,
+                     updated_at=excluded.updated_at""",
+                (identifier, event_id, source_id, speaker, title, quote_text,
+                 quote_format, item.get("url"), slug,
+                 item.get("fetched_at", now), now, now),
+            )
+            counts["quotes"] = counts.get("quotes", 0) + 1
+            if event_id:
+                for row in conn.execute(
+                    "SELECT thread_id FROM thread_events WHERE event_id = ?", (event_id,)
+                ):
+                    touched.add(row[0])
+
         for item in _items(bundle, "questions"):
             thread_id = resolve(_required(item, "thread_ref", "question"), "question.thread_ref")
             question = str(_required(item, "question", "question"))
@@ -545,6 +585,14 @@ def thread_snapshot(conn: sqlite3.Connection, thread_id: str) -> dict[str, Any] 
             """SELECT entities.name, entities.kind, event_entities.role
                FROM event_entities JOIN entities ON entities.id = event_entities.entity_id
                WHERE event_entities.event_id = ? ORDER BY entities.name""",
+            (event["id"],),
+        )]
+        event["quotes"] = [dict(item) for item in conn.execute(
+            """SELECT quotes.*, sources.title AS source_title,
+                      sources.publisher AS source_publisher,
+                      sources.source_kind AS source_kind
+               FROM quotes LEFT JOIN sources ON sources.id = quotes.source_id
+               WHERE quotes.event_id = ? ORDER BY quotes.created_at, quotes.id""",
             (event["id"],),
         )]
     snapshot["events"] = events
