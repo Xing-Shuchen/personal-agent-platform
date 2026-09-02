@@ -121,6 +121,12 @@ def invoke(
             "--oneshot", _prompt(skill, skill_text, input_text, args),
             "--usage-file", str(usage_path),
         ]
+        if spec.model:
+            provider, _, model_name = spec.model.partition("/")
+            if model_name:
+                command += ["--provider", provider, "-m", model_name]
+            else:
+                command += ["-m", provider]
         timeout = timeout_seconds or int(os.environ.get("PAP_RUN_TIMEOUT_SECONDS", "900"))
         completed = runner(
             command,

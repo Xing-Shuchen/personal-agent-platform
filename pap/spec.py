@@ -39,6 +39,7 @@ class AgentSpec:
     proactive_class: str | None = None
     jobs: list[ProactiveJob] = field(default_factory=list)
     private_state: list[str] = field(default_factory=list)
+    model: str | None = None
     source_path: Path | None = None
 
 
@@ -163,6 +164,10 @@ def load_spec(path: Path) -> AgentSpec:
     if not isinstance(private_state, list) or not all(isinstance(s, str) and s for s in private_state):
         raise _err(path, "spec.state.private: must be a list of non-empty strings")
 
+    model = spec.get("model")
+    if model is not None and (not isinstance(model, str) or not model.strip()):
+        raise _err(path, "spec.model: must be a non-empty string in 'provider/model' form")
+
     return AgentSpec(
         name=name,
         description=description,
@@ -172,6 +177,7 @@ def load_spec(path: Path) -> AgentSpec:
         proactive_class=proactive_class,
         jobs=jobs,
         private_state=list(private_state),
+        model=model,
         source_path=path,
     )
 
