@@ -87,6 +87,20 @@ def _one_line(value: Any) -> str:
     return _WHITESPACE.sub(" ", str(value)).strip()
 
 
+_TAG_HASH = re.compile(r"(?<![\\#])#")  # 正文 # 会渲染为 Obsidian tag
+
+
+def _escape_tags(value: Any) -> str:
+    """Escape bare ``#`` so Obsidian does not parse body text as tags.
+
+    Applies to database-sourced text (event summaries, claim statements,
+    questions…) rendered into the note body. Leading ``#`` of markdown
+    headings is written by render_snapshot itself and never passes through
+    here, and ``\\#`` sequences already present are left untouched.
+    """
+    return _TAG_HASH.sub(r"\\#", str(value))
+
+
 def _fmt(value: Any) -> str:
     return str(value) if value not in (None, "") else "—"
 
@@ -137,7 +151,7 @@ def render_snapshot(snapshot: dict[str, Any], synced_at: str,
     tid = snapshot["id"]
     lines: list[str] = [_frontmatter(snapshot, synced_at), ""]
 
-    lines.append(f"# {_one_line(snapshot.get('title')) or tid}\n")
+    lines.append(f"# {_escape_tags(_one_line(snapshot.get('title'))) or tid}\n")
     lines.append(
         f"> [!info] 本文件由 World Historian 从 Chronicle 数据库自动生成并覆盖同步"
         f"（thread_id: `{tid}`）。机器生成部分请勿手工编辑；个人批注写在文末"
@@ -154,7 +168,7 @@ def render_snapshot(snapshot: dict[str, Any], synced_at: str,
     )
     if snapshot.get("seed_text"):
         lines.append(
-            f"- **种子**：{_one_line(snapshot['seed_text'])}"
+            f"- **种子**：{_escape_tags(_one_line(snapshot['seed_text']))}"
             f"（{snapshot.get('seed_type', 'user_instruction')}）"
         )
     thread_entities = snapshot.get("thread_entities", [])
@@ -167,7 +181,7 @@ def render_snapshot(snapshot: dict[str, Any], synced_at: str,
     lines.append("")
 
     events = snapshot.get("events", [])
-    labels = {e["id"]: _one_line(e.get("summary")) or e["id"] for e in events}
+    labels = {e["id"]: _escape_tags(_one_line(e.get("summary"))) or e["id"] for e in events}
     lines.append("## 时间线\n")
     if not events:
         lines.append("_（尚无事件）_\n")
@@ -202,7 +216,7 @@ def render_snapshot(snapshot: dict[str, Any], synced_at: str,
                 origin = f"{source}（{publisher}，{kind}）" if publisher \
                     else f"{source}（{kind}）"
                 lines.append(
-                    f"  - 「{_one_line(claim['statement'])}」—— {origin} · "
+                    f"  - 「{_escape_tags(_one_line(claim['statement']))}」—— {origin} · "
                     f"置信度 {float(claim.get('confidence', 0.5)):.2f} · "
                     f"{claim.get('status', 'active')}{superseded}"
                 )
@@ -253,7 +267,7 @@ def render_snapshot(snapshot: dict[str, Any], synced_at: str,
     for question in questions:
         status = question.get("status", "open")
         if status == "open":
-            lines.append(f"- [ ] {_one_line(question['question'])}")
+            lines.append(f"- [ ] {_escape_tags(_one_line(question['question']))}")
         else:
             marker = "x" if status == "answered" else " "
             answer = (
@@ -261,7 +275,7 @@ def render_snapshot(snapshot: dict[str, Any], synced_at: str,
                 if question.get("answer_event_id") else ""
             )
             lines.append(
-                f"- [{marker}] {_one_line(question['question'])}{answer}"
+                f"- [{marker}] {_escape_tags(_one_line(question['question']))}{answer}"
                 f"（{status}）"
             )
     lines.append("")
@@ -300,7 +314,7 @@ def render_snapshot(snapshot: dict[str, Any], synced_at: str,
         earlier = _endpoint_label("event", item["earlier_event_id"], snapshot)
         later = _endpoint_label("event", item["later_event_id"], snapshot)
         lines.append(
-            f"- 「{_one_line(item['statement'])}」"
+            f"- 「{_escape_tags(_one_line(item['statement']))}」"
             f"（{earlier} → {later}）· 置信度 {float(item.get('confidence', 0.5)):.2f} · "
             f"{item.get('status', 'active')}"
         )
