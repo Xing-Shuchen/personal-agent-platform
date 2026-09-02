@@ -31,5 +31,16 @@ Treat the input as a seed for an ongoing thread, not as an article title.
    evidence, unresolved questions, uncertainty, and whether an existing thread
    was reused.
 
+## Math in stored text
+
+Event summaries, claim statements, and open questions are projected verbatim
+into the Obsidian vault, where `$...$` (inline) and `$$...$$` (display) render
+as LaTeX. When storing mathematical content, write real LaTeX inside `$...$`
+instead of Unicode notation: `$Y(X) \gg X\log X/\log_3 X$`, not
+`Y(X)≫X·logX/log₃X`; `$\pi_1(X)$`, not `π₁(X)`. Narrative prose stays plain —
+only actual formulas/expressions get `$` delimiters. Never use Unicode
+sub/superscripts inside formulas (`log₃`, `π₁` → `\log_3`, `\pi_1`);
+`S⁶` in running prose may stay, but inside a formula write `$S^6$`.
+
 Initialize or inspect storage with `runtime/cli.py init`, `search`, `thread`,
 and `stats`. Never place the SQLite database or raw snapshots under `profile/`.

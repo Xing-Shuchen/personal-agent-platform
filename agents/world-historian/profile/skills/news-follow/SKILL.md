@@ -55,6 +55,14 @@ only genuine deltas through `runtime/cli.py store-bundle`. Supersede or
 dispute claims explicitly; never overwrite their historical state. Update each
 thread's last-check state even when no event is added.
 
+## Math in stored text
+
+Stored text is projected verbatim into Obsidian, which renders `$...$` (inline)
+and `$$...$$` (display) as LaTeX. Write real LaTeX inside `$...$` for any
+formula (`$G(T) \gg \log T\,\log_2 T/\log_4 T$`, `$\pi_1(X)$`), never Unicode
+math notation (`≫`, `log₂T`, `π₁`). Narrative prose stays plain — only actual
+formulas/expressions get `$` delimiters.
+
 This is a collection job. When there is no interruption-worthy change, the
 ENTIRE final response must be exactly the single marker `[SILENT]` — no work
 summary, no rejection notes, no Chinese「无变化」prose, nothing before or
