@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -212,6 +213,37 @@ def render_snapshot(snapshot: dict[str, Any], synced_at: str,
                 for e in event_entities
             )
             lines.append(f"- 涉及实体：{names}")
+        quotes = event.get("quotes", [])
+        for quote in quotes:
+            speaker = _one_line(quote.get("speaker"))
+            title = _one_line(quote.get("title"))
+            url = quote.get("url")
+            slug = _one_line(quote.get("slug")) or None
+            header_parts = [p for p in (speaker, f"《{title}》" if title else None) if p]
+            header = "　".join(header_parts) if header_parts else "原文"
+            if slug:
+                # Verbatim material lives in 原文素材/; link, don't inline.
+                origin = f"[[原文素材/{slug}|📄 {header}（原文素材）]]"
+                if url:
+                    origin += f" · [网页存档]({url})"
+                lines.append(f"> [!quote] {header}")
+                lines.append(f"> 来源：{origin}")
+                preview = [
+                    ln for ln in str(quote.get("quote_text", "")).splitlines()
+                    if ln.strip()
+                ]
+                if preview:
+                    lines.append(f"> {_one_line(preview[0])[:160]}…")
+            else:
+                source = _one_line(quote.get("source_title")) or "佚名来源"
+                origin = f"{header} —— {source}"
+                if url:
+                    origin += f"（[原文链接]({url})）"
+                lines.append(f"> [!quote] {header}")
+                lines.append(f"> 来源：{origin}")
+                lines.append(">")
+                for raw_line in str(quote.get("quote_text", "")).splitlines() or [""]:
+                    lines.append(f"> {raw_line}" if raw_line.strip() else ">")
         lines.append("")
 
     questions = snapshot.get("questions", [])
@@ -292,6 +324,40 @@ def extract_manual_notes(text: str) -> str | None:
     return body or None
 
 
+def _git_committed_manual_notes(path: Path, marker: str) -> str | None:
+    """Last committed「手工批注」body for ``path``, or None.
+
+    Looks through recent commits of the file and returns the first (most
+    recent) version whose manual-notes section has real content. Used as a
+    recovery fallback when the working-tree copy has lost its annotations.
+    """
+    vault_root = path.parents[2]  # vault/<area-dir>/file -> vault root
+    try:
+        log = subprocess.run(
+            ["git", "-C", str(vault_root), "log", "--all",
+             "--format=%h", "--", path.name],
+            capture_output=True, text=True, timeout=10,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if log.returncode != 0:
+        return None
+    for commit in log.stdout.split():
+        try:
+            show = subprocess.run(
+                ["git", "-C", str(vault_root), "show", f"{commit}:{path.name}"],
+                capture_output=True, text=True, timeout=10,
+            )
+        except (OSError, subprocess.SubprocessError):
+            continue
+        if show.returncode != 0 or marker not in show.stdout:
+            continue
+        notes = extract_manual_notes(show.stdout)
+        if notes and notes != "（无）":
+            return notes
+    return None
+
+
 def _atomic_write(path: Path, text: str) -> None:
     tmp = path.with_suffix(path.suffix + ".tmp")
     tmp.write_text(text, encoding="utf-8")
@@ -341,6 +407,37 @@ def sync_threads(
     for snapshot in snapshots:
         tid = str(snapshot["id"])
         try:
+            materials_dir = vault / "原文素材"
+            for snapshot_quote in [
+                q for event in snapshot.get("events", [])
+                for q in event.get("quotes", [])
+            ]:
+                slug = str(snapshot_quote.get("slug") or "").strip()
+                if not slug:
+                    continue
+                materials_dir.mkdir(parents=True, exist_ok=True)
+                mat_path = materials_dir / f"{slug}.md"
+                mat_lines = [
+                    "---",
+                    "type: source-material",
+                    "area: world-historian",
+                    f"thread_id: {_yaml_str(tid)}",
+                    f"event_id: {_yaml_str(snapshot_quote.get('event_id'))}",
+                    f"speaker: {_yaml_str(snapshot_quote.get('speaker'))}",
+                    f"title: {_yaml_str(snapshot_quote.get('title'))}",
+                    f"source_title: {_yaml_str(snapshot_quote.get('source_title'))}",
+                    f"url: {_yaml_str(snapshot_quote.get('url'))}",
+                    f"fetched_at: {_yaml_str(snapshot_quote.get('fetched_at'))}",
+                    f"updated: {_yaml_str(synced_at)}",
+                    "---",
+                    "",
+                    f"# {snapshot_quote.get('speaker') or ''}"
+                    f"《{snapshot_quote.get('title') or ''}》".replace("《》", ""),
+                    "",
+                    str(snapshot_quote.get("quote_text") or "").rstrip(),
+                    "",
+                ]
+                _atomic_write(mat_path, "\n".join(mat_lines))
             previous = threads.get(tid)
             # A thread's own previous filename is not a collision.
             others = taken - ({previous} if previous else set())
@@ -354,6 +451,19 @@ def sync_threads(
             notes = None
             if existing is not None and marker in existing:
                 notes = extract_manual_notes(existing)
+            if (notes is None or notes == "（无）") and existing is not None:
+                # The on-disk file lost its annotations (typical cause: a
+                # remotely-save conflict resolution pulled an older remote
+                # version over the local one). Fall back to the last git
+                # commit of this file before rendering, so reader notes are
+                # never silently dropped by a sync race.
+                git_notes = _git_committed_manual_notes(target, marker)
+                if git_notes:
+                    notes = git_notes
+                    outcome["errors"].append(
+                        f"{tid}: manual notes missing on disk; recovered from git "
+                        f"(possible remotely-save revert) — please verify"
+                    )
             _atomic_write(target, render_snapshot(snapshot, synced_at, notes))
             outcome["written"].append(str(target))
 
