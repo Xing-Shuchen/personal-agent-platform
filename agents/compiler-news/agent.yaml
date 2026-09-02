@@ -1,0 +1,31 @@
+apiVersion: pap/v1
+kind: Agent
+metadata:
+  name: compiler-news
+  description: 每日搜集并筛选 AI 编译器与大模型高性能计算软件栈的重要新闻和技术进展。
+spec:
+  profile:
+    name: compiler-news
+    source: profile
+  model: deepseek/deepseek-v4-pro
+  capabilities:
+    - personal_context.read
+    - web.search
+    - web.read
+    - local_state.write
+  proactive:
+    enabled: true
+    class: conversational
+    desired_jobs:
+      - name: compiler-hpc-brief
+        schedule: "5 8 * * *"
+        skill: compiler-hpc-brief
+        args: {}
+        attach_to_session: true
+        delivery: user-home
+  state:
+    private:
+      - watchlist
+      - source-registry
+      - search-cache
+      - brief-history

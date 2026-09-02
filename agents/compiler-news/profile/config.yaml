@@ -1,0 +1,106 @@
+# AI 编译器与大模型高性能计算软件栈的优先来源。
+# `kind`：rss 表示优先直接读取订阅源；site 表示通过网页搜索和阅读核验。
+# 聚合来源只用于发现线索，重要结论应尽量回到项目公告、发布说明或论文原文。
+sources:
+  # 编译器、中间表示与执行时
+  - name: MLIR 官方站点
+    kind: site
+    url: https://mlir.llvm.org/
+    query: site:mlir.llvm.org blog OR release OR RFC
+  - name: LLVM 项目发布
+    kind: rss
+    url: https://github.com/llvm/llvm-project/releases.atom
+  - name: Apache TVM 发布
+    kind: rss
+    url: https://github.com/apache/tvm/releases.atom
+  - name: Triton 发布
+    kind: rss
+    url: https://github.com/triton-lang/triton/releases.atom
+  - name: IREE 发布
+    kind: rss
+    url: https://github.com/iree-org/iree/releases.atom
+  - name: PyTorch 官方博客
+    kind: rss
+    url: https://pytorch.org/feed.xml
+    query: site:pytorch.org/blog torch.compile OR Inductor OR distributed
+  - name: OpenXLA 官方站点
+    kind: site
+    url: https://openxla.org/
+    query: site:openxla.org XLA OR release OR compiler
+  - name: ONNX Runtime 发布
+    kind: rss
+    url: https://github.com/microsoft/onnxruntime/releases.atom
+
+  # 大模型推理、训练与加速生态
+  - name: vLLM 发布
+    kind: rss
+    url: https://github.com/vllm-project/vllm/releases.atom
+  - name: SGLang 发布
+    kind: rss
+    url: https://github.com/sgl-project/sglang/releases.atom
+  - name: TensorRT-LLM 发布
+    kind: rss
+    url: https://github.com/NVIDIA/TensorRT-LLM/releases.atom
+  - name: DeepSpeed 发布
+    kind: rss
+    url: https://github.com/microsoft/DeepSpeed/releases.atom
+  - name: Megatron-LM 发布
+    kind: rss
+    url: https://github.com/NVIDIA/Megatron-LM/releases.atom
+  - name: JAX 发布
+    kind: rss
+    url: https://github.com/jax-ml/jax/releases.atom
+  - name: NVIDIA 技术博客
+    kind: rss
+    url: https://developer.nvidia.com/blog/feed/
+    query: site:developer.nvidia.com/blog CUDA OR NCCL OR TensorRT-LLM OR NVLink
+  - name: AMD ROCm 发布
+    kind: rss
+    url: https://github.com/ROCm/ROCm/releases.atom
+  - name: Intel oneAPI 官方站点
+    kind: site
+    url: https://www.intel.com/content/www/us/en/developer/tools/oneapi/overview.html
+    query: site:intel.com oneAPI GPU compiler release
+
+  # 互连、集群、论文与技术媒体
+  - name: NVIDIA NCCL 发布
+    kind: rss
+    url: https://github.com/NVIDIA/nccl/releases.atom
+  - name: Microsoft MSCCL 发布
+    kind: rss
+    url: https://github.com/microsoft/msccl/releases.atom
+  - name: Kubernetes 官方博客
+    kind: rss
+    url: https://kubernetes.io/feed.xml
+    query: site:kubernetes.io/blog GPU scheduling OR accelerator
+  - name: Slurm 发布与公告
+    kind: site
+    url: https://www.schedmd.com/slurm
+    query: site:schedmd.com Slurm release GPU
+  - name: arXiv
+    kind: site
+    url: https://arxiv.org/
+    query: site:arxiv.org ML compiler OR LLM inference OR distributed training OR GPU scheduling
+  - name: Phoronix
+    kind: rss
+    url: https://www.phoronix.com/rss.php
+    query: site:phoronix.com LLVM OR CUDA OR ROCm OR oneAPI
+  - name: Hacker News
+    kind: rss
+    url: https://hnrss.org/frontpage
+    note: 仅用于发现线索，必须回到原始技术来源核验。
+
+  # 中文补充来源
+  - name: 机器之心
+    kind: site
+    url: https://www.jiqizhixin.com/
+    query: site:jiqizhixin.com AI 编译器 OR 推理框架 OR GPU 集群
+  - name: 量子位
+    kind: site
+    url: https://www.qbitai.com/
+    query: site:qbitai.com 编译器 OR 推理加速 OR 分布式训练
+  - name: 知乎技术专栏
+    kind: site
+    url: https://www.zhihu.com/
+    query: site:zhihu.com MLIR OR Triton OR vLLM OR NCCL
+    note: 只作技术解读补充，不作为版本、性能数字或路线图的唯一证据。
