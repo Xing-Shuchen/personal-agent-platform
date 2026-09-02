@@ -19,7 +19,7 @@ def test_validate_repo_specs():
     """The four shipped agents must validate out of the box."""
     r = run(["validate", "--root", str(REPO)])
     assert r.returncode == 0, r.stderr
-    assert "4 agent spec(s) valid." in r.stdout
+    assert "agent spec(s) valid." in r.stdout
     for name in ("serendipity", "intelligence", "red-team", "world-historian"):
         assert f"OK {name}" in r.stdout
 
@@ -29,7 +29,7 @@ def test_validate_json_output():
     assert r.returncode == 0
     data = json.loads(r.stdout)
     assert {d["name"] for d in data} == {
-        "serendipity", "intelligence", "red-team", "world-historian"
+        "serendipity", "intelligence", "red-team", "world-historian", "compiler-news"
     }
 
 

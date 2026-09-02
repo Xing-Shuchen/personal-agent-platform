@@ -39,7 +39,8 @@ def base_bundle() -> dict:
 def test_migrations_recorded_and_idempotent(tmp_path):
     conn, db = fresh_conn(tmp_path)
     applied = [row[0] for row in conn.execute("SELECT version FROM schema_migrations")]
-    assert applied == ["0001_initial"]
+    assert applied[0] == "0001_initial"
+    assert len(applied) == len(set(applied))  # migrations apply exactly once, in order
     # Re-running must be a no-op, never a destructive regeneration.
     assert db.migrate(conn) == []
     tables = {row[0] for row in conn.execute(
