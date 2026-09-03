@@ -6,7 +6,7 @@ GitHub Actions 每 3 小时自动从 GitCode 拉取同步。
 ## 配置
 
 - Workflow：`.github/workflows/sync-gitcode.yml`（默认分支上生效）
-- 触发：`schedule`（UTC `0 */3 * * *`，即北京时间每 3 小时整点）+ `workflow_dispatch`（手动）
+- 触发：`schedule`（UTC `23 */3 * * *`，即北京时间每 3 小时的 23 分——错峰，GitHub Actions 整点 0 分是负载高峰，延迟/丢触发最严重）+ `workflow_dispatch`（手动）
 - 依赖 Secret：GitHub 仓库 `GITCODE_TOKEN`（GitCode 访问令牌，私有仓库拉取用）
 - 权限：workflow 内显式声明 `permissions: contents: write`（GITHUB_TOKEN 镜像推送需要）
 
