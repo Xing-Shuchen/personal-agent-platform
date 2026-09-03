@@ -40,7 +40,21 @@ sources:
     note: 36氪旗下公众号，聚焦 AI 产业
   - name: 凤凰网
     kind: rss
-    url: https://news.ifeng.com/rss/
+    # 原生 https://news.ifeng.com/rss/ XML 含未转义实体（&nbsp;），ETree 解析必失败；
+    # 走本机 RSSHub（docker rsshub，127.0.0.1:1200）
+    url: http://127.0.0.1:1200/ifeng/news
+  - name: 联合早报
+    kind: rss
+    url: http://127.0.0.1:1200/zaobao/realtime/china
+    note: 本机 RSSHub；世界频道 zaobao/realtime/world 备用
+  - name: 财新网
+    kind: rss
+    url: http://127.0.0.1:1200/caixin/latest
+    note: 本机 RSSHub；标题级 feed，正文需订阅
+  - name: 澎湃新闻
+    kind: rss
+    url: http://127.0.0.1:1200/thepaper/featured
+    note: 本机 RSSHub 首页头条；栏目用 /thepaper/list/<id>（channel 路由 503 不可用）
   # 已验证可用的高质量补充源
   - name: BBC 中文
     kind: rss
