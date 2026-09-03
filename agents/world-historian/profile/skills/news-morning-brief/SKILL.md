@@ -22,9 +22,19 @@ not write anything to the Chronicle and do not run the gate.
 
 3. Select about 20 items (15–25 acceptable) that are genuinely important over
    the window, with explicit domain diversity:
-   - roughly half or more from China domestic news (政策/监管、经济与财经、
-     社会民生、产业与企业、文娱体育, etc.); the rest international + tech;
-   - AI/科技 should be a minority, not the majority — cap it at ~5–6 items;
+   - roughly half from China domestic news (政策/监管、经济与财经、社会民生、
+     产业与企业、文娱体育, etc.);
+   - a substantial international block (~6–8 items): geopolitics/diplomacy,
+     major conflicts and security developments, elections and government
+     changes, international economy/trade, global health/environment,
+     significant happenings across Asia/Europe/Americas/Middle East/Africa —
+     do not let international coverage collapse into US tech news;
+   - 社会/时事热点 (~3–5 items): notable accidents/disasters and responses,
+     public-safety events, education/health/livelihood policy effects,
+     stories with broad public attention in China or worldwide;
+   - AI/科技 is a minority — cap it at ~4–5 items, and only items with real
+     consequences (major releases with market impact, regulation,
+     significant research), not routine product churn;
    - prefer: major policy shifts, market/economy moves, company events with
      real consequences, significant social/people stories, genuine
      international developments;
