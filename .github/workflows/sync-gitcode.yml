@@ -1,0 +1,35 @@
+name: Sync Mirror from GitCode
+
+on:
+  schedule:
+    # 每 3 小时执行一次（UTC）
+    - cron: '0 */3 * * *'
+  workflow_dispatch:
+
+# GITHUB_TOKEN 需要写权限才能镜像推送（个人仓库下显式声明即生效）
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Sync GitCode to GitHub
+        env:
+          GITCODE_URL: "https://oauth2:${{ secrets.GITCODE_TOKEN }}@gitcode.com/shuchen_xing/personal-agent-platform.git"
+        run: |
+          set -euo pipefail
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+
+          # 裸克隆 GitCode 仓库（全部 refs）
+          git clone --mirror "$GITCODE_URL" upstream.git
+          cd upstream.git
+
+          # 配置目标 GitHub 认证地址
+          git remote set-url --push origin "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
+
+          # 只同步分支和标签（不用 --mirror：避免触碰 refs/pull 等隐藏 ref 被拒）
+          # --prune: GitCode 侧删除的分支/标签在 GitHub 同步删除（仅限这两个命名空间）
+          git push --prune --force origin 'refs/heads/*:refs/heads/*'
+          git push --prune --force origin 'refs/tags/*:refs/tags/*'
