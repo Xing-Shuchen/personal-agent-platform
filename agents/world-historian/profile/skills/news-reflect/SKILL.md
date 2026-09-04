@@ -17,6 +17,6 @@ Also identify converging threads, newly visible causal chains, and previously
 missing relations. Prefer a few inspectable relations over broad semantic
 similarity. Read
 [the reflection bundle fields](references/reflection-bundle.md), then
-persist the result atomically through `runtime/cli.py store-bundle`.
+persist the result atomically through `/home/xingzeng/personal-agent-platform/agents/world-historian/runtime/cli.py store-bundle`.
 This background mode does not produce a user-facing digest; finish with exactly
 `[SILENT]` after persistence.

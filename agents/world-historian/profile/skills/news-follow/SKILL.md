@@ -13,8 +13,8 @@ RSS sources are ingested hourly into the Chronicle by the `news-feeds` job.
 Before any web search, check what is already local:
 
 ```bash
-"$PAP_ROOT/.venv/bin/python" \
-  "$PAP_ROOT/agents/world-historian/runtime/cli.py" feeds recent --hours 24
+"/home/xingzeng/personal-agent-platform/.venv/bin/python" \
+  "/home/xingzeng/personal-agent-platform/agents/world-historian/runtime/cli.py" feeds recent --hours 24
 ```
 
 Match those entries against each due thread's title, entities, watch queries,
@@ -51,7 +51,7 @@ because they share keywords.
 
 Before writing, read
 [the follow bundle fields](references/follow-bundle.md). Persist
-only genuine deltas through `runtime/cli.py store-bundle`. Supersede or
+only genuine deltas through `/home/xingzeng/personal-agent-platform/agents/world-historian/runtime/cli.py store-bundle`. Supersede or
 dispute claims explicitly; never overwrite their historical state. Update each
 thread's last-check state even when no event is added.
 
@@ -69,5 +69,5 @@ summary, no rejection notes, no Chinese「无变化」prose, nothing before or
 after. Any surrounding text makes it a normal delivery and spams the user
 (observed 2026-09-01: a work-summary + [SILENT] response leaked to Feishu). If a change
 merits proactive interruption, pass it through
-`"$PAP_ROOT/.venv/bin/pap" gate --agent world-historian` with a stable
+`"/home/xingzeng/personal-agent-platform/.venv/bin/pap" gate --agent world-historian` with a stable
 event/thread key before returning one concise Chinese update.

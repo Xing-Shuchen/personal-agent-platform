@@ -3,8 +3,8 @@
 Persist with:
 
 ```bash
-"$PAP_ROOT/.venv/bin/python" \
-  "$PAP_ROOT/agents/world-historian/runtime/cli.py" store-bundle --json <path>
+"/home/xingzeng/personal-agent-platform/.venv/bin/python" \
+  "/home/xingzeng/personal-agent-platform/agents/world-historian/runtime/cli.py" store-bundle --json <path>
 ```
 
 Use `search` and `thread` first, then identify existing objects by ID. A follow

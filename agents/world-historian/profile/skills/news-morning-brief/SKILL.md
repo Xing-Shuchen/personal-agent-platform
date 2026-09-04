@@ -12,8 +12,8 @@ not write anything to the Chronicle and do not run the gate.
 1. Check what is already local first:
 
    ```bash
-   "$PAP_ROOT/.venv/bin/python" \
-     "$PAP_ROOT/agents/world-historian/runtime/cli.py" feeds recent --hours 24
+   "/home/xingzeng/personal-agent-platform/.venv/bin/python" \
+     "/home/xingzeng/personal-agent-platform/agents/world-historian/runtime/cli.py" feeds recent --hours 24
    ```
 
 2. Read `config.yaml` from this profile directory for the preferred `sources`
@@ -38,7 +38,7 @@ not write anything to the Chronicle and do not run the gate.
    - prefer: major policy shifts, market/economy moves, company events with
      real consequences, significant social/people stories, genuine
      international developments;
-   - items tied to active tracked threads (check `runtime/cli.py threads` or
+   - items tied to active tracked threads (check `/home/xingzeng/personal-agent-platform/agents/world-historian/runtime/cli.py threads` or
      the follow threads) — flag them as 「追踪中」;
    - when both a domestic and a foreign story cover the same topic, prefer the
      domestic one.

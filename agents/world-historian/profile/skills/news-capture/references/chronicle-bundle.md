@@ -1,12 +1,12 @@
 # Chronicle bundle format
 
-Read this reference before calling `runtime/cli.py store-bundle`.
+Read this reference before calling `/home/xingzeng/personal-agent-platform/agents/world-historian/runtime/cli.py store-bundle`.
 
 Use the runtime through:
 
 ```bash
-"$PAP_ROOT/.venv/bin/python" \
-  "$PAP_ROOT/agents/world-historian/runtime/cli.py" <command>
+"/home/xingzeng/personal-agent-platform/.venv/bin/python" \
+  "/home/xingzeng/personal-agent-platform/agents/world-historian/runtime/cli.py" <command>
 ```
 
 The input is one JSON object. Top-level keys are optional lists named:

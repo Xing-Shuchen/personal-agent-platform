@@ -13,8 +13,8 @@ user-facing digest.
    `config.yaml` are fetched; failures are isolated per feed):
 
    ```bash
-   "$PAP_ROOT/.venv/bin/python" \
-     "$PAP_ROOT/agents/world-historian/runtime/cli.py" feeds update
+   "/home/xingzeng/personal-agent-platform/.venv/bin/python" \
+     "/home/xingzeng/personal-agent-platform/agents/world-historian/runtime/cli.py" feeds update
    ```
 
 2. Note `entries_added` and any per-feed `errors`. Feed failures are normal
@@ -23,8 +23,8 @@ user-facing digest.
 3. Optionally verify with:
 
    ```bash
-   "$PAP_ROOT/.venv/bin/python" \
-     "$PAP_ROOT/agents/world-historian/runtime/cli.py" feeds recent --hours 24
+   "/home/xingzeng/personal-agent-platform/.venv/bin/python" \
+     "/home/xingzeng/personal-agent-platform/agents/world-historian/runtime/cli.py" feeds recent --hours 24
    ```
 
 4. Finish with exactly `[SILENT]`. Ingestion itself is never

@@ -24,7 +24,7 @@ Treat the input as a seed for an ongoing thread, not as an article title.
 6. Read [the Chronicle bundle format](references/chronicle-bundle.md),
    then persist one validated JSON bundle with:
 
-   `"$PAP_ROOT/.venv/bin/python" "$PAP_ROOT/agents/world-historian/runtime/cli.py" store-bundle --json <path>`
+   `"/home/xingzeng/personal-agent-platform/.venv/bin/python" "/home/xingzeng/personal-agent-platform/agents/world-historian/runtime/cli.py" store-bundle --json <path>`
 
    The runtime assigns deterministic IDs and commits the bundle atomically.
 6. Return a compact Chinese intake report: what was captured, the best primary
@@ -42,5 +42,5 @@ only actual formulas/expressions get `$` delimiters. Never use Unicode
 sub/superscripts inside formulas (`log₃`, `π₁` → `\log_3`, `\pi_1`);
 `S⁶` in running prose may stay, but inside a formula write `$S^6$`.
 
-Initialize or inspect storage with `runtime/cli.py init`, `search`, `thread`,
+Initialize or inspect storage with `/home/xingzeng/personal-agent-platform/agents/world-historian/runtime/cli.py init`, `search`, `thread`,
 and `stats`. Never place the SQLite database or raw snapshots under `profile/`.

@@ -24,6 +24,15 @@ var/<agent>/                   Agent 的真实长期状态（不进 git）
 | `red-team` | 论证、设计和假设的对抗性审查 | 关闭 |
 | `world-historian` | 把外部变化保存为来源、可修订 Claim、Event 与长期 Thread | follow / reflect / crosslink / report |
 
+## 2026-09-04:调度已迁移到 OpenClaw(hermes pap tick 停用)
+
+本仓库现在是 **OpenClaw agents 的运行时与状态家目录**,不再是独立调度平台:
+
+- 全部 12 个 job(`agents/*/agent.yaml` 声明)已镜像为 OpenClaw automations,运行在 world-historian / intelligence / serendipity / compiler-news 各 agent 的 workspace(`~/.openclaw/workspace-*`)下;主动投递走 feishu4 home channel(user:ou_6f0036a9c338c62a92be4352057a912f)。
+- 系统 crontab 的 `pap tick` 行已注释(`# DISABLED 2026-09-04`;备份 `~/.openclaw/workspace-feishu4/backups/crontab-2026-09-04-before-pap-cutover.txt`),不要重新启用,否则与 OpenClaw 镜像双跑。
+- 技能运行时引用已从 `$PAP_ROOT` 相对形式改写为绝对路径 `/home/xingzeng/personal-agent-platform`(repo 与 workspace-world-historian 副本一致)。改技能请以本仓库 `agents/*/profile/skills` 为准,并同步到对应 `~/.openclaw/workspace-*/skills`。
+- `pap` CLI / `runtime/` / `var/`(chronicle.sqlite、gate-state、artifacts)继续作为共享本地服务使用,供 OpenClaw agent 通过 exec 调用。
+
 ## 快速开始
 
 ```bash

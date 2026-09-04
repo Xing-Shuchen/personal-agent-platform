@@ -15,7 +15,7 @@ a news brief — do not call the gate; the user asked for this daily summary.
    python3 - <<'EOF'
    import json, datetime
    day = "2026-09-01"  # use today's local date
-   with open("$PAP_ROOT/var/state/runs.jsonl") as f:
+   with open("/home/xingzeng/personal-agent-platform/var/state/runs.jsonl") as f:
        for line in f:
            r = json.loads(line)
            # collect run.started / run.completed where the timestamp starts with day
@@ -29,8 +29,8 @@ a news brief — do not call the gate; the user asked for this daily summary.
 2. Chronicle ingest for the day:
 
    ```bash
-   "$PAP_ROOT/.venv/bin/python" \
-     "$PAP_ROOT/agents/world-historian/runtime/cli.py" stats
+   "/home/xingzeng/personal-agent-platform/.venv/bin/python" \
+     "/home/xingzeng/personal-agent-platform/agents/world-historian/runtime/cli.py" stats
    ```
 
    and note what changed today: new threads (search for threads created today,
