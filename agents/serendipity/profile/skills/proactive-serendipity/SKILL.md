@@ -14,7 +14,7 @@ discover them at runtime:
 - Topic notes: `/home/xingzeng/文档/Obsidian/Second_Brain/2Area/`
 - Reading notes: `/home/xingzeng/文档/Obsidian/Second_Brain/2Area/WeRead Notes/`
 - Personal historian: `/home/xingzeng/personal-historian-handoff/`
-- Recent user context: the `session_search` tool, restricted to the evaluation window.
+- Recent user context: up to three `session_search` calls, restricted to the evaluation window.
 
 Construct the exact current and previous date filenames for `Dairies`; never
 list the directory first. Use targeted `rg` inside `2Area/` or `WeRead Notes/`
@@ -22,8 +22,9 @@ only after a concrete concept has been selected. If a fixed path is absent,
 skip that source and continue. Never run `ls`, `find`, or broad `rg` against
 `/home/xingzeng`, `/`, the whole vault, `.hermes`, `.openclaw`, or a whole
 repository. Never inspect automation, session, system, or unrelated logs.
-The complete evidence budget is: two diary files, one session search, at most
-three targeted old notes, and eight read/search tool calls per run.
+The complete evidence budget is: diary files from the most recent five days,
+up to three session searches, at most ten candidate connections/targeted
+old-note candidates, and fifteen read/search tool calls per run.
 
 Procedure:
 

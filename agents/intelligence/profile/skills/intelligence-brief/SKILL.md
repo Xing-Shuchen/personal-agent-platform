@@ -5,10 +5,10 @@
 This job has a fixed local evidence boundary. Use only:
 
 - Intelligence memory: `/home/xingzeng/.openclaw/workspace-intelligence/memory/YYYY-MM-DD.md`
-  for today and the previous two dates only.
+  for today and the previous four dates only.
 - Gate state: `/home/xingzeng/personal-agent-platform/var/state/gate-state.json`
 - Gate log: `/home/xingzeng/personal-agent-platform/var/state/gate-log.jsonl`
-- Recent user context: the `session_search` tool, restricted to the current scan window.
+- Recent user context: up to three `session_search` calls, restricted to the current scan window.
 - External developments: `web_search`/`web_fetch` only for a concrete watchlist or
   open-question candidate, using authoritative sources.
 
@@ -17,8 +17,8 @@ do not list the workspace. Never run `ls`, `find`, or broad `rg` against
 `/home/xingzeng`, `/`, `.hermes`, `.openclaw`, a whole repository, or system
 logs. Do not inspect Hermes/OpenClaw logs, git history, automation state, or
 unrelated files unless the current watchlist item explicitly names that exact
-path. Missing fixed files are simply skipped. Limit each run to three memory
-files, one session search, five external candidates, and eight read/search
+path. Missing fixed files are simply skipped. Limit each run to five memory
+files, three session searches, ten external candidates, and fifteen read/search
 tool calls total; stop once one evidence-backed candidate is ready or no
 candidate remains.
 
