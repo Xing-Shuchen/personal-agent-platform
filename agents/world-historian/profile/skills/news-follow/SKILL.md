@@ -14,8 +14,26 @@ Before any web search, check what is already local:
 
 ```bash
 "/home/xingzeng/personal-agent-platform/.venv/bin/python" \
-  "/home/xingzeng/personal-agent-platform/agents/world-historian/runtime/cli.py" feeds recent --hours 24
+  "/home/xingzeng/personal-agent-platform/agents/world-historian/runtime/cli.py" \
+  --db "/home/xingzeng/personal-agent-platform/var/world-historian/chronicle.sqlite" \
+  feeds recent --hours 24 --limit 80
 ```
+
+The `--db` path above is mandatory. Do not inspect or probe other Chronicle
+paths, run database discovery, or read CLI help during a scheduled run. If the
+command fails, report the single failure and stop. Keep the feed output to
+titles, timestamps, URLs, and short summaries; do not dump full article bodies.
+
+## Execution budget
+
+This is an incremental collection job, not an open-ended research session.
+Use at most one local feed query, one due-thread list query, and one detail
+query per candidate thread. Process at most ten due threads per run and at
+most five web searches total; stop searching as soon as the configured
+expansion budget is satisfied. Never inspect OpenClaw automations, sessions,
+home directories, or unrelated logs while running this skill. If a required
+field or thread cannot be found with the commands in this skill, stop with a
+brief error rather than exploring alternate paths.
 
 Match those entries against each due thread's title, entities, watch queries,
 and open questions. Only if the local window does not answer a lane, go to the
