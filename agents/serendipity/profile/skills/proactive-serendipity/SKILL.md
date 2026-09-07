@@ -2,6 +2,29 @@
 
 Use this skill only for scheduled or event-triggered serendipity evaluation.
 
+## Fixed evidence paths and search boundary
+
+Use only the following sources. These paths are deployment constants; do not
+discover them at runtime:
+
+- Gate state: `/home/xingzeng/personal-agent-platform/var/state/gate-state.json`
+- Gate log: `/home/xingzeng/personal-agent-platform/var/state/gate-log.jsonl`
+- Audit log: `/home/xingzeng/personal-agent-platform/var/state/serendipity-audit.jsonl`
+- Current diaries: `/home/xingzeng/文档/Obsidian/Second_Brain/Dairies/YYYY/YYYY-MM-DD.md`
+- Topic notes: `/home/xingzeng/文档/Obsidian/Second_Brain/2Area/`
+- Reading notes: `/home/xingzeng/文档/Obsidian/Second_Brain/2Area/WeRead Notes/`
+- Personal historian: `/home/xingzeng/personal-historian-handoff/`
+- Recent user context: the `session_search` tool, restricted to the evaluation window.
+
+Construct the exact current and previous date filenames for `Dairies`; never
+list the directory first. Use targeted `rg` inside `2Area/` or `WeRead Notes/`
+only after a concrete concept has been selected. If a fixed path is absent,
+skip that source and continue. Never run `ls`, `find`, or broad `rg` against
+`/home/xingzeng`, `/`, the whole vault, `.hermes`, `.openclaw`, or a whole
+repository. Never inspect automation, session, system, or unrelated logs.
+The complete evidence budget is: two diary files, one session search, at most
+three targeted old notes, and eight read/search tool calls per run.
+
 Procedure:
 
 1. Inspect recent personal-context evidence since the previous meaningful evaluation window.
