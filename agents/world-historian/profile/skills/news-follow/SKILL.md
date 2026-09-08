@@ -81,21 +81,11 @@ formula (`$G(T) \gg \log T\,\log_2 T/\log_4 T$`, `$\pi_1(X)$`), never Unicode
 math notation (`≫`, `log₂T`, `π₁`). Narrative prose stays plain — only actual
 formulas/expressions get `$` delimiters.
 
-This is a user-facing search-and-aggregation job. Every run must produce a
-concise Chinese report; never return `NO_REPLY` or any other silent marker.
-When there is no material change, say so explicitly (for example:
-「本轮检索暂无重要更新。」) and include the number of threads and search
-lanes checked. If a change merits proactive interruption, pass it through
+This is a collection job. When there is no interruption-worthy change, the
+ENTIRE final response must be exactly the single marker `[SILENT]` — no work
+summary, no rejection notes, no Chinese「无变化」prose, nothing before or
+after. Any surrounding text makes it a normal delivery and spams the user
+(observed 2026-09-01: a work-summary + [SILENT] response leaked to Feishu). If a change
+merits proactive interruption, pass it through
 `"/home/xingzeng/personal-agent-platform/.venv/bin/pap" gate --agent world-historian` with a stable
-stable event/thread key before returning the report; the gate may control
-whether an item is marked interruption-worthy, but it must not suppress the
-run report.
-
-Use this final-response shape:
-
-```text
-世界新闻跟踪｜YYYY-MM-DD HH:mm
-
-- 本轮检查：<threads/lanes checked>；<new events or「暂无重要更新」>。
-- <有更新时列出每条更新及来源；没有更新时保留上一行即可>
-```
+event/thread key before returning one concise Chinese update.

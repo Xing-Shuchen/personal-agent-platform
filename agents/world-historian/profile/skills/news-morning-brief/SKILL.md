@@ -61,5 +61,8 @@ not write anything to the Chronicle and do not run the gate.
    No long lists, no filler. If fewer than 3 items are worth reporting, say
    so briefly and list only those.
 
-5. End with a single line: 晨间早报 · 过去 24 小时. If truly nothing worth
-   reporting, return exactly `[SILENT]`.
+5. End with a single line: 晨间早报 · 过去 24 小时. Even if fewer than three
+   items are worth reporting, always deliver the brief and state explicitly
+   「过去 24 小时暂无重要更新」 when there is nothing worth reporting. Never
+   return `[SILENT]`, `NO_REPLY`, or another silent marker for this user-facing
+   morning brief.
