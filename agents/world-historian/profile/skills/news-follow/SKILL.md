@@ -82,10 +82,10 @@ math notation (`≫`, `log₂T`, `π₁`). Narrative prose stays plain — only 
 formulas/expressions get `$` delimiters.
 
 This is a collection job. When there is no interruption-worthy change, the
-ENTIRE final response must be exactly the single marker `[SILENT]` — no work
+ENTIRE final response must be exactly the single marker `NO_REPLY` — no work
 summary, no rejection notes, no Chinese「无变化」prose, nothing before or
 after. Any surrounding text makes it a normal delivery and spams the user
-(observed 2026-09-01: a work-summary + [SILENT] response leaked to Feishu). If a change
+(observed 2026-09-01: a work-summary + NO_REPLY response leaked to Feishu). If a change
 merits proactive interruption, pass it through
 `"/home/xingzeng/personal-agent-platform/.venv/bin/pap" gate --agent world-historian` with a stable
 event/thread key before returning one concise Chinese update.

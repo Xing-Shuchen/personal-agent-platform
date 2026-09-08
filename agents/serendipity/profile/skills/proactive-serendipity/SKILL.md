@@ -48,7 +48,7 @@ Procedure:
 
    `/home/xingzeng/personal-agent-platform/.venv/bin/pap gate --agent serendipity --dedupe-key '<key>' --priority <0..100> --message '<candidate message>' --db /home/xingzeng/personal-agent-platform/var/state/gate-state.json`
 
-9. If gate denies, final response must be exactly `[SILENT]`. Same for a zero-candidate run with no gate call: the ENTIRE final response must be the single marker `[SILENT]` — no summary, no rejection notes, no「保持静默」prose. Hermes suppresses delivery only when the whole response is exactly the marker; any surrounding text makes it a normal delivery. Record rejected candidates and categories in the local audit file `/home/xingzeng/personal-agent-platform/var/state/serendipity-audit.jsonl` (one JSON line per run) instead.
+9. If gate denies, final response must be exactly `NO_REPLY`. Same for a zero-candidate run with no gate call: the ENTIRE final response must be the single marker `NO_REPLY` — no summary, no rejection notes, no「保持静默」prose. OpenClaw suppresses delivery only when the whole response is exactly the marker; any surrounding text makes it a normal delivery. Record rejected candidates and categories in the local audit file `/home/xingzeng/personal-agent-platform/var/state/serendipity-audit.jsonl` (one JSON line per run) instead.
 10. If gate allows, output only a concise user-facing observation containing:
     - the connection;
     - why it is structurally interesting;

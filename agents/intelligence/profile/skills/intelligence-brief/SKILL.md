@@ -39,7 +39,7 @@ Scheduled procedure:
 
    `/home/xingzeng/personal-agent-platform/.venv/bin/pap gate --agent intelligence --dedupe-key '<key>' --priority <0..100> --message '<brief>' --db /home/xingzeng/personal-agent-platform/var/state/gate-state.json`
 
-9. If denied or no worthy item exists, output exactly `[SILENT]`.
+9. If denied or no worthy item exists, output exactly `NO_REPLY`.
 10. If allowed, output a compact brief:
     - what changed;
     - why it matters specifically;
