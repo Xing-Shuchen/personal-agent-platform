@@ -22,7 +22,7 @@ Before any web search, check what is already local:
 
 The `--db` path above is mandatory. Do not inspect or probe other Chronicle
 paths, run database discovery, or read CLI help during a scheduled run. If the
-command fails, report the single failure and stop. Keep the feed output to
+command fails, stop and return exactly `NO_REPLY`. Keep the feed output to
 titles, timestamps, URLs, and short summaries; do not dump full article bodies.
 
 ## Execution budget
@@ -139,21 +139,23 @@ PY
 
 Persist each change through `store-bundle`: `DEMOTE` → the thread's `id`,
 `title`, `status: "active"`, `priority: "background"`; `CLOSE` → `id`, `title`,
-`status: "closed"`. Report these changes only through the delivery contract
-below.
+`status: "closed"`. A lifecycle-only change is not a user-facing update; do
+not deliver it unless the same run also persisted a material event or claim
+correction for a tracked thread.
 
 ## Delivery contract
 
 This is a collection job.
 
-- No tracked thread gained new progress: the ENTIRE final response must be
+- No tracked thread gained a material event or claim correction: the ENTIRE final response must be
 exactly the single marker `NO_REPLY` — no work summary, no rejection notes, no
 Chinese「无变化」prose, nothing before or after. Any surrounding text makes it a
 normal delivery and spams the user (observed 2026-09-01: a work-summary +
 `[SILENT]` response leaked to Feishu; OpenClaw only suppresses the exact token
 `NO_REPLY` — any other marker, including the legacy Hermes `[SILENT]`, is
 delivered as literal text, observed 2026-09-08 13:05).
-- At least one tracked thread gained new progress: return one concise Chinese
+- At least one tracked thread gained a material event or claim correction:
+return one concise Chinese
 update with exactly these two parts, in this order, and nothing else:
-  1. 进展 — 每个有新进展的 thread 一句话：哪条线、新增了什么。不写检索过程、不写被排除的候选。
+  1. 进展 — 每个有新进展的 thread 一句话：哪条线、新增/修正了什么事件。不写检索过程、不写被排除的候选。
   2. 追踪中 — 用上面 roster 查询的输出原文，逐行列出所有正在追踪的 thread。

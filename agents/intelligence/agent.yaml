@@ -7,7 +7,7 @@ spec:
   profile:
     name: intelligence
     source: profile
-  model: deepseek/deepseek-v4.1-flash-expires-on-0910
+  model: zai/glm-5.3
   capabilities:
     - personal_context.read
     - web.search
