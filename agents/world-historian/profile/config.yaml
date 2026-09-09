@@ -86,3 +86,16 @@ sources:
   - name: Google Research Blog
     kind: rss
     url: https://feeds.feedburner.com/blogspot/gJZg/
+  # 用户新增（2026-09-09）
+  - name: AIHOT 日报
+    kind: rss
+    url: https://aihot.news/feed.xml
+    note: 官方 RSS（最新 50 条精选）；日报页 https://aihot.news/daily/<YYYY-MM-DD> 服务端渲染可直接抓取
+  - name: 八点一氪
+    kind: site
+    url: https://36kr.com/user/5652071
+    note: 36氪专栏；SPA 无公开 RSS，本机 RSSHub /36kr/user/5652071 目前 503，需站内浏览/搜索
+  - name: 派早报
+    kind: site
+    url: https://sspai.com/u/ee0vj778/updates
+    note: 少数派专栏；SPA 无按用户 RSS，RSSHub /sspai/column/ee0vj778 目前 503；站级 feed https://sspai.com/feed 已在列表中

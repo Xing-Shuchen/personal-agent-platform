@@ -18,7 +18,7 @@ not write anything to the Chronicle and do not run the gate.
 
 2. Read `config.yaml` from this profile directory for the preferred `sources`
    list (远川研究所矩阵、腾讯科技、新潮沉思录、36氪、量子位、机器之心、智能
-   涌现、凤凰网, plus vetted RSS feeds). Prefer those outlets for coverage.
+   涌现、凤凰网、八点一氪、派早报、AIHOT 日报, plus vetted RSS feeds). Prefer those outlets for coverage.
 
 3. Select about 20 items (15–25 acceptable) that are genuinely important over
    the window, with explicit domain diversity:
