@@ -7,6 +7,7 @@ import json
 import os
 import secrets
 import subprocess
+import tempfile
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -100,6 +101,10 @@ def invoke(
     error = ""
     returncode = 1
     runner = command_runner or subprocess.run
+    skill_text = skill_file.read_text(encoding="utf-8")
+    with tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".md", delete=False) as tmp_file:
+        tmp_file.write(_prompt(skill, skill_text, input_text, args))
+        tmp_path = tmp_file.name
     try:
         env = os.environ.copy()
         env.update({
@@ -108,14 +113,13 @@ def invoke(
             "PAP_RUN_ID": run_id,
             "PAP_AGENT_STATE_DIR": str(root / "var" / spec.name),
         })
-        skill_text = skill_file.read_text(encoding="utf-8")
         timeout = timeout_seconds or int(os.environ.get("PAP_RUN_TIMEOUT_SECONDS", "900"))
         command = [
             os.environ.get("PAP_OPENCLAW_BIN", "openclaw"),
             "agent",
             "--agent", spec.name,
             "--session-key", f"agent:{spec.name}:pap-{run_id}",
-            "--message-file", "-",
+            "--message-file", tmp_path,
             "--thinking", os.environ.get("PAP_OPENCLAW_THINKING", "low"),
             "--timeout", str(timeout),
         ]
@@ -127,7 +131,7 @@ def invoke(
             env=env,
             capture_output=True,
             text=True,
-            input=_prompt(skill, skill_text, input_text, args),
+            input=None,
             timeout=timeout,
         )
         returncode = completed.returncode
@@ -140,6 +144,8 @@ def invoke(
     except OSError as exc:
         error = str(exc)
         returncode = 127
+    finally:
+        Path(tmp_path).unlink(missing_ok=True)
     completed_at = _now()
     status = "success" if returncode == 0 else "failed"
     append_jsonl(run_log, {
