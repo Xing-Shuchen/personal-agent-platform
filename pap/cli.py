@@ -249,7 +249,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_jobs.add_argument("--agent")
     p_jobs.set_defaults(func=_cmd_jobs)
 
-    p_invoke = sub.add_parser("invoke", help="invoke one agent skill through Hermes")
+    p_invoke = sub.add_parser("invoke", help="invoke one agent skill through OpenClaw")
     p_invoke.add_argument("agent")
     p_invoke.add_argument("skill")
     p_invoke.add_argument("input", nargs="?", default="")
@@ -262,7 +262,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_tick.add_argument("--root", default=".")
     p_tick.add_argument("--state", type=Path, default=scheduler_mod.DEFAULT_SCHEDULER_STATE)
     p_tick.add_argument("--runs", type=Path, default=run_mod.DEFAULT_RUN_LOG)
-    p_tick.add_argument("--delivery-target", help="Hermes send target (or PAP_DELIVERY_TARGET)")
+    p_tick.add_argument("--delivery-target", help="OpenClaw delivery target (or PAP_OPENCLAW_DELIVERY_TARGET)")
     p_tick.add_argument("--now", help="ISO timestamp override (testing/operations)")
     p_tick.add_argument("--dry-run", action="store_true", help="show due jobs without reserving/running")
     p_tick.set_defaults(func=_cmd_tick)

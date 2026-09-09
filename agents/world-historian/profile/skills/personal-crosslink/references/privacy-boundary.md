@@ -24,7 +24,7 @@ Hard rules:
   skill.
 - The approved adapter must perform retrieval locally and return only record
   IDs plus minimal redacted relation descriptors. Do not open raw diary,
-  message, calendar, health, or personal-history text in the Hermes model
+  message, calendar, health, or personal-history text in the OpenClaw model
   context. If that adapter is unavailable, create no link and finish silently.
 - Persist personal record IDs and a minimal explanation, not copied diary text.
 - If relevance can only be tested by exposing private text externally, do not

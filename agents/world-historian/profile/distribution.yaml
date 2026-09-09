@@ -1,4 +1,3 @@
 name: world-historian
 version: 0.1.0
 description: "Historian of unfolding external events, revisions, and World-to-Self context."
-hermes_requires: ">=0.12.0"

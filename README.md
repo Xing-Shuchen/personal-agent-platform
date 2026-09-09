@@ -69,11 +69,12 @@ pap jobs
 pap status
 ```
 
-安装器只复制 profile 与 skills，不创建 Hermes cron：
+安装器只将 skills 合并到既有 OpenClaw agent workspace；不创建 OpenClaw automation
+或 cron，调度继续由 `pap tick` / `agent.yaml` 负责：
 
 ```bash
 .venv/bin/python scripts/install_agents.py --list-only
-.venv/bin/python scripts/install_agents.py --apply --hermes-profile <profile>
+.venv/bin/python scripts/install_agents.py --apply --openclaw-home <path>
 ```
 
 ## 调用 Agent
@@ -85,7 +86,7 @@ pap runs --agent world-historian
 pap runs <run_id>
 ```
 
-`pap invoke` 从 repo profile 目录运行 Hermes：SOUL 由工作目录加载，指定 skill 的完整指令被作为可信 profile guidance 注入。每次调用在 `var/state/runs.jsonl` 写入 `run.started` 与 `run.completed`；输入仅记录哈希和长度，不把私人原文复制进全局 Run 日志。
+`pap invoke` 从 repo profile 目录运行一个 OpenClaw Gateway turn：SOUL 由工作目录加载，指定 skill 的完整指令被作为可信 profile guidance 注入。每次调用在 `var/state/runs.jsonl` 写入 `run.started` 与 `run.completed`；输入仅记录哈希和长度，不把私人原文复制进全局 Run 日志。
 
 ## 平台调度
 

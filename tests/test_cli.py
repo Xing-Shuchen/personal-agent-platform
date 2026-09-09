@@ -84,12 +84,15 @@ def test_install_agents_list_only():
     assert "no platform jobs (proactive disabled)" in r.stdout
     assert "platform job world-follow-high" in r.stdout
     assert "cron create" not in r.stdout
+    assert "OpenClaw workspace:" in r.stdout
+    assert "workspace-serendipity" in r.stdout
+    assert ".hermes" not in r.stdout
 
 
-def test_install_agents_rejects_bad_profile():
+def test_install_agents_rejects_bad_openclaw_home():
     r = subprocess.run(
         [sys.executable, "scripts/install_agents.py", "--apply",
-         "--hermes-profile", "definitely-not-a-profile"],
+         "--openclaw-home", "/nonexistent-dir"],
         capture_output=True, text=True, cwd=REPO)
     assert r.returncode == 1
     assert "not found" in r.stderr

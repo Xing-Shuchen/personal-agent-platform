@@ -1,4 +1,3 @@
 name: serendipity
 version: 0.1.0
 description: "Personal serendipity engine: rare, evidence-backed cross-domain connections."
-hermes_requires: ">=0.12.0"

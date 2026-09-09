@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
-"""Install agents/*/ profiles into the local Hermes profile.
+"""Install PAP agent skills into their OpenClaw agent workspaces.
 
-Reads each ``agents/*/agent.yaml`` and copies the profile directory plus its
-skills into a Hermes profile. Job declarations remain owned by ``pap tick``;
-this installer intentionally creates no Hermes cron jobs.
+Reads each ``agents/*/agent.yaml`` and merges its skills into that agent's
+existing OpenClaw workspace. Workspace profile files remain OpenClaw-owned.
+Job declarations remain owned by ``pap tick``; this installer intentionally
+creates no OpenClaw automations or cron jobs.
 
 Dry-run by default; pass ``--apply`` to actually write.
 
 Usage:
-    python scripts/install_agents.py [--apply] [--root .] [--hermes-profile feishu3]
+    python scripts/install_agents.py [--apply] [--root .] [--openclaw-home ~/.openclaw]
 """
 
 from __future__ import annotations
@@ -35,11 +36,12 @@ def _real_home() -> str:
         return os.path.expanduser("~")
 
 
-HERMES_HOME = Path(_real_home()) / ".hermes"
+def default_openclaw_home() -> Path:
+    return Path(_real_home()) / ".openclaw"
 
 
-def hermes_profile_dir(profile: str) -> Path:
-    return HERMES_HOME / "profiles" / profile
+def openclaw_workspace_dir(openclaw_home: Path, agent_name: str) -> Path:
+    return openclaw_home / f"workspace-{agent_name}"
 
 
 def plan_jobs(spec: AgentSpec) -> list[dict]:
@@ -57,15 +59,8 @@ def plan_jobs(spec: AgentSpec) -> list[dict]:
     return plan
 
 
-def plan_profile_copy(spec: AgentSpec, root: Path, profile_dir: Path) -> dict:
-    src = root / "agents" / spec.name / "profile"
-    dst = profile_dir / "agents" / spec.name / "profile"
-    return {"src": str(src), "dst": str(dst), "exists": src.is_dir()}
-
-
-def plan_skill_copies(spec: AgentSpec, root: Path, profile_dir: Path) -> list[dict]:
-    """Hermes loads skills from <profile>/skills/, so each agent skill must be
-    installed there by name (not left under the copied profile tree)."""
+def plan_skill_copies(spec: AgentSpec, root: Path, workspace_dir: Path) -> list[dict]:
+    """Install each PAP skill into its corresponding OpenClaw workspace."""
     src_root = root / "agents" / spec.name / "profile" / "skills"
     plans = []
     if src_root.is_dir():
@@ -74,51 +69,41 @@ def plan_skill_copies(spec: AgentSpec, root: Path, profile_dir: Path) -> list[di
                 plans.append({
                     "name": skill_dir.name,
                     "src": str(skill_dir),
-                    "dst": str(profile_dir / "skills" / skill_dir.name),
+                    "dst": str(workspace_dir / "skills" / skill_dir.name),
                 })
     return plans
 
 
-def cmd_list(specs: list[AgentSpec], root: Path, profile: str) -> int:
-    profile_dir = hermes_profile_dir(profile)
-    print(f"Hermes profile: {profile_dir}")
+def cmd_list(specs: list[AgentSpec], root: Path, openclaw_home: Path) -> int:
+    print(f"OpenClaw home: {openclaw_home}")
     for spec in specs:
         print(f"\nagent: {spec.name}  (proactive={spec.proactive_enabled})")
+        workspace_dir = openclaw_workspace_dir(openclaw_home, spec.name)
+        print(f"  OpenClaw workspace: {workspace_dir}")
         if not spec.proactive_enabled:
             print("  no platform jobs (proactive disabled)")
         for job in plan_jobs(spec):
             print(f"  platform job {job['name']}: '{job['schedule']}' skill={job['skill']} "
                   f"delivery={job['delivery']} args={json.dumps(job['args'], ensure_ascii=False)}")
-        copy = plan_profile_copy(spec, root, profile_dir)
-        print(f"  profile copy: {copy['src']} -> {copy['dst']}")
-        for sk in plan_skill_copies(spec, root, profile_dir):
+        for sk in plan_skill_copies(spec, root, workspace_dir):
             print(f"  skill install: {sk['src']} -> {sk['dst']}")
     return 0
 
 
-def cmd_apply(specs: list[AgentSpec], root: Path, profile: str, dry_run: bool) -> int:
-    profile_dir = hermes_profile_dir(profile)
-    if not profile_dir.is_dir():
-        print(f"ERROR: Hermes profile dir not found: {profile_dir}", file=sys.stderr)
-        return 1
+def cmd_apply(specs: list[AgentSpec], root: Path, openclaw_home: Path, dry_run: bool) -> int:
+    workspace_dirs = {
+        spec.name: openclaw_workspace_dir(openclaw_home, spec.name) for spec in specs
+    }
+    for workspace_dir in workspace_dirs.values():
+        if not workspace_dir.is_dir():
+            print(f"ERROR: OpenClaw workspace dir not found: {workspace_dir}", file=sys.stderr)
+            return 1
 
     for spec in specs:
-        # 1. Copy profile files (SOUL.md, config.yaml, distribution.yaml, skills/).
-        copy = plan_profile_copy(spec, root, profile_dir)
-        src, dst = Path(copy["src"]), Path(copy["dst"])
-        if copy["exists"]:
-            print(f"[{spec.name}] copying profile {src} -> {dst}")
-            if not dry_run:
-                if dst.exists():
-                    shutil.rmtree(dst)
-                dst.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copytree(src, dst)
-        else:
-            print(f"[{spec.name}] WARNING: profile dir missing: {src}", file=sys.stderr)
-
-        # 1b. Install agent skills into the Hermes profile skills dir (shared
-        # destination -> merge, never wipe).
-        for sk in plan_skill_copies(spec, root, profile_dir):
+        workspace_dir = workspace_dirs[spec.name]
+        # Merge skills into the agent-specific workspace; do not overwrite
+        # OpenClaw-owned workspace profile files.
+        for sk in plan_skill_copies(spec, root, workspace_dir):
             print(f"[{spec.name}] {'DRY-RUN ' if dry_run else ''}skill install: "
                   f"{sk['name']} -> {sk['dst']}")
             if not dry_run:
@@ -131,19 +116,20 @@ def cmd_apply(specs: list[AgentSpec], root: Path, profile: str, dry_run: bool) -
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Install platform agents into Hermes")
+    parser = argparse.ArgumentParser(description="Install platform agent skills into OpenClaw workspaces")
     parser.add_argument("--apply", action="store_true", help="actually write (default: dry run)")
     parser.add_argument("--root", default=str(Path(__file__).resolve().parents[1]))
-    parser.add_argument("--hermes-profile", default="feishu3")
+    parser.add_argument("--openclaw-home", default=str(default_openclaw_home()))
     parser.add_argument("--list-only", action="store_true", help="just show the plan")
     args = parser.parse_args(argv)
 
     root = Path(args.root)
     specs = load_platform(root)
 
+    openclaw_home = Path(args.openclaw_home).expanduser()
     if args.list_only:
-        return cmd_list(specs, root, args.hermes_profile)
-    return cmd_apply(specs, root, args.hermes_profile, dry_run=not args.apply)
+        return cmd_list(specs, root, openclaw_home)
+    return cmd_apply(specs, root, openclaw_home, dry_run=not args.apply)
 
 
 if __name__ == "__main__":
