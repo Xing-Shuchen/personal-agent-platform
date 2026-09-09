@@ -7,6 +7,7 @@ spec:
   profile:
     name: intelligence
     source: profile
+  model: deepseek/deepseek-v4.1-flash-expires-on-0910
   capabilities:
     - personal_context.read
     - web.search
@@ -17,7 +18,7 @@ spec:
     class: conversational
     desired_jobs:
       - name: intelligence-pulse
-        schedule: every 1h
+        schedule: "10 2,5,8,12,23 * * *"
         skill: intelligence-brief
         attach_to_session: true
         delivery: user-home

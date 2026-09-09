@@ -7,6 +7,7 @@ spec:
   profile:
     name: serendipity
     source: profile
+  model: deepseek/deepseek-v4.1-flash-expires-on-0910
   capabilities:
     - personal_context.read
     - local_state.write
@@ -15,7 +16,7 @@ spec:
     class: conversational
     desired_jobs:
       - name: serendipity-pulse
-        schedule: every 4h
+        schedule: "15 23,3,7,12 * * *"
         skill: proactive-serendipity
         attach_to_session: true
         delivery: user-home
