@@ -210,8 +210,8 @@ def _cmd_status(args: argparse.Namespace) -> int:
     specs = _specs(root)
     print(f"agents={len(specs)} jobs={sum(len(spec.jobs) for spec in specs)}")
     print(f"scheduler_state={state_path} last_tick={state.get('last_tick_at', 'never')}")
-    print(f"delivery_target={'configured' if os.environ.get('PAP_DELIVERY_TARGET') else 'unset'}")
-    print(f"hermes_home={'configured' if os.environ.get('PAP_HERMES_HOME') else 'default'}")
+    print(f"openclaw_delivery_target={'configured' if os.environ.get('PAP_OPENCLAW_DELIVERY_TARGET') else 'unset'}")
+    print(f"openclaw_bin={os.environ.get('PAP_OPENCLAW_BIN', 'openclaw')}")
     return 0
 
 

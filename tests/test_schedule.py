@@ -24,6 +24,14 @@ def test_interval_is_anchored_to_local_wall_clock():
     assert not matches_schedule("every 4h", datetime(2026, 8, 31, 9, 0, tzinfo=CST))
 
 
+def test_anchored_interval_matches_only_its_configured_biweekly_slot():
+    schedule = "every 14d from 2026-09-12 20:43 tz Asia/Shanghai"
+    assert matches_schedule(schedule, datetime(2026, 9, 12, 20, 43, tzinfo=CST))
+    assert matches_schedule(schedule, datetime(2026, 9, 26, 20, 43, tzinfo=CST))
+    assert not matches_schedule(schedule, datetime(2026, 9, 19, 20, 43, tzinfo=CST))
+    assert not matches_schedule(schedule, datetime(2026, 9, 12, 20, 42, tzinfo=CST))
+
+
 def test_latest_due_returns_only_latest_slot():
     end = datetime(2026, 8, 31, 18, 30, tzinfo=CST)
     due = latest_due("17 */2 * * *", start_exclusive=end - timedelta(hours=5),

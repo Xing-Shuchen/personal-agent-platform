@@ -24,14 +24,38 @@ var/<agent>/                   Agent 的真实长期状态（不进 git）
 | `red-team` | 论证、设计和假设的对抗性审查 | 关闭 |
 | `world-historian` | 把外部变化保存为来源、可修订 Claim、Event 与长期 Thread | follow / reflect / crosslink / report |
 
-## 2026-09-04:调度已迁移到 OpenClaw(hermes pap tick 停用)
+## 2026-09-09:调度统一回归 PAP
 
-本仓库现在是 **OpenClaw agents 的运行时与状态家目录**,不再是独立调度平台:
+所有平台 job 只由 `pap tick` 调度，系统 crontab 每分钟调用一次；
+`agents/*/agent.yaml` 是唯一 job 声明源。此前对应的 OpenClaw automation
+镜像已删除，禁止重新创建，否则会产生双跑。
 
-- 全部 12 个 job(`agents/*/agent.yaml` 声明)已镜像为 OpenClaw automations,运行在 world-historian / intelligence / serendipity / compiler-news 各 agent 的 workspace(`~/.openclaw/workspace-*`)下;主动投递走 feishu4 home channel(user:ou_6f0036a9c338c62a92be4352057a912f)。
-- 系统 crontab 的 `pap tick` 行已注释(`# DISABLED 2026-09-04`;备份 `~/.openclaw/workspace-feishu4/backups/crontab-2026-09-04-before-pap-cutover.txt`),不要重新启用,否则与 OpenClaw 镜像双跑。
-- 技能运行时引用已从 `$PAP_ROOT` 相对形式改写为绝对路径 `/home/xingzeng/personal-agent-platform`(repo 与 workspace-world-historian 副本一致)。改技能请以本仓库 `agents/*/profile/skills` 为准,并同步到对应 `~/.openclaw/workspace-*/skills`。
-- `pap` CLI / `runtime/` / `var/`(chronicle.sqlite、gate-state、artifacts)继续作为共享本地服务使用,供 OpenClaw agent 通过 exec 调用。
+OpenClaw 仍可保留与 PAP 无关的独立 automation。技能的单一源仍是本仓库
+`agents/*/profile/skills`；运行时使用绝对路径
+`/home/xingzeng/personal-agent-platform`。
+
+当前运行链路：
+
+```text
+system crontab (每分钟)
+  -> pap tick
+    -> agents/*/agent.yaml（到期判定、幂等、重试、Run 审计）
+      -> OpenClaw Gateway: openclaw agent --agent <agent>
+        -> DeepSeek-V4.1 Flash（thinking=low）执行 skill
+      -> 最终输出严格等于 NO_REPLY：不投递
+      -> 其他输出：OpenClaw Gateway -> Feishu4
+```
+
+也就是说，系统 cron 是 PAP job 唯一的触发器；OpenClaw Gateway 只负责
+agent 执行和消息投递，不负责 PAP job 的调度。
+
+### PAP job 管理规则
+
+所有 PAP job 的新增、修改、启用、停用和移除，必须在本仓库完成：修改对应
+`agents/<agent>/agent.yaml`，再由 `pap tick` 生效。不得为 PAP job 创建、编辑或
+恢复 OpenClaw automation；这样可保证 manifest 是唯一真相源，且不会出现双跑。
+
+OpenClaw automation 仅可用于 PAP 范围之外的独立任务。
 
 ## 快速开始
 
@@ -83,19 +107,20 @@ pap tick --dry-run
 
 - `pap tick --now '<ISO 时间>'` 可显式指定判定时刻，验证某个槽位是否会触发；
 - `pap runs <run_id> --json` 查看单次 Run 的完整生命周期与错误信息；
-- 在一个 Hermes 交互/定时会话里手工执行 `hermes --oneshot` 会被嵌套会话守卫
-  直接吞掉（毫秒级返回 `[SILENT]`，并不调用模型）。调试真实调用链请用干净
-  环境（如 `env -i HOME=... PATH=... pap invoke ...`）或直接依赖系统 cron。
+- `pap tick --dry-run` 只预览到期任务；它不会调用 OpenClaw 或投递消息。
 
 系统只需一个每分钟入口。主动投递目标通过部署环境配置，不写进 repo：
 
 ```cron
-PAP_HERMES_HOME=/home/xingzeng/.hermes/profiles/<profile>
-PAP_DELIVERY_TARGET=weixin
+PAP_OPENCLAW_BIN=/home/xingzeng/.local/bin/openclaw
+PAP_OPENCLAW_CHANNEL=feishu
+PAP_OPENCLAW_ACCOUNT=feishu4
+PAP_OPENCLAW_DELIVERY_TARGET=<feishu_user_id>
+PAP_OPENCLAW_THINKING=low
 * * * * * cd /home/xingzeng/personal-agent-platform && /home/xingzeng/personal-agent-platform/.venv/bin/pap tick
 ```
 
-`PAP_HERMES_HOME` 选择调用模型、skills 和消息凭据所属的独立 Hermes profile；未设置时使用 Hermes 默认 home。`PAP_DELIVERY_TARGET` 使用 `hermes send --to` 的目标格式，例如 bare platform 或 `platform:chat_id`。返回 `[SILENT]`（整条响应恰为标记，或标记独占首行/末行、`[SILENT]` 前缀）的 run 永不投递；`delivery: local` 的 job 只更新本地状态。如果机器上已有旧的 Hermes agent cron，安装器不会擅自删除，迁移到 `pap tick` 后应人工确认并停用旧 job，避免双跑。
+PAP 通过 OpenClaw Gateway 执行每次 job，并以 `PAP_OPENCLAW_THINKING` 控制思考档位。`delivery: user-home` 也通过同一 Gateway 投递，分别由 `PAP_OPENCLAW_CHANNEL`、`PAP_OPENCLAW_ACCOUNT` 和 `PAP_OPENCLAW_DELIVERY_TARGET` 指定渠道、账号和收件人。最终响应严格等于 `NO_REPLY` 的 run 永不投递；`delivery: local` 的 job 只更新本地状态。
 
 ## Artifact
 
@@ -160,7 +185,7 @@ public Chronicle event -> local read-only personal lookup -> PersonalLink
 
 ## 共享主动门控
 
-主动投递仍必须经过 gate；不过则输出 `[SILENT]`：
+主动投递仍必须经过 gate；不过则输出 `NO_REPLY`：
 
 ```bash
 pap gate --agent world-historian --dedupe-key '<stable-key>' --priority 80 --message '...'

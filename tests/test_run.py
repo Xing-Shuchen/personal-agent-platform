@@ -1,4 +1,4 @@
-"""Tests for Hermes invocation and append-only run records."""
+"""Tests for OpenClaw invocation and append-only run records."""
 
 import json
 import subprocess
@@ -27,6 +27,7 @@ spec:
   profile:
     name: sample
     source: profile
+  model: deepseek/deepseek-v4.1-flash-expires-on-0910
 """,
         encoding="utf-8",
     )
@@ -42,8 +43,7 @@ def test_invoke_records_start_and_completion(tmp_path):
         captured["command"] = command
         captured["cwd"] = kwargs["cwd"]
         captured["env"] = kwargs["env"]
-        usage_path = Path(command[command.index("--usage-file") + 1])
-        usage_path.write_text(json.dumps({"api_calls": 1}), encoding="utf-8")
+        captured["input"] = kwargs["input"]
         return subprocess.CompletedProcess(command, 0, stdout="完成\n", stderr="")
 
     result = invoke(root=tmp_path, spec=spec, skill="sample-skill", input_text="seed",
@@ -52,8 +52,13 @@ def test_invoke_records_start_and_completion(tmp_path):
     assert result.response == "完成"
     assert captured["cwd"] == tmp_path / "agents/sample/profile"
     assert captured["env"]["PAP_AGENT_STATE_DIR"] == str(tmp_path / "var/sample")
+    assert captured["command"][:5] == ["openclaw", "agent", "--agent", "sample", "--session-key"]
+    assert "--message-file" in captured["command"]
+    assert captured["command"][captured["command"].index("--model") + 1] == \
+        "deepseek/deepseek-v4.1-flash-expires-on-0910"
+    assert "Run the 'sample-skill' skill exactly as written." in captured["input"]
     lifecycle = [json.loads(line)["event"] for line in log.read_text().splitlines()]
     assert lifecycle == ["run.started", "run.completed"]
     merged = runs(log)
     assert merged[0]["run_id"] == result.run_id
-    assert merged[0]["usage"] == {"api_calls": 1}
+    assert merged[0]["usage"] == {}

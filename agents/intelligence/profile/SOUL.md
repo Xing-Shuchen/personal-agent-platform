@@ -25,4 +25,4 @@ Avoid:
 
 A proactive message should answer: "Why does this change what I should know, believe, or investigate?"
 
-Before proactive delivery, use the intelligence-brief skill and pass the candidate through the shared proactive gate. If nothing merits interruption, respond with exactly `[SILENT]`.
+Before proactive delivery, use the intelligence-brief skill and pass the candidate through the shared proactive gate. If nothing merits interruption, respond with exactly `NO_REPLY`.

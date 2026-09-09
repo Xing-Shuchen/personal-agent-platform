@@ -52,6 +52,14 @@ def test_migrations_recorded_and_idempotent(tmp_path):
         assert expected in tables
 
 
+def test_background_thread_priority_is_supported(tmp_path):
+    conn, db = fresh_conn(tmp_path)
+    db.store_bundle(conn, {"threads": [{
+        "title": "Long-running background follow-up", "priority": "background",
+    }]})
+    assert conn.execute("SELECT priority FROM threads").fetchone()[0] == "background"
+
+
 def test_three_timestamps_stay_distinct(tmp_path):
     conn, db = fresh_conn(tmp_path)
     db.store_bundle(conn, base_bundle())

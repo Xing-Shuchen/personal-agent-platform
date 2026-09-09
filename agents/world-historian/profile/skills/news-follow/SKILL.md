@@ -9,7 +9,8 @@ Use the requested priority as the work-set filter.
 
 ## Local increments first
 
-RSS sources are ingested hourly into the Chronicle by the `news-feeds` job.
+RSS sources are ingested during the configured low-cost windows into the
+Chronicle by the `news-feeds` job.
 Before any web search, check what is already local:
 
 ```bash
@@ -27,8 +28,8 @@ titles, timestamps, URLs, and short summaries; do not dump full article bodies.
 ## Execution budget
 
 This is an incremental collection job, not an open-ended research session.
-Use at most one local feed query, one due-thread list query, and one detail
-query per candidate thread. Process at most ten due threads per run and at
+Use at most one local feed query, one due-thread list query, one thread-roster
+query (see Delivery contract), and one detail query per candidate thread. Process at most ten due threads per run and at
 most five web searches total; stop searching as soon as the configured
 expansion budget is satisfied. Never inspect OpenClaw automations, sessions,
 home directories, or unrelated logs while running this skill. If a required
@@ -81,11 +82,78 @@ formula (`$G(T) \gg \log T\,\log_2 T/\log_4 T$`, `$\pi_1(X)$`), never Unicode
 math notation (`≫`, `log₂T`, `π₁`). Narrative prose stays plain — only actual
 formulas/expressions get `$` delimiters.
 
-This is a collection job. When there is no interruption-worthy change, the
-ENTIRE final response must be exactly the single marker `[SILENT]` — no work
-summary, no rejection notes, no Chinese「无变化」prose, nothing before or
-after. Any surrounding text makes it a normal delivery and spams the user
-(observed 2026-09-01: a work-summary + [SILENT] response leaked to Feishu). If a change
-merits proactive interruption, pass it through
-`"/home/xingzeng/personal-agent-platform/.venv/bin/pap" gate --agent world-historian` with a stable
-event/thread key before returning one concise Chinese update.
+## Thread roster (read-only)
+
+To list every tracked thread, run exactly this read-only query (do not probe
+any other Chronicle path):
+
+```bash
+"/home/xingzeng/personal-agent-platform/.venv/bin/python" - <<'PY'
+import sqlite3
+db = sqlite3.connect("file:/home/xingzeng/personal-agent-platform/var/world-historian/chronicle.sqlite?mode=ro", uri=True)
+for title, pri in db.execute("SELECT title, priority FROM threads WHERE status='active' ORDER BY priority DESC, title"):
+    print(f"- {title}（{pri}）")
+PY
+```
+
+## Priority lifecycle (background demotion, then close)
+
+Applied by the `world-follow-background` job before it selects its work set
+(and safe to apply in any follow run when a stale thread is noticed):
+
+- No new event for over 14 days: demote to `priority: background`. The thread
+  stays `active` and tracked, just on the biweekly cadence. Genuinely new
+  evidence promotes it back through the normal bundle path.
+- No new event for over 60 days (two months): set `status: closed`. A closed
+  thread is not followed at all and must not appear in the tracked roster.
+
+Find candidates with exactly this read-only query:
+
+```bash
+"/home/xingzeng/personal-agent-platform/.venv/bin/python" - <<'PY'
+import sqlite3, datetime
+db = sqlite3.connect("file:/home/xingzeng/personal-agent-platform/var/world-historian/chronicle.sqlite?mode=ro", uri=True)
+def parse(s):
+    if not s: return None
+    for f in ("%Y-%m-%dT%H:%M:%S%z", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d"):
+        try:
+            d = datetime.datetime.strptime(s.strip(), f)
+            return d.replace(tzinfo=None) if d.tzinfo else d
+        except Exception: pass
+    return None
+agg = {}
+for tid, title, pri, occ, obs, rep in db.execute("""SELECT t.id,t.title,t.priority,e.occurred_at,e.observed_at,e.reported_at
+FROM threads t LEFT JOIN thread_events te ON te.thread_id=t.id LEFT JOIN events e ON e.id=te.event_id
+WHERE t.status='active'"""):
+    last = max([d for d in (parse(occ), parse(obs), parse(rep)) if d], default=None)
+    cur = agg.setdefault(tid, {"title": title, "pri": pri, "last": None})
+    if last and (cur["last"] is None or last > cur["last"]): cur["last"] = last
+now = datetime.datetime.now()
+for tid, v in agg.items():
+    if v["last"] is None or v["last"] < now - datetime.timedelta(days=60):
+        print(f"CLOSE\t{tid}\t{v['title']}")
+    elif v["pri"] != "background" and v["last"] < now - datetime.timedelta(days=14):
+        print(f"DEMOTE\t{tid}\t{v['title']}")
+PY
+```
+
+Persist each change through `store-bundle`: `DEMOTE` → the thread's `id`,
+`title`, `status: "active"`, `priority: "background"`; `CLOSE` → `id`, `title`,
+`status: "closed"`. Report these changes only through the delivery contract
+below.
+
+## Delivery contract
+
+This is a collection job.
+
+- No tracked thread gained new progress: the ENTIRE final response must be
+exactly the single marker `NO_REPLY` — no work summary, no rejection notes, no
+Chinese「无变化」prose, nothing before or after. Any surrounding text makes it a
+normal delivery and spams the user (observed 2026-09-01: a work-summary +
+`[SILENT]` response leaked to Feishu; OpenClaw only suppresses the exact token
+`NO_REPLY` — any other marker, including the legacy Hermes `[SILENT]`, is
+delivered as literal text, observed 2026-09-08 13:05).
+- At least one tracked thread gained new progress: return one concise Chinese
+update with exactly these two parts, in this order, and nothing else:
+  1. 进展 — 每个有新进展的 thread 一句话：哪条线、新增了什么。不写检索过程、不写被排除的候选。
+  2. 追踪中 — 用上面 roster 查询的输出原文，逐行列出所有正在追踪的 thread。

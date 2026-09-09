@@ -149,35 +149,14 @@ def due_jobs(
 
 
 def _intentional_silence(response: str) -> bool:
-    """Recognize an intentional-silence marker in a run's final response.
-
-    The strict contract is the entire response being exactly one marker, but
-    real agents drift into "body + [SILENT]" or "[SILENT] body" shapes (the
-    news-follow runs leaked to delivery on 2026-09-01).  Mirror Hermes cron's
-    ``_is_cron_silence_response``: suppress when a marker is the whole
-    response, appears as its own first/last line, or is a bracketed
-    ``[SILENT]`` prefix.  A token buried mid-sentence in a genuine report is
-    still delivered.
-    """
+    """Recognize OpenClaw's exact intentional-silence marker, ``NO_REPLY``."""
     if not response:
         return False
     stripped = response.strip()
     if not stripped:
         return False
 
-    def _is_token(line: str) -> bool:
-        return " ".join(line.strip().upper().replace("_", " ").split()) in {
-            "[SILENT]",
-            "SILENT",
-            "NO REPLY",
-        }
-
-    if _is_token(stripped):
-        return True
-    lines = [ln for ln in stripped.splitlines() if ln.strip()]
-    if lines and (_is_token(lines[0]) or _is_token(lines[-1])):
-        return True
-    return stripped.upper().startswith("[SILENT]")
+    return stripped == "NO_REPLY"
 
 
 def _deliver(
@@ -187,6 +166,7 @@ def _deliver(
     target: str | None,
     sender: Callable[..., subprocess.CompletedProcess[str]] | None = None,
 ) -> str:
+    """Deliver user-facing run output through the OpenClaw Gateway CLI."""
     if result.status != "success":
         return "not-attempted"
     if not result.response or _intentional_silence(result.response):
@@ -196,15 +176,20 @@ def _deliver(
     if not target:
         return "unconfigured"
     command_runner = sender or subprocess.run
-    env = os.environ.copy()
-    if os.environ.get("PAP_HERMES_HOME"):
-        env["HERMES_HOME"] = os.environ["PAP_HERMES_HOME"]
+    channel = os.environ.get("PAP_OPENCLAW_CHANNEL", "feishu")
+    account = os.environ.get("PAP_OPENCLAW_ACCOUNT", "feishu4")
+    openclaw_bin = os.environ.get("PAP_OPENCLAW_BIN", "openclaw")
     try:
         sent = command_runner(
-            ["hermes", "send", "--to", target, "--quiet", result.response],
+            [
+                openclaw_bin, "message", "send",
+                "--channel", channel,
+                "--account", account,
+                "--target", target,
+                "--message", result.response,
+            ],
             capture_output=True,
             text=True,
-            env=env,
             timeout=60,
         )
     except (OSError, subprocess.TimeoutExpired):
@@ -227,7 +212,7 @@ def tick(
     root = Path(root).resolve()
     state_path = Path(state_path or root / DEFAULT_SCHEDULER_STATE)
     run_log = Path(run_log or root / "var/state/runs.jsonl")
-    target = delivery_target or os.environ.get("PAP_DELIVERY_TARGET")
+    target = delivery_target or os.environ.get("PAP_OPENCLAW_DELIVERY_TARGET")
     jobs = due_jobs(root, now=now, state_path=state_path, reserve=not dry_run)
     if dry_run:
         return [

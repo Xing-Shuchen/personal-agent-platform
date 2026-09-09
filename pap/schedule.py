@@ -3,6 +3,7 @@
 The platform deliberately supports only minute-resolution schedules:
 
 * ``every 30m`` / ``every 2h`` / ``every 1d``;
+* ``every 14d from 2026-09-12 20:43 tz Asia/Shanghai``;
 * ``HH:MM`` (optionally ``HH:MM tz Area/Location``);
 * five-field cron, with or without the historical ``cron `` prefix.
 """
@@ -19,6 +20,9 @@ class ScheduleError(ValueError):
 
 
 _EVERY_RE = re.compile(r"^every\s+(\d+)([smhd])$")
+_ANCHORED_EVERY_RE = re.compile(
+    r"^every\s+(\d+)([smhd])\s+from\s+(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2})\s+tz\s+([^\s]+)$"
+)
 _CLOCK_RE = re.compile(r"^(\d{2}):(\d{2})(?:\s+tz\s+([^\s]+))?$")
 
 
@@ -34,6 +38,24 @@ def _interval_minutes(schedule: str) -> int | None:
     if seconds < 60 or seconds % 60:
         raise ScheduleError("pap tick supports minute-resolution intervals only")
     return seconds // 60
+
+
+def _anchored_interval(schedule: str) -> tuple[int, datetime] | None:
+    match = _ANCHORED_EVERY_RE.fullmatch(schedule)
+    if not match:
+        return None
+    amount, unit, date, clock, zone_name = match.groups()
+    minutes = _interval_minutes(f"every {amount}{unit}")
+    assert minutes is not None
+    try:
+        zone = ZoneInfo(zone_name)
+    except ZoneInfoNotFoundError as exc:
+        raise ScheduleError(f"unknown timezone {zone_name!r}") from exc
+    try:
+        anchor = datetime.fromisoformat(f"{date}T{clock}").replace(tzinfo=zone)
+    except ValueError as exc:
+        raise ScheduleError("anchored interval must use a valid YYYY-MM-DD HH:MM time") from exc
+    return minutes, anchor
 
 
 def _cron_fields(schedule: str) -> list[str] | None:
@@ -95,6 +117,9 @@ def validate_schedule(schedule: str) -> None:
     if _EVERY_RE.fullmatch(value):
         _interval_minutes(value)
         return
+    if _ANCHORED_EVERY_RE.fullmatch(value):
+        _anchored_interval(value)
+        return
 
     clock = _CLOCK_RE.fullmatch(value)
     if clock:
@@ -132,6 +157,13 @@ def matches_schedule(schedule: str, moment: datetime) -> bool:
         epoch = datetime(1970, 1, 1)
         elapsed = int((local - epoch).total_seconds() // 60)
         return elapsed % interval == 0
+
+    anchored_interval = _anchored_interval(value)
+    if anchored_interval is not None:
+        interval, anchor = anchored_interval
+        local = moment.astimezone(anchor.tzinfo).replace(second=0, microsecond=0)
+        elapsed = int((local - anchor).total_seconds() // 60)
+        return elapsed >= 0 and elapsed % interval == 0
 
     clock = _CLOCK_RE.fullmatch(value)
     if clock:

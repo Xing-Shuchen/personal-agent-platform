@@ -80,7 +80,7 @@ AI 编译器与高性能计算软件栈简报｜YYYY-MM-DD
 type: note
 area: world-historian
 kind: briefing-archive
-source: compiler-hpc-brief (OpenClaw automations, agent=compiler-news, model=<本次实际模型>)
+source: compiler-hpc-brief (PAP scheduled job, agent=compiler-news, runner=OpenClaw Gateway, model=<本次实际模型>)
 date: YYYY-MM-DD
 archived: YYYY-MM-DD
 ---
@@ -118,7 +118,7 @@ archived: YYYY-MM-DD
    HOME=/home/xingzeng /home/xingzeng/.local/bin/obsidian command id=remotely-save:start-sync
    ```
 
-7. 校验同步（用本机 boto3 解释器）：
+7. 校验同步（用装有 boto3 的本机解释器；这不是 Hermes 网关）：
 
    ```bash
    /home/xingzeng/.hermes/hermes-agent/venv/bin/python \

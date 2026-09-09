@@ -28,4 +28,4 @@ Do not proactively surface:
 
 A good proactive message should create the reaction: "I had not noticed those belonged together."
 
-Before any proactive delivery, follow the proactive-serendipity skill and pass the candidate through the shared proactive gate. If no candidate passes, respond with exactly `[SILENT]`.
+Before any proactive delivery, follow the proactive-serendipity skill and pass the candidate through the shared proactive gate. If no candidate passes, respond with exactly `NO_REPLY`.

@@ -7,7 +7,6 @@ import json
 import os
 import secrets
 import subprocess
-import tempfile
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -72,7 +71,7 @@ def invoke(
     command_runner: Callable[..., subprocess.CompletedProcess[str]] | None = None,
     timeout_seconds: int | None = None,
 ) -> RunResult:
-    """Invoke one installed-in-repo profile skill through Hermes one-shot mode."""
+    """Invoke one installed-in-repo profile skill through an OpenClaw Gateway turn."""
     root = Path(root).resolve()
     profile_dir = root / "agents" / spec.name / "profile"
     skill_file = profile_dir / "skills" / skill / "SKILL.md"
@@ -96,16 +95,12 @@ def invoke(
         "started_at": started.isoformat(timespec="seconds"),
     })
 
-    usage_path: Path | None = None
     usage: dict[str, Any] = {}
     response = ""
     error = ""
     returncode = 1
     runner = command_runner or subprocess.run
     try:
-        fd, raw_usage_path = tempfile.mkstemp(prefix=f"{run_id}-", suffix="-usage.json")
-        os.close(fd)
-        usage_path = Path(raw_usage_path)
         env = os.environ.copy()
         env.update({
             "PAP_ROOT": str(root),
@@ -113,53 +108,38 @@ def invoke(
             "PAP_RUN_ID": run_id,
             "PAP_AGENT_STATE_DIR": str(root / "var" / spec.name),
         })
-        if os.environ.get("PAP_HERMES_HOME"):
-            env["HERMES_HOME"] = os.environ["PAP_HERMES_HOME"]
         skill_text = skill_file.read_text(encoding="utf-8")
+        timeout = timeout_seconds or int(os.environ.get("PAP_RUN_TIMEOUT_SECONDS", "900"))
         command = [
-            "hermes",
-            "--oneshot", _prompt(skill, skill_text, input_text, args),
-            "--usage-file", str(usage_path),
+            os.environ.get("PAP_OPENCLAW_BIN", "openclaw"),
+            "agent",
+            "--agent", spec.name,
+            "--session-key", f"agent:{spec.name}:pap-{run_id}",
+            "--message-file", "-",
+            "--thinking", os.environ.get("PAP_OPENCLAW_THINKING", "low"),
+            "--timeout", str(timeout),
         ]
         if spec.model:
-            provider, _, model_name = spec.model.partition("/")
-            if model_name:
-                command += ["--provider", provider, "-m", model_name]
-            else:
-                command += ["-m", provider]
-        timeout = timeout_seconds or int(os.environ.get("PAP_RUN_TIMEOUT_SECONDS", "900"))
+            command += ["--model", spec.model]
         completed = runner(
             command,
             cwd=profile_dir,
             env=env,
             capture_output=True,
             text=True,
+            input=_prompt(skill, skill_text, input_text, args),
             timeout=timeout,
         )
         returncode = completed.returncode
         response = completed.stdout.strip()
         error = completed.stderr.strip()
-        if usage_path.exists() and usage_path.stat().st_size:
-            loaded = json.loads(usage_path.read_text(encoding="utf-8"))
-            if isinstance(loaded, dict):
-                usage = loaded
     except subprocess.TimeoutExpired as exc:
         response = exc.stdout.strip() if isinstance(exc.stdout, str) else ""
-        error = f"Hermes invocation timed out after {exc.timeout}s"
+        error = f"OpenClaw invocation timed out after {exc.timeout}s"
         returncode = 124
     except OSError as exc:
         error = str(exc)
         returncode = 127
-    except (json.JSONDecodeError, ValueError) as exc:
-        error = f"invalid Hermes usage output: {exc}"
-        returncode = returncode or 1
-    finally:
-        if usage_path is not None:
-            try:
-                usage_path.unlink(missing_ok=True)
-            except OSError:
-                pass
-
     completed_at = _now()
     status = "success" if returncode == 0 else "failed"
     append_jsonl(run_log, {

@@ -79,7 +79,7 @@ def test_install_agents_list_only():
         capture_output=True, text=True, cwd=REPO)
     assert r.returncode == 0, r.stderr
     assert "agent: serendipity" in r.stdout
-    assert "every 4h" in r.stdout
+    assert "15 23,3,7,12 * * *" in r.stdout
     assert "agent: intelligence" in r.stdout
     assert "no platform jobs (proactive disabled)" in r.stdout
     assert "platform job world-follow-high" in r.stdout

@@ -7,7 +7,7 @@ spec:
   profile:
     name: world-historian
     source: profile
-  model: zai/glm-5.3-flash
+  model: deepseek/deepseek-v4.1-flash-expires-on-0910
   capabilities:
     - personal_context.read
     - web.search
@@ -19,32 +19,39 @@ spec:
     class: ambient
     desired_jobs:
       - name: world-follow-high
-        schedule: "0 8,10,12,14,16,18,20,22 * * *"
-        skill: news-follow
-        args:
-          priority: high
-        attach_to_session: false
-        delivery: user-home
-      - name: world-follow-night
-        schedule: "0 0,4 * * *"
+        schedule: "43 0,6,12,18 * * *"
         skill: news-follow
         args:
           priority: high
         attach_to_session: false
         delivery: user-home
       - name: world-feeds
-        schedule: "10 * * * *"
+        schedule: "10 0-8,12-13,18-23 * * *"
         skill: news-feeds
         args: {}
         attach_to_session: false
         delivery: local
       - name: world-follow-normal
-        schedule: "43 */6 * * *"
+        schedule: "43 3,13,21 * * *"
         skill: news-follow
         args:
           priority: normal
         attach_to_session: false
-        delivery: local
+        delivery: user-home
+      - name: world-follow-low
+        schedule: "43 20 * * *"
+        skill: news-follow
+        args:
+          priority: low
+        attach_to_session: false
+        delivery: user-home
+      - name: world-follow-background
+        schedule: "every 14d from 2026-09-12 20:43 tz Asia/Shanghai"
+        skill: news-follow
+        args:
+          priority: background
+        attach_to_session: false
+        delivery: user-home
       - name: world-reflect
         schedule: "20 2 * * *"
         skill: news-reflect

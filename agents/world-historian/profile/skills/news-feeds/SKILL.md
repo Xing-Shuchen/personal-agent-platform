@@ -27,5 +27,5 @@ user-facing digest.
      "/home/xingzeng/personal-agent-platform/agents/world-historian/runtime/cli.py" feeds recent --hours 24
    ```
 
-4. Finish with exactly `[SILENT]`. Ingestion itself is never
+4. Finish with exactly `NO_REPLY`. Ingestion itself is never
    interruption-worthy; `news-follow` decides what matters.

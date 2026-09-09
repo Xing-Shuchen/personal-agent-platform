@@ -19,4 +19,4 @@ similarity. Read
 [the reflection bundle fields](references/reflection-bundle.md), then
 persist the result atomically through `/home/xingzeng/personal-agent-platform/agents/world-historian/runtime/cli.py store-bundle`.
 This background mode does not produce a user-facing digest; finish with exactly
-`[SILENT]` after persistence.
+`NO_REPLY` after persistence.
