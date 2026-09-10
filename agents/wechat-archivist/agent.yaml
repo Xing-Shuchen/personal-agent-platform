@@ -1,0 +1,27 @@
+apiVersion: pap/v1
+kind: Agent
+metadata:
+  name: wechat-archivist
+  description: 每日从本人 Ubuntu 微信数据库增量归档聊天记录。
+spec:
+  profile:
+    name: wechat-archivist
+    source: profile
+  model: deepseek/deepseek-flash
+  capabilities:
+    - local_state.write
+  proactive:
+    enabled: true
+    class: ambient
+    desired_jobs:
+      - name: wechat-daily-incremental
+        schedule: "15 3 * * *"
+        skill: wechat-daily-incremental
+        args: {}
+        attach_to_session: false
+        delivery: local
+  state:
+    private:
+      - messages.jsonl
+      - checkpoint.json
+      - run-log.jsonl

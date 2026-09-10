@@ -17,3 +17,4 @@ agents/*/profile/var/
 *.sqlite
 *.sqlite3
 .DS_Store
+var/wechat-archivist/
