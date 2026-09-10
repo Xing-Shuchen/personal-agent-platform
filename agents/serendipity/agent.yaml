@@ -7,7 +7,7 @@ spec:
   profile:
     name: serendipity
     source: profile
-  model: zai/glm-5.3
+  model: deepseek/deepseek-flash
   capabilities:
     - personal_context.read
     - local_state.write

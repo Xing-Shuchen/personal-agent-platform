@@ -7,7 +7,7 @@ spec:
   profile:
     name: compiler-news
     source: profile
-  model: deepseek/deepseek-v4.1-flash-expires-on-0910
+  model: deepseek/deepseek-flash
   capabilities:
     - personal_context.read
     - web.search
