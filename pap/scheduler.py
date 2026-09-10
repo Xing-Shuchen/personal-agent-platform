@@ -21,6 +21,7 @@ MAX_CATCHUP = timedelta(hours=24)
 RESERVATION_TTL = timedelta(minutes=90)  # 必须大于最长单次运行时长（PAP_RUN_TIMEOUT_SECONDS 上限 3600s），否则超长运行会被后续 tick 重复认领
 RETRY_DELAY = timedelta(minutes=5)
 MAX_ATTEMPTS_PER_SLOT = 3
+LEAK_MARKERS = ("<invoke name=", "</｜｜DSML｜", "｜｜DSML｜｜", "sqlite3.connect(")
 
 
 def _now() -> datetime:
@@ -159,6 +160,20 @@ def _intentional_silence(response: str) -> bool:
     return stripped == "NO_REPLY"
 
 
+def _looks_like_leaked_output(text: str) -> bool:
+    """True when a run's final text is an echo of tool use, not an answer."""
+    if any(marker in text for marker in LEAK_MARKERS):
+        return True
+    lines = text.splitlines()
+    reasoning_preambles = ("Let me ", "I'll ", "I will ", "Now let me ", "First, let me ")
+    for preamble, code_line in zip(lines, lines[1:]):
+        if preamble.lstrip().startswith(reasoning_preambles):
+            stripped_code = code_line.lstrip()
+            if ("=" in stripped_code and "(" in stripped_code) or stripped_code.startswith("<"):
+                return True
+    return "```python" in text
+
+
 def _deliver(
     result: RunResult,
     job: ProactiveJob,
@@ -171,6 +186,8 @@ def _deliver(
         return "not-attempted"
     if not result.response or _intentional_silence(result.response):
         return "silent"
+    if _looks_like_leaked_output(result.response):
+        return "leaked-suppressed"
     if job.delivery == "local":
         return "local"
     if not target:

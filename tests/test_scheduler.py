@@ -115,3 +115,40 @@ def test_delivery_uses_openclaw_gateway(monkeypatch):
          "--account", "feishu4", "--target", "ou_test", "--message", "hello"],
         {"capture_output": True, "text": True, "timeout": 60},
     )]
+
+
+def test_delivery_suppresses_leaked_tool_echo():
+    result = RunResult(
+        run_id="run_test", agent_id="sample", skill="sample-skill", status="success",
+        returncode=0,
+        response=(
+            "Let me verify one candidate delta before deciding on delivery "
+            "(whether Buckmaster's call for an independent investigation is already in the record).\n"
+            'db = sqlite3.connect("file:/home/xingzeng/personal-agent-platform/'
+            'var/world-historian/chronicle.sqlite?mode=ro", uri=True)'
+        ),
+        error="", started_at="", completed_at="", usage={},
+    )
+    job = type("Job", (), {"delivery": "user-home"})()
+
+    def sender(*args, **kwargs):
+        raise AssertionError("leaked output must not be sent")
+
+    assert _deliver(result, job, target="ou_test", sender=sender) == "leaked-suppressed"
+
+
+def test_delivery_sends_normal_chinese_brief():
+    result = RunResult(
+        run_id="run_test", agent_id="sample", skill="sample-skill", status="success",
+        returncode=0, response="今日增量：git 提交 3 条；重构出 9 个事件；commit abc123",
+        error="", started_at="", completed_at="", usage={},
+    )
+    job = type("Job", (), {"delivery": "user-home"})()
+    calls = []
+
+    def sender(command, **kwargs):
+        calls.append(command)
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    assert _deliver(result, job, target="ou_test", sender=sender) == "sent"
+    assert calls
