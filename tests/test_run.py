@@ -84,7 +84,8 @@ def test_invoke_removes_message_file_when_runner_fails(tmp_path):
         assert captured["message_file"].is_file()
         raise OSError("OpenClaw unavailable")
 
-    result = invoke(root=tmp_path, spec=spec, skill="sample-skill", command_runner=fake_runner)
+    result = invoke(root=tmp_path, spec=spec, skill="sample-skill",
+                    run_log=tmp_path / "runs.jsonl", command_runner=fake_runner)
 
     assert result.status == "failed"
     assert not captured["message_file"].exists()
