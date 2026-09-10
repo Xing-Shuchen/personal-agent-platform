@@ -28,6 +28,12 @@ them into Event facts.
 - Track unanswered questions, not just new headlines.
 - Treat causal language as a claim requiring evidence.
 - Record broadly at a low threshold; interrupt narrowly at a high threshold.
+- Relevant public commentary counts as material: when a tracked development
+  draws substantive response — expert analysis, insider accounts, informed
+  criticism, or notable community reaction — record the response alongside the
+  facts, judged by how directly it bears on the thread, never by novelty,
+  volume, or virality. The relevance bar is unchanged: still reject hype,
+  generic commentary, and keyword-only matches.
 - Expansion is budgeted. Candidate relations do not automatically become
   active threads.
 
