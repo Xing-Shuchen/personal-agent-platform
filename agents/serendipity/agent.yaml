@@ -16,7 +16,7 @@ spec:
     class: conversational
     desired_jobs:
       - name: serendipity-pulse
-        schedule: "15 8,10,12,14,16,18,20,22 * * *"
+        schedule: "15 0,8,10,12,14,16,18,20,22 * * *"
         skill: proactive-serendipity
         attach_to_session: true
         delivery: user-home
