@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Any
 
 DEFAULT_VAULT_SUBPATH = Path("文档/Obsidian/Second_Brain/2Area/41 新闻及事件")
+CLOSED_DIR = "closed_threads"
 MANUAL_SECTION = "手工批注"
 _INDEX_VERSION = 1
 
@@ -75,6 +76,20 @@ def thread_filename(title: str, thread_id: str, taken: set[str]) -> str:
         suffix = thread_id.rsplit("_", 1)[-1][:6] or thread_id[:6]
         name = f"{base}-{suffix}.md"
     return name
+
+
+def _thread_relpath(snapshot: dict[str, Any], name: str) -> str:
+    """Vault-relative thread file path; closed threads live in a subfolder."""
+    if str(snapshot.get("status") or "active") == "closed":
+        return f"{CLOSED_DIR}/{name}"
+    return name
+
+
+def _split_rel(rel: str) -> tuple[str, str]:
+    """Split a vault-relative path into (directory key, filename)."""
+    path = Path(str(rel))
+    parent = str(path.parent)
+    return ("" if parent == "." else parent), path.name
 
 
 def _yaml_str(value: Any) -> str:
@@ -409,7 +424,12 @@ def sync_threads(
         return outcome
     index = _load_index(index_path)
     threads = index["threads"]
-    taken = {str(name) for name in threads.values()}
+    # Index values are vault-relative paths ("name.md" or
+    # "closed_threads/name.md"); track used names per directory.
+    taken: dict[str, set[str]] = {}
+    for rel in threads.values():
+        rel_dir, rel_name = _split_rel(rel)
+        taken.setdefault(rel_dir, set()).add(rel_name)
 
     try:
         vault.mkdir(parents=True, exist_ok=True)
@@ -452,16 +472,30 @@ def sync_threads(
                     "",
                 ]
                 _atomic_write(mat_path, "\n".join(mat_lines))
-            previous = threads.get(tid)
+            previous = str(threads.get(tid) or "")
+            prev_dir, prev_name = _split_rel(previous) if previous else ("", "")
+            dir_key = (CLOSED_DIR
+                       if str(snapshot.get("status") or "active") == "closed" else "")
+            names = taken.setdefault(dir_key, set())
             # A thread's own previous filename is not a collision.
-            others = taken - ({previous} if previous else set())
+            others = names - ({prev_name}
+                              if prev_name and prev_dir == dir_key else set())
             name = thread_filename(str(snapshot.get("title") or "untitled"),
                                    tid, others)
-            taken.add(name)
-            taken.discard(previous or "")
-            target = vault / name
-            existing = target.read_text(encoding="utf-8") if target.exists() else None
+            names.add(name)
+            if prev_name and prev_dir != dir_key:
+                taken.get(prev_dir, set()).discard(prev_name)
+            elif prev_name:
+                names.discard(prev_name)
+            rel = _thread_relpath(snapshot, name)
+            target = vault / rel
             marker = _thread_id_marker(tid)
+            previous_path = (vault / previous) if previous else None
+            source_path = target if target.exists() else (
+                previous_path
+                if previous_path is not None and previous_path.exists() else target)
+            existing = (source_path.read_text(encoding="utf-8")
+                        if source_path.exists() else None)
             notes = None
             if existing is not None and marker in existing:
                 notes = extract_manual_notes(existing)
@@ -471,25 +505,26 @@ def sync_threads(
                 # version over the local one). Fall back to the last git
                 # commit of this file before rendering, so reader notes are
                 # never silently dropped by a sync race.
-                git_notes = _git_committed_manual_notes(target, marker)
+                git_notes = _git_committed_manual_notes(source_path, marker)
                 if git_notes:
                     notes = git_notes
                     outcome["errors"].append(
                         f"{tid}: manual notes missing on disk; recovered from git "
                         f"(possible remotely-save revert) — please verify"
                     )
+            target.parent.mkdir(parents=True, exist_ok=True)
             _atomic_write(target, render_snapshot(snapshot, synced_at, notes))
             outcome["written"].append(str(target))
 
-            if previous and previous != name:
-                old_path = vault / str(previous)
+            if previous and previous != rel:
+                old_path = vault / previous
                 if old_path.exists():
                     old_text = old_path.read_text(encoding="utf-8")
                     if marker in old_text:  # never delete a foreign file
                         old_path.unlink()
                         outcome["removed"].append(str(old_path))
-            if previous != name:
-                threads[tid] = name
+            if previous != rel:
+                threads[tid] = rel
                 dirty = True
         except OSError as exc:
             outcome["errors"].append(f"{tid}: {exc}")
