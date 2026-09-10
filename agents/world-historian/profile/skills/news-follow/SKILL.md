@@ -58,13 +58,17 @@ Check them before generic web search, in this order:
 Prefer these sources when they cover a story: they are the user's stated
 authoritative set. Keep using general search for discovery beyond them.
 
-For each due thread, query across five lanes: exact follow-up, entities, open
-questions, downstream consequences, and official-source checks. Cluster
+For each due thread, query across six lanes: exact follow-up, entities, open
+questions, downstream consequences, official-source checks, and commentary
+(substantive expert analysis, insider accounts, informed criticism, or notable
+public reaction to the thread's subject). Cluster
 coverage into underlying events before writing anything.
 
 For every candidate, evaluate entity overlap, causal strength, temporal
-proximity, semantic relation, user interest, and novelty. Respect the configured
-expansion budget: at most five new events per run and two new threads per day.
+proximity, semantic relation, user interest, novelty, and relevant public
+commentary (how directly it bears on the thread — not how loud it is). Respect
+the configured expansion budget: at most five new events per run and two new
+threads per day.
 Weak expansions remain discovery candidates; they do not become active merely
 because they share keywords.
 
@@ -91,7 +95,11 @@ any other Chronicle path):
 "/home/xingzeng/personal-agent-platform/.venv/bin/python" - <<'PY'
 import sqlite3
 db = sqlite3.connect("file:/home/xingzeng/personal-agent-platform/var/world-historian/chronicle.sqlite?mode=ro", uri=True)
-for title, pri in db.execute("SELECT title, priority FROM threads WHERE status='active' ORDER BY priority DESC, title"):
+for title, pri in db.execute(
+    "SELECT title, priority FROM threads WHERE status='active' "
+    "ORDER BY CASE priority WHEN 'high' THEN 0 WHEN 'normal' THEN 1 "
+    "WHEN 'low' THEN 2 ELSE 3 END, title"
+):
     print(f"- {title}（{pri}）")
 PY
 ```
@@ -158,4 +166,4 @@ delivered as literal text, observed 2026-09-08 13:05).
 return one concise Chinese
 update with exactly these two parts, in this order, and nothing else:
   1. 进展 — 每个有新进展的 thread 一句话：哪条线、新增/修正了什么事件。不写检索过程、不写被排除的候选。
-  2. 追踪中 — 用上面 roster 查询的输出原文，逐行列出所有正在追踪的 thread。
+  2. 追踪中 — 用上面 roster 查询的输出原文，按 High → Normal → Low 的顺序（其余优先级在最后）逐行列出所有正在追踪的 thread。
