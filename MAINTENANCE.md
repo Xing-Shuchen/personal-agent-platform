@@ -2,6 +2,17 @@
 
 ## 2026-09-09 — PAP scheduling consolidation and runtime hygiene
 
+### Physical health monitor
+
+- `physical-health-watch` is no longer an OpenClaw scheduled automation. A
+  system crontab runs the deterministic checker directly every five minutes.
+- Healthy results stop at the script and do not invoke an LLM. On any warning,
+  critical, or checker-error result, the runner supplies the latest five
+  results to DeepSeek V4.1 Flash for trend analysis, then uses only the
+  OpenClaw message CLI for Feishu3 delivery. No automatic process mutation is
+  permitted. Repeated identical breaches are analyzed at most once per 30
+  minutes while every five-minute result remains in the local history.
+
 ### Scheduling architecture
 
 - PAP agent declarations in `agents/*/agent.yaml` are the source of truth for
