@@ -18,7 +18,7 @@ spec:
     class: conversational
     desired_jobs:
       - name: intelligence-pulse
-        schedule: "10 0,8,10,12,14,16,18,20,22 * * *"
+        schedule: "10 * * * *"
         skill: intelligence-brief
         attach_to_session: true
         delivery: user-home
