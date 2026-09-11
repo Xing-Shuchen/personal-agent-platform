@@ -94,6 +94,16 @@ def test_intentional_silence_marker_shapes():
     assert not _intentional_silence("   ")
 
 
+def test_requests_silence_when_no_reply_is_a_standalone_line():
+    from pap.scheduler import _requests_silence
+
+    assert _requests_silence("NO_REPLY")
+    assert _requests_silence("NO_REPLY\n（扫描窗口 2026-09-11 14:10→15:10：无值得打断的开发项）")
+    assert _requests_silence("扫描完成。\nNO_REPLY\n无需发送。")
+    assert not _requests_silence("今日增量：git 提交 3 条")
+    assert not _requests_silence("NO_REPLY 后附内容")
+
+
 def test_delivery_uses_openclaw_gateway(monkeypatch):
     result = RunResult(
         run_id="run_test", agent_id="sample", skill="sample-skill", status="success",
@@ -135,6 +145,21 @@ def test_delivery_suppresses_leaked_tool_echo():
         raise AssertionError("leaked output must not be sent")
 
     assert _deliver(result, job, target="ou_test", sender=sender) == "leaked-suppressed"
+
+
+def test_delivery_suppresses_no_reply_with_model_prose():
+    result = RunResult(
+        run_id="run_test", agent_id="sample", skill="sample-skill", status="success",
+        returncode=0,
+        response="NO_REPLY\n扫描窗口：无值得打断的开发项。",
+        error="", started_at="", completed_at="", usage={},
+    )
+    job = type("Job", (), {"delivery": "user-home"})()
+
+    def sender(*args, **kwargs):
+        raise AssertionError("NO_REPLY with prose must not be sent")
+
+    assert _deliver(result, job, target="ou_test", sender=sender) == "silence-suppressed"
 
 
 def test_delivery_sends_normal_chinese_brief():

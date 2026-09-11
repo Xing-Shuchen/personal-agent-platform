@@ -160,6 +160,12 @@ def _intentional_silence(response: str) -> bool:
     return stripped == "NO_REPLY"
 
 
+def _requests_silence(response: str) -> bool:
+    """True when the run asked for silence: the whole response is NO_REPLY, or
+    any line is exactly NO_REPLY (prose around it is the model going off-contract)."""
+    return any(line.strip() == "NO_REPLY" for line in response.splitlines())
+
+
 def _looks_like_leaked_output(text: str) -> bool:
     """True when a run's final text is an echo of tool use, not an answer."""
     if any(marker in text for marker in LEAK_MARKERS):
@@ -186,6 +192,8 @@ def _deliver(
         return "not-attempted"
     if not result.response or _intentional_silence(result.response):
         return "silent"
+    if _requests_silence(result.response):
+        return "silence-suppressed"
     if _looks_like_leaked_output(result.response):
         return "leaked-suppressed"
     if job.delivery == "local":
