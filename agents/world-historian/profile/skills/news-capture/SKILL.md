@@ -21,6 +21,12 @@ Treat the input as a seed for an ongoing thread, not as an article title.
    `null` and an explicit precision when the occurrence time is unknown.
 5. Create a small initial source set, the event, its claims, thread entities,
    open questions, and watch queries. Do not assert motivations as facts.
+   For every named person whose statement is referenced, also retrieve and
+   store the verbatim original (发言原话 / 公开信 / 文章全文或明确节选) as a
+   Chronicle `quote` with a `slug` (renders to `原文素材/<slug>.md`) and its
+   source URL. Prefer the original platform (微博 / 公众号 / 头条 / 官网) over
+   media paraphrase; if only a paraphrase is available, store the verbatim
+   quotation as reported and state the limitation. Never fabricate a quote.
 6. Read [the Chronicle bundle format](references/chronicle-bundle.md),
    then persist one validated JSON bundle with:
 
