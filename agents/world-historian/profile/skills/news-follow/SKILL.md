@@ -86,10 +86,12 @@ formula (`$G(T) \gg \log T\,\log_2 T/\log_4 T$`, `$\pi_1(X)$`), never Unicode
 math notation (`≫`, `log₂T`, `π₁`). Narrative prose stays plain — only actual
 formulas/expressions get `$` delimiters.
 
-## Thread roster (read-only)
+## Thread roster (read-only, delivery set)
 
-To list every tracked thread, run exactly this read-only query (do not probe
-any other Chronicle path):
+To list the threads a follow update delivers, run exactly this read-only query
+(do not probe any other Chronicle path). The delivered set is `high` and
+`normal` only; `low` and `background` threads stay tracked in the Chronicle but
+must never appear in a follow update.
 
 ```bash
 "/home/xingzeng/personal-agent-platform/.venv/bin/python" - <<'PY'
@@ -97,8 +99,8 @@ import sqlite3
 db = sqlite3.connect("file:/home/xingzeng/personal-agent-platform/var/world-historian/chronicle.sqlite?mode=ro", uri=True)
 for title, pri in db.execute(
     "SELECT title, priority FROM threads WHERE status='active' "
-    "ORDER BY CASE priority WHEN 'high' THEN 0 WHEN 'normal' THEN 1 "
-    "WHEN 'low' THEN 2 ELSE 3 END, title"
+    "AND priority IN ('high','normal') "
+    "ORDER BY CASE priority WHEN 'high' THEN 0 ELSE 1 END, title"
 ):
     print(f"- {title}（{pri}）")
 PY
@@ -153,17 +155,35 @@ correction for a tracked thread.
 
 ## Delivery contract
 
-This is a collection job.
+This is a collection job. Only `high` and `normal` priority threads are ever
+delivered. `low` and `background` threads stay tracked in the Chronicle: record
+their events/claims as usual, but keep them out of the message entirely.
 
-- No tracked thread gained a material event or claim correction: the ENTIRE final response must be
-exactly the single marker `NO_REPLY` — no work summary, no rejection notes, no
+- No `high`/`normal` thread gained a material event or claim correction — the
+ENTIRE final response must be exactly the single marker `NO_REPLY`. This
+includes runs whose only changes touch `low`/`background` threads: they are
+persisted but never delivered. No work summary, no rejection notes, no
 Chinese「无变化」prose, nothing before or after. Any surrounding text makes it a
 normal delivery and spams the user (observed 2026-09-01: a work-summary +
 `[SILENT]` response leaked to Feishu; OpenClaw only suppresses the exact token
 `NO_REPLY` — any other marker, including the legacy Hermes `[SILENT]`, is
 delivered as literal text, observed 2026-09-08 13:05).
-- At least one tracked thread gained a material event or claim correction:
-return one concise Chinese
-update with exactly these two parts, in this order, and nothing else:
-  1. 进展 — 每个有新进展的 thread 一句话：哪条线、新增/修正了什么事件。不写检索过程、不写被排除的候选。
-  2. 追踪中 — 用上面 roster 查询的输出原文，按 High → Normal → Low 的顺序（其余优先级在最后）逐行列出所有正在追踪的 thread。
+- At least one `high`/`normal` thread gained a material event or claim
+correction — return one Chinese update, written as Feishu Markdown (the Feishu
+channel renders it), with exactly this shape and nothing else:
+
+```markdown
+**🛰️ 世界线追踪 · M月D日** ｜ <N> 条进展
+
+**进展**
+- **<线程标题>** — <新增/修正了什么事件，一句话>（[来源](<url>)）
+
+**追踪中**
+- 🟥 **<线程标题>**（high）
+- 🟦 **<线程标题>**（normal）
+```
+
+Formatting rules:
+1. 进展 — 每个有新进展的 `high`/`normal` thread 一条：加粗线程标题、一句话说明新增或修正的事件、有来源就附行内链接。不写检索过程、不写被排除的候选；`low`/`background` 绝不出现。
+2. 追踪中 — 用上面 delivery-set roster 查询的输出，High 在前、Normal 在后，每行 `- <emoji> **<标题>**（<优先级>）`；只列 `high`/`normal`。
+3. 保持紧凑：每个 thread 一行。Feishu 卡片渲染加粗、列表、链接、表情和空行——不要用表格，分节标签用加粗（`**进展**`）而不是 `#` 标题。
