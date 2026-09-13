@@ -6,8 +6,10 @@ import hashlib
 import json
 import os
 import secrets
+import shutil
 import subprocess
 import tempfile
+import sys
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -60,6 +62,28 @@ def _prompt(skill: str, skill_text: str, input_text: str, args: dict[str, Any]) 
     return "\n\n".join(parts)
 
 
+def _runtime_call(runtime: Path, action: str, payload: dict[str, Any], env: dict[str, str]) -> dict[str, Any]:
+    """Invoke a declared, repository-local job adapter using a JSON protocol."""
+    # The historian runtime has its own dependencies (jsonschema/PyYAML).
+    # Deployments can pin its interpreter; otherwise use the system python3
+    # rather than PAP's deliberately minimal virtual environment.
+    executable = os.environ.get("PAP_RUNTIME_PYTHON") or shutil.which("python3") or sys.executable
+    completed = subprocess.run(
+        [executable, str(runtime), action],
+        input=json.dumps(payload, ensure_ascii=False), text=True, capture_output=True,
+        env=env, timeout=int(os.environ.get("PAP_RUNTIME_TIMEOUT_SECONDS", "120")),
+    )
+    if completed.returncode:
+        raise RuntimeError(completed.stderr.strip() or f"runtime {action} exited {completed.returncode}")
+    try:
+        result = json.loads(completed.stdout)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"runtime {action} returned invalid JSON") from exc
+    if not isinstance(result, dict):
+        raise RuntimeError(f"runtime {action} returned a non-object")
+    return result
+
+
 def invoke(
     *,
     root: Path,
@@ -71,6 +95,7 @@ def invoke(
     run_log: Path = DEFAULT_RUN_LOG,
     command_runner: Callable[..., subprocess.CompletedProcess[str]] | None = None,
     timeout_seconds: int | None = None,
+    runtime: str | None = None,
 ) -> RunResult:
     """Invoke one installed-in-repo profile skill through an OpenClaw Gateway turn."""
     root = Path(root).resolve()
@@ -102,17 +127,44 @@ def invoke(
     returncode = 1
     runner = command_runner or subprocess.run
     skill_text = skill_file.read_text(encoding="utf-8")
+    env = os.environ.copy()
+    env.update({
+        "PAP_ROOT": str(root),
+        "PAP_AGENT_ID": spec.name,
+        "PAP_RUN_ID": run_id,
+        "PAP_AGENT_STATE_DIR": str(root / "var" / spec.name),
+    })
+    # The adapter resolves this path again in its own process.  Supplying
+    # it here makes its virtual-environment selection deterministic.
+    env.setdefault("PERSONAL_HISTORIAN_ROOT", str(root.parent / "personal-historian-handoff"))
+    adapter: Path | None = None
+    if runtime:
+        adapter = root / "agents" / spec.name / "runtime" / f"{runtime}.py"
+        if not adapter.is_file():
+            raise ValueError(f"runtime {runtime!r} not found for agent {spec.name!r}")
+        try:
+            prepared = _runtime_call(adapter, "prepare", {"run_id": run_id, "skill": skill, "args": args}, env)
+        except Exception as exc:
+            error = str(exc)
+        else:
+            if prepared.get("status") == "not_ready":
+                completed_at = _now()
+                status = "not_ready"
+                response = "NOT_READY"
+                error = str(prepared.get("reason", "upstream readiness is unmet"))
+                append_jsonl(run_log, {"event": "run.completed", "run_id": run_id, "agent_id": spec.name, "skill": skill, "completed_at": completed_at.isoformat(timespec="seconds"), "status": status, "returncode": 0, "response": _input_fingerprint(response), "error": error[:1000], "usage": usage})
+                return RunResult(run_id, spec.name, skill, status, 0, response, error, started.isoformat(timespec="seconds"), completed_at.isoformat(timespec="seconds"), usage)
+            if prepared.get("status") != "ready" or not isinstance(prepared.get("input_text"), str):
+                error = str(prepared.get("error", "runtime did not prepare an invocation"))
+            else:
+                input_text = prepared["input_text"]
+                usage["runtime"] = {"prepared": True}
     with tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".md", delete=False) as tmp_file:
         tmp_file.write(_prompt(skill, skill_text, input_text, args))
         tmp_path = tmp_file.name
     try:
-        env = os.environ.copy()
-        env.update({
-            "PAP_ROOT": str(root),
-            "PAP_AGENT_ID": spec.name,
-            "PAP_RUN_ID": run_id,
-            "PAP_AGENT_STATE_DIR": str(root / "var" / spec.name),
-        })
+        if error:
+            raise RuntimeError(error)
         timeout = timeout_seconds or int(os.environ.get("PAP_RUN_TIMEOUT_SECONDS", "900"))
         command = [
             os.environ.get("PAP_OPENCLAW_BIN", "openclaw"),
@@ -137,6 +189,17 @@ def invoke(
         returncode = completed.returncode
         response = completed.stdout.strip()
         error = completed.stderr.strip()
+        if returncode == 0 and adapter is not None:
+            completed_runtime = _runtime_call(adapter, "complete", {"run_id": run_id, "skill": skill, "args": args, "model_reply": response}, env)
+            runtime_status = completed_runtime.get("status")
+            usage["runtime"] = {"prepared": True, "completion": runtime_status}
+            if runtime_status == "success":
+                response = str(completed_runtime.get("response", "NO_REPLY"))
+            elif runtime_status == "not_ready":
+                response = "NOT_READY"
+            else:
+                returncode = 1
+                error = str(completed_runtime.get("error", "runtime rejected model output"))
     except subprocess.TimeoutExpired as exc:
         response = exc.stdout.strip() if isinstance(exc.stdout, str) else ""
         error = f"OpenClaw invocation timed out after {exc.timeout}s"
@@ -144,10 +207,13 @@ def invoke(
     except OSError as exc:
         error = str(exc)
         returncode = 127
+    except RuntimeError as exc:
+        error = str(exc)
+        returncode = 1
     finally:
         Path(tmp_path).unlink(missing_ok=True)
     completed_at = _now()
-    status = "success" if returncode == 0 else "failed"
+    status = "not_ready" if returncode == 0 and response == "NOT_READY" else ("success" if returncode == 0 else "failed")
     append_jsonl(run_log, {
         "event": "run.completed",
         "run_id": run_id,

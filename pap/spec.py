@@ -27,6 +27,7 @@ class ProactiveJob:
     args: dict[str, Any] = field(default_factory=dict)
     attach_to_session: bool = True
     delivery: str = "user-home"
+    runtime: str | None = None
 
 
 @dataclass
@@ -147,6 +148,9 @@ def load_spec(path: Path) -> AgentSpec:
                 delivery = raw.get("delivery", "user-home")
                 if delivery not in ("user-home", "origin", "local"):
                     raise _err(path, f"{where}.delivery: unknown delivery {delivery!r}")
+                runtime = raw.get("runtime")
+                if runtime is not None and (not isinstance(runtime, str) or not NAME_RE.match(runtime)):
+                    raise _err(path, f"{where}.runtime: must be a runtime identifier or null")
                 jobs.append(
                     ProactiveJob(
                         name=jname,
@@ -155,6 +159,7 @@ def load_spec(path: Path) -> AgentSpec:
                         args=dict(job_args),
                         attach_to_session=bool(raw.get("attach_to_session", True)),
                         delivery=delivery,
+                        runtime=runtime,
                     )
                 )
         elif proactive.get("desired_jobs"):

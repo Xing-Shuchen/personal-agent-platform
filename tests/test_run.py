@@ -89,3 +89,21 @@ def test_invoke_removes_message_file_when_runner_fails(tmp_path):
 
     assert result.status == "failed"
     assert not captured["message_file"].exists()
+
+
+def test_declared_runtime_can_finish_not_ready_without_model_turn(tmp_path, monkeypatch):
+    """Readiness is a normal terminal outcome, not a failed OpenClaw call."""
+    root = Path(__file__).parents[1]
+    spec = load_spec(root / "agents/personal-historian/agent.yaml")
+    monkeypatch.delenv("PERSONAL_HISTORIAN_WATERMARKS_JSON", raising=False)
+
+    def model_must_not_run(*args, **kwargs):
+        raise AssertionError("model must not run before readiness is met")
+
+    result = invoke(
+        root=root, spec=spec, skill="historian-period-summary",
+        args={"kind": "week", "period": "previous"}, runtime="historian",
+        run_log=tmp_path / "runs.jsonl", command_runner=model_must_not_run,
+    )
+    assert result.status == "not_ready"
+    assert result.response == "NOT_READY"

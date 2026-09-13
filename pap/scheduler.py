@@ -260,6 +260,7 @@ def tick(
             },
             run_log=run_log,
             command_runner=command_runner,
+            runtime=due.job.runtime,
         )
         delivery = _deliver(result, due.job, target=target, sender=sender)
         append_jsonl(run_log, {

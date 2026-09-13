@@ -17,36 +17,42 @@ spec:
       - name: historian-event-card-refresh
         schedule: "17 1 * * *"
         skill: historian-event-card
+        runtime: historian
         args: {mode: refresh}
         attach_to_session: false
         delivery: local
       - name: historian-thread-weekly-update
         schedule: "47 1 * * 1"
         skill: historian-thread-card
+        runtime: historian
         args: {mode: weekly-update}
         attach_to_session: false
         delivery: local
       - name: historian-weekly-summary
         schedule: "17 2 * * 1"
         skill: historian-period-summary
+        runtime: historian
         args: {kind: week, period: previous}
         attach_to_session: false
         delivery: local
       - name: historian-monthly-summary
         schedule: "37 3 1 * *"
         skill: historian-period-summary
+        runtime: historian
         args: {kind: month, period: previous}
         attach_to_session: false
         delivery: local
       - name: historian-quarterly-summary
         schedule: "17 4 1 1,4,7,10 *"
         skill: historian-period-summary
+        runtime: historian
         args: {kind: quarter, period: previous}
         attach_to_session: false
         delivery: local
       - name: historian-halfyear-summary
         schedule: "37 5 1 1,7 *"
         skill: historian-period-summary
+        runtime: historian
         args: {kind: halfyear, period: previous}
         attach_to_session: false
         delivery: local
