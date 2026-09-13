@@ -18,6 +18,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import sys
 from typing import Any
 
@@ -81,13 +82,80 @@ def _decode_env_json(name: str, expected: type, fallback: Any) -> Any:
 def _watermarks() -> dict[str, datetime | None] | None:
     raw = _decode_env_json("PERSONAL_HISTORIAN_WATERMARKS_JSON", dict, None)
     if raw is None:
-        return None
+        discovered, watermarks = _discover_collection_state()
+        return watermarks if discovered else None
     result: dict[str, datetime | None] = {}
     for name, value in raw.items():
         if not isinstance(name, str) or (value is not None and not isinstance(value, str)):
             raise ValueError("watermarks must map names to ISO timestamps or null")
         result[name] = datetime.fromisoformat(value.replace("Z", "+00:00")) if value else None
     return result
+
+
+def _discover_collection_state() -> tuple[list[dict[str, Any]], dict[str, datetime | None]]:
+    """Read collector coverage and reconstruction progress from local state.
+
+    Environment JSON remains an explicit override for deployments with remote
+    collectors. Local installations need no hand-maintained watermark file:
+    coverage runs are read from the configured collection output directory and
+    Event reconstruction windows from the append-only revision journal.
+    """
+    root = Path(os.environ.get("PERSONAL_HISTORIAN_COLLECTION_ROOT", str(_historian_root() / "collection-runs")))
+    records: list[dict[str, Any]] = []
+    watermarks: dict[str, datetime | None] = {}
+    if root.is_dir():
+        for path in sorted(root.rglob("coverage.json")):
+            try:
+                loaded = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            for record in loaded if isinstance(loaded, list) else [loaded]:
+                if not isinstance(record, dict):
+                    continue
+                collector = record.get("collector", {})
+                name = collector.get("collector_type") if isinstance(collector, dict) else record.get("collector")
+                window = record.get("window", {})
+                end = window.get("end") if isinstance(window, dict) else None
+                if not isinstance(name, str) or not isinstance(end, str):
+                    continue
+                try:
+                    watermark = datetime.fromisoformat(end.replace("Z", "+00:00"))
+                except ValueError:
+                    continue
+                prior = watermarks.get(name)
+                watermarks[name] = watermark if prior is None or watermark > prior else prior
+                ratio = record.get("coverage_ratio", 0)
+                status = "complete" if record.get("status") == "covered" and ratio == 1 else ("partial" if record.get("status") in {"covered", "partial"} else "poor")
+                records.append({"source": name, "status": status, "note": f"collector coverage from {path.name}"})
+    revision_root = Path(os.environ.get("PERSONAL_HISTORIAN_REVISIONS", str(_historian_root() / "revisions")))
+    journal = revision_root / "revisions.jsonl"
+    if journal.is_file():
+        ends: list[datetime] = []
+        for line in journal.read_text(encoding="utf-8").splitlines():
+            try:
+                reason = json.loads(line)["record"]["revision"].get("change_reason", "")
+            except (KeyError, TypeError, json.JSONDecodeError):
+                continue
+            match = re.search(r"over \[[^,]+,([^\)]+)\)", reason)
+            if match:
+                try:
+                    ends.append(datetime.fromisoformat(match.group(1).strip().replace("Z", "+00:00")))
+                except ValueError:
+                    pass
+        if ends:
+            watermarks["reconstruction"] = max(ends)
+    return records, watermarks
+
+
+def _coverage() -> list[dict[str, Any]]:
+    override = _decode_env_json("PERSONAL_HISTORIAN_COVERAGE_JSON", list, None)
+    if override is not None:
+        return override
+    records, _ = _discover_collection_state()
+    latest: dict[str, dict[str, Any]] = {}
+    for record in records:
+        latest[record["source"]] = record
+    return [latest[key] for key in sorted(latest)]
 
 
 def _manifest(candidates: list[dict[str, Any]], watermarks: dict[str, datetime | None], coverage: list[dict[str, Any]]) -> dict[str, Any]:
@@ -188,6 +256,8 @@ def _prepare_summary(payload: dict[str, Any]) -> dict[str, Any]:
     watermarks = _watermarks()
     if watermarks is None:
         return {"status": "not_ready", "reason": "collector/reconstruction watermarks are not configured"}
+    if "reconstruction" not in watermarks:
+        return {"status": "not_ready", "reason": "reconstruction watermark is unavailable"}
     readiness = assess_readiness(period, watermarks)
     if readiness["status"] != "ready":
         return {"status": "not_ready", "reason": json.dumps(readiness, ensure_ascii=False)}
@@ -196,7 +266,7 @@ def _prepare_summary(payload: dict[str, Any]) -> dict[str, Any]:
     if missing_children:
         return {"status": "not_ready", "reason": "required child summaries are missing: " + ", ".join(missing_children)}
     candidates = candidates_for_period(store, period)
-    coverage = _decode_env_json("PERSONAL_HISTORIAN_COVERAGE_JSON", list, [])
+    coverage = _coverage()
     policy_path = os.environ.get("PERSONAL_HISTORIAN_POLICY", str(_historian_root() / "config" / "historical-summary-policy.yaml"))
     context = ContextBuilder(domain=store.domain, policy=load_policy(policy_path, kind)).build(
         period=period, candidates=candidates, readiness=readiness, coverage=coverage,
