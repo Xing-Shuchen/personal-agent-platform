@@ -33,6 +33,7 @@ def _historian_root() -> Path:
 sys.path.insert(0, str(_historian_root()))
 
 from historian.summarization import (  # noqa: E402
+    MIN_CREATION_EVIDENCE,
     ArtifactStore,
     CardLifecycle,
     ContextBuilder,
@@ -41,6 +42,7 @@ from historian.summarization import (  # noqa: E402
     assess_readiness,
     candidates_for_period,
     complete_period_summary,
+    create_thread,
     input_manifest_hash,
     load_policy,
     render_markdown,
@@ -264,7 +266,39 @@ def _prepare_thread_card(payload: dict[str, Any]) -> dict[str, Any]:
                                     "content_hash": card["content_hash"]} for card in evidence]}
         _prepared_path(payload["run_id"]).write_text(json.dumps(prepared, ensure_ascii=False), encoding="utf-8")
         return {"status": "ready", "input_text": "Update exactly one registered ThreadCard. Its immutable identity and revision are fixed below. Return JSON only.\n\n" + json.dumps({"prior_thread_card": current, "event_cards": evidence, **prepared}, ensure_ascii=False)}
-    return {"status": "not_ready", "reason": "no registered thread has EventCard evidence"}
+
+    # Bootstrapping: until a thread exists, no thread can be updated.  EventCards
+    # that belong to no registered thread are offered as a possible new thread,
+    # but only the model may judge whether they show a persistent process (§7);
+    # it answers NO_NEW_THREAD when they do not.
+    #
+    # "Unassigned" means not cited as evidence by any ThreadCard.  EventCards are
+    # produced with whatever thread_ids the model supplied — often none — so
+    # treating an empty thread_ids list as unassigned would offer the same events
+    # again every week and fragment one process into a new thread each time.
+    cited: set[str] = set()
+    for record in store.latest_records():
+        if record["artifact_type"] == "historian.thread-card.v1":
+            cited.update(ref.get("artifact_id") for ref in record.get("evidence_refs", []))
+    uncovered = [card for card in cards if card["event_card_id"] not in cited]
+    if len(uncovered) < MIN_CREATION_EVIDENCE:
+        return {"status": "not_ready",
+                "reason": f"no registered thread has EventCard evidence, and {len(uncovered)} unassigned "
+                          f"event(s) is below the {MIN_CREATION_EVIDENCE} needed as evidence of persistence"}
+    prepared = {
+        "kind": "thread-creation", "revision": 1,
+        "event_card_ids": [card["event_card_id"] for card in uncovered],
+        "input_refs": [{"artifact_id": card["event_card_id"], "revision": card["revision"],
+                        "content_hash": card["content_hash"]} for card in uncovered],
+    }
+    _prepared_path(payload["run_id"]).write_text(json.dumps(prepared, ensure_ascii=False), encoding="utf-8")
+    return {"status": "ready", "input_text":
+            "Propose at most ONE new ThreadCard for these EventCards, or reply exactly NO_NEW_THREAD if they "
+            "do not evidence a persistent process (multiple distinct events, cross-period continuity, a "
+            "long-running project, or a persistent unresolved issue). One event is activity, not a thread. "
+            "Identity and thread_card_id are derived from canonical_name by the Historian, so supply the name "
+            "only; cite at least two of these EventCards verbatim as evidence_refs. Return JSON only.\n\n"
+            + json.dumps({"event_cards": uncovered, **prepared}, ensure_ascii=False)}
 
 
 def _prepare_summary(payload: dict[str, Any]) -> dict[str, Any]:
@@ -430,6 +464,8 @@ def _complete_thread_card(payload: dict[str, Any]) -> dict[str, Any]:
     try:
         store = _store()
         prepared = json.loads(_prepared_path(str(payload["run_id"])).read_text(encoding="utf-8"))
+        if prepared.get("kind") == "thread-creation":
+            return _complete_thread_creation(payload, prepared, store)
         card = parse_model_json(str(payload.get("model_reply", "")))
         if (card.get("thread_id") != prepared["thread_id"] or card.get("thread_card_id") != prepared["thread_card_id"] or card.get("revision") != prepared["revision"]):
             raise ValueError("model changed the fixed ThreadCard identity or revision")
@@ -438,6 +474,33 @@ def _complete_thread_card(payload: dict[str, Any]) -> dict[str, Any]:
     except Exception as exc:
         return {"status": "error", "error": str(exc)}
     return {"status": "success", "response": "NO_REPLY"}
+
+
+#: The model's escape hatch when the offered events do not evidence a thread.
+NO_NEW_THREAD = "NO_NEW_THREAD"
+
+
+def _complete_thread_creation(payload: dict[str, Any], prepared: dict[str, Any],
+                              store: ArtifactStore) -> dict[str, Any]:
+    """Create at most one thread, with identity derived by the Historian (§7)."""
+
+    reply = str(payload.get("model_reply", "")).strip()
+    if reply == NO_NEW_THREAD:
+        # Declining is a legitimate outcome, not a failure: one week of events
+        # often shows activity rather than a persistent process.
+        return {"status": "success", "response": NO_NEW_THREAD,
+                "metadata": {"thread_created": None}}
+    card = parse_model_json(reply)
+    if card.get("revision") != prepared["revision"]:
+        raise ValueError("model changed the fixed ThreadCard revision")
+    registry = ThreadRegistry(store.root)
+    created = create_thread(card, registry=registry,
+                            known_event_card_ids=prepared["event_card_ids"])
+    created = seal_with_provenance(created, _runtime_provenance(list(prepared["input_refs"])))
+    CardLifecycle(store, registry).commit_thread_card(created)
+    return {"status": "success", "response": "NO_REPLY",
+            "metadata": {"thread_created": created["thread_id"],
+                         "thread_card_id": created["thread_card_id"]}}
 
 
 def main() -> int:
