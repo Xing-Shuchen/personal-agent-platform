@@ -119,6 +119,30 @@ def _cmd_invoke(args: argparse.Namespace) -> int:
     return result.returncode
 
 
+def _cmd_job_run(args: argparse.Namespace) -> int:
+    """Run one manifest job through its declared runtime adapter."""
+    root = Path(args.root).resolve()
+    try:
+        spec = _find_spec(root, args.agent)
+        job = next((item for item in spec.jobs if item.name == args.job), None)
+        if job is None:
+            raise ValueError(f"unknown job {args.agent}/{args.job}")
+        job_args = dict(job.args)
+        job_args.update(_parse_kv(args.arg))
+        result = run_mod.invoke(
+            root=root, spec=spec, skill=job.skill, args=job_args,
+            trigger={"type": "manual-job", "job_id": job.name},
+            run_log=_path_under(root, args.runs), runtime=job.runtime,
+        )
+    except (spec_mod.SpecError, ValueError) as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+    print(json.dumps({"job": f"{args.agent}/{args.job}", "run_id": result.run_id, "status": result.status, "returncode": result.returncode}, ensure_ascii=False))
+    if result.error:
+        print(result.error, file=sys.stderr)
+    return result.returncode
+
+
 def _cmd_tick(args: argparse.Namespace) -> int:
     root = Path(args.root).resolve()
     now = None
@@ -147,7 +171,7 @@ def _cmd_tick(args: argparse.Namespace) -> int:
         run_id = item.run.run_id if item.run else "-"
         status = item.run.status if item.run else "due"
         print(f"{item.job_key}\t{item.slot}\t{status}\t{run_id}\tdelivery={item.delivery}")
-        if item.run and item.run.status != "success":
+        if item.run and item.run.status not in {"success", "not_ready"}:
             failed = True
         if item.delivery in {"failed", "unconfigured"}:
             failed = True
@@ -257,6 +281,16 @@ def build_parser() -> argparse.ArgumentParser:
     p_invoke.add_argument("--root", default=".")
     p_invoke.add_argument("--runs", type=Path, default=run_mod.DEFAULT_RUN_LOG)
     p_invoke.set_defaults(func=_cmd_invoke)
+
+    p_job = sub.add_parser("job", help="run a manifest-declared job")
+    job_sub = p_job.add_subparsers(dest="job_command", required=True)
+    p_job_run = job_sub.add_parser("run", help="run one declared job now")
+    p_job_run.add_argument("agent")
+    p_job_run.add_argument("job")
+    p_job_run.add_argument("--arg", action="append", default=[], metavar="KEY=VALUE")
+    p_job_run.add_argument("--root", default=".")
+    p_job_run.add_argument("--runs", type=Path, default=run_mod.DEFAULT_RUN_LOG)
+    p_job_run.set_defaults(func=_cmd_job_run)
 
     p_tick = sub.add_parser("tick", help="run due manifest jobs once")
     p_tick.add_argument("--root", default=".")
