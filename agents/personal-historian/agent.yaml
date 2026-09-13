@@ -35,6 +35,8 @@ spec:
         attach_to_session: false
         delivery: local
       - name: historian-weekly-summary
+        # §40 rollout: stage 3 — enable once one real week's summary is verified
+        enabled: false
         schedule: "17 2 * * 1"
         timezone: Asia/Shanghai
         skill: historian-period-summary
@@ -43,6 +45,8 @@ spec:
         attach_to_session: false
         delivery: local
       - name: historian-monthly-summary
+        # §40 rollout: stage 4 — after the weekly level is verified
+        enabled: false
         schedule: "37 3 1 * *"
         timezone: Asia/Shanghai
         skill: historian-period-summary
@@ -51,6 +55,8 @@ spec:
         attach_to_session: false
         delivery: local
       - name: historian-quarterly-summary
+        # §40 rollout: stage 5 — after the monthly level is verified
+        enabled: false
         schedule: "17 4 1 1,4,7,10 *"
         timezone: Asia/Shanghai
         skill: historian-period-summary
@@ -59,6 +65,8 @@ spec:
         attach_to_session: false
         delivery: local
       - name: historian-halfyear-summary
+        # §40 rollout: stage 6 — after the quarterly level is verified
+        enabled: false
         schedule: "37 5 1 1,7 *"
         timezone: Asia/Shanghai
         skill: historian-period-summary

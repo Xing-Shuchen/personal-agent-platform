@@ -30,6 +30,10 @@ class ProactiveJob:
     delivery: str = "user-home"
     runtime: str | None = None
     timezone: str | None = None
+    #: §40 stages a rollout: a declared job may exist, be visible and be audited
+    #: while not yet scheduled. Disabling is not deleting — the declaration and
+    #: its schedule stay in the spec so enabling is a one-line change.
+    enabled: bool = True
 
 
 @dataclass
@@ -147,6 +151,9 @@ def load_spec(path: Path) -> AgentSpec:
                     isinstance(key, str) and key for key in job_args
                 ):
                     raise _err(path, f"{where}.args: must be a mapping with string keys")
+                enabled = raw.get("enabled", True)
+                if not isinstance(enabled, bool):
+                    raise _err(path, f"{where}.enabled: must be a boolean")
                 delivery = raw.get("delivery", "user-home")
                 if delivery not in ("user-home", "origin", "local"):
                     raise _err(path, f"{where}.delivery: unknown delivery {delivery!r}")
@@ -171,6 +178,7 @@ def load_spec(path: Path) -> AgentSpec:
                         delivery=delivery,
                         runtime=runtime,
                         timezone=timezone,
+                        enabled=enabled,
                     )
                 )
         elif proactive.get("desired_jobs"):

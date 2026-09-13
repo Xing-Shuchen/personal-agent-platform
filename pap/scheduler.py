@@ -97,6 +97,9 @@ def due_jobs(
         job_state = state.setdefault("jobs", {})
         for spec in specs:
             for job in spec.jobs:
+                if not job.enabled:
+                    # §40: declared, auditable, not yet scheduled.
+                    continue
                 key = f"{spec.name}/{job.name}"
                 entry = job_state.get(key, {})
                 previous_slot = _parse_time(entry.get("last_slot"))

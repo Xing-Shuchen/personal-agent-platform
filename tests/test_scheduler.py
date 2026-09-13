@@ -217,3 +217,69 @@ def test_a_pre_existing_failed_slot_without_a_classification_is_not_retried(tmp_
         "last_finished_at": (slot + timedelta(minutes=1)).isoformat(timespec="seconds"),
     }}}), encoding="utf-8")
     assert due_jobs(tmp_path, now=slot + timedelta(minutes=10), state_path=state_path, reserve=False) == []
+
+
+def test_a_disabled_job_is_declared_but_never_due(tmp_path):
+    """§40 stages a rollout: a job may exist and be auditable without running."""
+    from pap.scheduler import due_jobs
+    from pap.spec import load_spec
+
+    make_platform(tmp_path, "17 18 * * *")
+    spec_path = tmp_path / "agents/sample/agent.yaml"
+    spec_path.write_text(spec_path.read_text(encoding="utf-8").replace(
+        "        delivery: local", "        delivery: local\n        enabled: false"), encoding="utf-8")
+    spec = load_spec(spec_path)
+    assert spec.jobs[0].enabled is False
+
+    now = datetime(2026, 8, 31, 18, 17, tzinfo=CST)
+    assert due_jobs(tmp_path, now=now, reserve=False) == []
+
+
+def test_a_staged_rollout_keeps_the_declaration_visible(tmp_path):
+    """Disabling must not delete the job, or enabling would need rewriting it."""
+    from pap.spec import load_spec
+
+    make_platform(tmp_path, "17 18 * * *")
+    spec_path = tmp_path / "agents/sample/agent.yaml"
+    spec_path.write_text(spec_path.read_text(encoding="utf-8").replace(
+        "        delivery: local", "        delivery: local\n        enabled: false"), encoding="utf-8")
+    spec = load_spec(spec_path)
+    assert [job.name for job in spec.jobs] == ["sample-job"]
+    assert spec.jobs[0].schedule == "17 18 * * *"
+
+
+def test_enabled_must_be_a_boolean(tmp_path):
+    from pap.spec import SpecError, load_spec
+
+    make_platform(tmp_path, "17 18 * * *")
+    spec_path = tmp_path / "agents/sample/agent.yaml"
+    spec_path.write_text(spec_path.read_text(encoding="utf-8").replace(
+        "        delivery: local", "        delivery: local\n        enabled: maybe"), encoding="utf-8")
+    try:
+        load_spec(spec_path)
+    except SpecError:
+        return
+    raise AssertionError("a non-boolean `enabled` must be rejected")
+
+
+def test_jobs_are_enabled_by_default(tmp_path):
+    from pap.spec import load_spec
+
+    make_platform(tmp_path, "17 18 * * *")
+    spec = load_spec(tmp_path / "agents/sample/agent.yaml")
+    assert spec.jobs[0].enabled is True
+
+
+def test_the_historian_rollout_follows_spec_order():
+    """§40: EventCards, then the weekly thread update, then the summary levels."""
+    from pap.spec import load_spec
+
+    spec = load_spec(Path(__file__).parents[1] / "agents/personal-historian/agent.yaml")
+    stages = {job.name: job.enabled for job in spec.jobs}
+    assert stages["historian-event-card-refresh"] is True, "stage 1"
+    assert stages["historian-thread-weekly-update"] is True, "stage 2"
+    # The summary levels stay declared but unscheduled until the weekly level is
+    # verified on real data (§40: do not enable them all at once).
+    for name in ("historian-weekly-summary", "historian-monthly-summary",
+                 "historian-quarterly-summary", "historian-halfyear-summary"):
+        assert stages[name] is False, name

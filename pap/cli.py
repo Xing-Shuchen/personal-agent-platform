@@ -90,8 +90,9 @@ def _cmd_jobs(args: argparse.Namespace) -> int:
             continue
         for job in spec.jobs:
             rendered_args = json.dumps(job.args, ensure_ascii=False, sort_keys=True)
+            state = "enabled" if job.enabled else "disabled"
             print(f"{spec.name}/{job.name}\t{job.schedule}\t{job.skill}\t"
-                  f"delivery={job.delivery}\targs={rendered_args}")
+                  f"delivery={job.delivery}\t{state}\targs={rendered_args}")
     return 0
 
 
