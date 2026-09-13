@@ -49,6 +49,26 @@ def _input_fingerprint(value: str) -> dict[str, Any]:
     return {"sha256": hashlib.sha256(raw).hexdigest(), "chars": len(value)}
 
 
+def _model_provider(model: str | None) -> tuple[str | None, str | None]:
+    """Return the model id as declared plus its provider part (§31).
+
+    ``model`` stays the full configured identifier — that is what the run used —
+    and ``provider`` names the part before the slash when the id has one.
+
+    Token counts and cost are deliberately not synthesised here: they can only
+    come from what the model runner actually reports, and the OpenClaw
+    invocation PAP performs does not report usage on stdout.
+    """
+
+    if not isinstance(model, str) or not model.strip():
+        return None, None
+    identifier = model.strip()
+    if "/" not in identifier:
+        return identifier, None
+    provider, _ = identifier.split("/", 1)
+    return identifier, (provider.strip() or None)
+
+
 def _prompt(skill: str, skill_text: str, input_text: str, args: dict[str, Any]) -> str:
     parts = [
         f"Run the '{skill}' skill exactly as written.",
@@ -110,13 +130,20 @@ def invoke(
     started = _now()
     run_id = new_run_id(started)
     run_log = Path(run_log)
+    model_name, provider_name = _model_provider(spec.model)
+    job_id = None
+    if isinstance(trigger, dict) and isinstance(trigger.get("job_id"), str):
+        job_id = trigger["job_id"]
     append_jsonl(run_log, {
         "event": "run.started",
         "run_id": run_id,
         "agent_id": spec.name,
+        "job_id": job_id,
         "trigger": trigger or {"type": "manual"},
         "skill": skill,
         "args": args,
+        "model": model_name,
+        "provider": provider_name,
         "input": _input_fingerprint(input_text),
         "started_at": started.isoformat(timespec="seconds"),
     })
@@ -134,6 +161,10 @@ def invoke(
         "PAP_RUN_ID": run_id,
         "PAP_AGENT_STATE_DIR": str(root / "var" / spec.name),
     })
+    if spec.model:
+        # The runtime records authoritative provenance (§21); it can only do that
+        # for the model if PAP, which owns model policy (§35), tells it.
+        env["PAP_AGENT_MODEL"] = spec.model
     # The adapter resolves this path again in its own process.  Supplying
     # it here makes its virtual-environment selection deterministic.
     env.setdefault("PERSONAL_HISTORIAN_ROOT", str(root.parent / "personal-historian-handoff"))
@@ -152,7 +183,7 @@ def invoke(
                 status = "not_ready"
                 response = "NOT_READY"
                 error = str(prepared.get("reason", "upstream readiness is unmet"))
-                append_jsonl(run_log, {"event": "run.completed", "run_id": run_id, "agent_id": spec.name, "skill": skill, "completed_at": completed_at.isoformat(timespec="seconds"), "status": status, "returncode": 0, "response": _input_fingerprint(response), "error": error[:1000], "usage": usage})
+                append_jsonl(run_log, {"event": "run.completed", "run_id": run_id, "agent_id": spec.name, "job_id": job_id, "skill": skill, "args": args, "model": model_name, "provider": provider_name, "completed_at": completed_at.isoformat(timespec="seconds"), "status": status, "returncode": 0, "response": _input_fingerprint(response), "error": error[:1000], "usage": usage})
                 return RunResult(run_id, spec.name, skill, status, 0, response, error, started.isoformat(timespec="seconds"), completed_at.isoformat(timespec="seconds"), usage)
             if prepared.get("status") != "ready" or not isinstance(prepared.get("input_text"), str):
                 error = str(prepared.get("error", "runtime did not prepare an invocation"))
@@ -222,7 +253,11 @@ def invoke(
         "event": "run.completed",
         "run_id": run_id,
         "agent_id": spec.name,
+        "job_id": job_id,
         "skill": skill,
+        "args": args,
+        "model": model_name,
+        "provider": provider_name,
         "completed_at": completed_at.isoformat(timespec="seconds"),
         "status": status,
         "returncode": returncode,
@@ -230,6 +265,7 @@ def invoke(
         "error": error[:1000],
         "usage": usage,
         "context_pack_id": usage.get("runtime", {}).get("context_pack_id"),
+        "period": args.get("period"),
         "result_summary_id": usage.get("runtime", {}).get("result_summary_id"),
     })
     return RunResult(

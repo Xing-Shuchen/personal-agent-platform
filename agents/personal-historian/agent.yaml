@@ -4,6 +4,10 @@ metadata:
   name: personal-historian
   description: Produces validated, provenance-bound personal historical cards and period summaries.
 spec:
+  # Model policy belongs to PAP (§35). Declaring it here is what lets the runtime
+  # record an authoritative model/provider in artifact provenance (§21) and what
+  # PAP reports in each RunRecord (§31), instead of both being unknown.
+  model: deepseek/deepseek-flash
   profile:
     name: personal-historian
     source: profile

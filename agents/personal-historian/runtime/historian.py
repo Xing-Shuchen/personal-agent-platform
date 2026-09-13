@@ -41,9 +41,11 @@ from historian.summarization import (  # noqa: E402
     assess_readiness,
     candidates_for_period,
     complete_period_summary,
+    input_manifest_hash,
     load_policy,
     render_markdown,
     resolve_period,
+    seal_with_provenance,
 )
 from historian.summarization.pipeline import parse_model_json  # noqa: E402
 from historian.revisions.store import RevisionStore  # noqa: E402
@@ -256,7 +258,10 @@ def _prepare_thread_card(payload: dict[str, Any]) -> dict[str, Any]:
         candidate_refs = {(card["event_card_id"], card["content_hash"]) for card in evidence}
         if current and candidate_refs.issubset(current_refs) and not store.is_stale(card_id):
             continue
-        prepared = {"kind": "thread", "thread_id": thread_id, "thread_card_id": card_id, "revision": (current["revision"] + 1) if current else 1}
+        prepared = {"kind": "thread", "thread_id": thread_id, "thread_card_id": card_id,
+                    "revision": (current["revision"] + 1) if current else 1,
+                    "input_refs": [{"artifact_id": card["event_card_id"], "revision": card["revision"],
+                                    "content_hash": card["content_hash"]} for card in evidence]}
         _prepared_path(payload["run_id"]).write_text(json.dumps(prepared, ensure_ascii=False), encoding="utf-8")
         return {"status": "ready", "input_text": "Update exactly one registered ThreadCard. Its immutable identity and revision are fixed below. Return JSON only.\n\n" + json.dumps({"prior_thread_card": current, "event_cards": evidence, **prepared}, ensure_ascii=False)}
     return {"status": "not_ready", "reason": "no registered thread has EventCard evidence"}
@@ -345,6 +350,33 @@ def prepare(payload: dict[str, Any]) -> dict[str, Any]:
     return {"status": "error", "error": "unsupported historian skill"}
 
 
+def _provider(model: str | None) -> str | None:
+    if not isinstance(model, str) or "/" not in model:
+        return None
+    provider = model.split("/", 1)[0].strip()
+    return provider or None
+
+
+def _runtime_provenance(input_refs: list[dict[str, Any]], *, manifest_hash: str | None = None) -> dict[str, Any]:
+    """Provenance the runtime can actually vouch for.
+
+    A model can write plausible values for the clock, the generator and the input
+    manifest hash, but it cannot know them — and staleness detection (§23) rests
+    entirely on the manifest hash.  These fields are therefore established here
+    and overwrite whatever the model asserted.
+    """
+
+    model = os.environ.get("PAP_AGENT_MODEL") or None
+    return {
+        "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "generator": "pap.personal-historian.runtime/v1",
+        "input_refs": input_refs,
+        "input_manifest_hash": manifest_hash or input_manifest_hash(input_refs),
+        "model": model,
+        "provider": _provider(model),
+    }
+
+
 def complete(payload: dict[str, Any]) -> dict[str, Any]:
     if payload.get("skill") == "historian-event-card":
         return _complete_event_card(payload)
@@ -361,6 +393,11 @@ def complete(payload: dict[str, Any]) -> dict[str, Any]:
         candidate = parse_model_json(str(payload.get("model_reply", "")))
         if candidate.get("summary_id") != prepared["summary_id"] or candidate.get("revision") != prepared["revision"]:
             raise ValueError("model changed the fixed PeriodSummary identity or revision")
+        # The summary's provenance is the sealed ContextPack's, not the model's.
+        candidate = seal_with_provenance(candidate, _runtime_provenance(
+            list(context["provenance"]["input_refs"]),
+            manifest_hash=context["provenance"]["input_manifest_hash"],
+        ))
     except Exception as exc:
         return {"status": "error", "error": str(exc)}
     result = complete_period_summary(context, json.dumps(candidate, ensure_ascii=False), _store())
@@ -381,6 +418,8 @@ def _complete_event_card(payload: dict[str, Any]) -> dict[str, Any]:
         card = parse_model_json(str(payload.get("model_reply", "")))
         if card.get("event_card_id") != prepared["event_card_id"] or card.get("revision") != prepared["revision"]:
             raise ValueError("model changed the fixed EventCard identity or revision")
+        # The Event revision is the card's input; the runtime states that, not the model.
+        card = seal_with_provenance(card, _runtime_provenance([dict(prepared["event_ref"])]))
         CardLifecycle(_store()).commit_event_card(card, event_ref=prepared["event_ref"])
     except Exception as exc:
         return {"status": "error", "error": str(exc)}
@@ -394,6 +433,7 @@ def _complete_thread_card(payload: dict[str, Any]) -> dict[str, Any]:
         card = parse_model_json(str(payload.get("model_reply", "")))
         if (card.get("thread_id") != prepared["thread_id"] or card.get("thread_card_id") != prepared["thread_card_id"] or card.get("revision") != prepared["revision"]):
             raise ValueError("model changed the fixed ThreadCard identity or revision")
+        card = seal_with_provenance(card, _runtime_provenance(list(prepared["input_refs"])))
         CardLifecycle(store, ThreadRegistry(store.root)).commit_thread_card(card)
     except Exception as exc:
         return {"status": "error", "error": str(exc)}

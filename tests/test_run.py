@@ -113,3 +113,26 @@ def test_declared_runtime_can_finish_not_ready_without_model_turn(tmp_path, monk
     )
     assert result.status == "not_ready"
     assert result.response == "NOT_READY"
+
+
+def test_run_record_names_the_job_period_and_model(tmp_path):
+    """§31: execution metadata PAP owns must reach the run record."""
+    root = Path(__file__).parents[1]
+    spec = load_spec(root / "agents/personal-historian/agent.yaml")
+    run_log = tmp_path / "runs.jsonl"
+
+    def fake_runner(command, **kwargs):
+        raise OSError("OpenClaw unavailable")
+
+    invoke(root=root, spec=spec, skill="historian-period-summary",
+           args={"kind": "week", "period": "2026-W37", "timezone": "Asia/Shanghai"},
+           trigger={"type": "manual-job", "job_id": "historian-weekly-summary"},
+           run_log=run_log, command_runner=fake_runner, runtime=None)
+
+    record = runs(run_log)[0]
+    assert record["job_id"] == "historian-weekly-summary"
+    assert record["period"] == "2026-W37"
+    assert record["model"] == "deepseek/deepseek-flash"
+    assert record["provider"] == "deepseek"
+    # Token counts and cost are not synthesised: PAP cannot observe them.
+    assert record["usage"] == {}
