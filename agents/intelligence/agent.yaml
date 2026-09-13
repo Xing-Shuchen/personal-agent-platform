@@ -18,6 +18,7 @@ spec:
     class: conversational
     desired_jobs:
       - name: intelligence-pulse
+        enabled: false
         schedule: "10 */2 * * *"
         skill: intelligence-brief
         attach_to_session: true
