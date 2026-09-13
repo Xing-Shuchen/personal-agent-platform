@@ -62,7 +62,10 @@ def _state_dir() -> Path:
 
 
 def _store() -> ArtifactStore:
-    return ArtifactStore(os.environ.get("PERSONAL_HISTORIAN_STORE", str(_state_dir() / "artifacts")), domain=os.environ.get("PERSONAL_HISTORIAN_DOMAIN", "personal"))
+    # Canonical artifacts belong to the Historian checkout, never PAP's
+    # private run state. Deployments may point this at another Historian-owned
+    # volume with PERSONAL_HISTORIAN_STORE.
+    return ArtifactStore(os.environ.get("PERSONAL_HISTORIAN_STORE", str(_historian_root() / "summary-artifacts")), domain=os.environ.get("PERSONAL_HISTORIAN_DOMAIN", "personal"))
 
 
 def _decode_env_json(name: str, expected: type, fallback: Any) -> Any:
