@@ -217,10 +217,19 @@ def _thread_card_id(thread_id: str) -> str:
     return "thread-card:" + thread_id.split(":", 1)[1]
 
 
-def _prepare_event_card(payload: dict[str, Any]) -> dict[str, Any]:
-    revisions_root = Path(os.environ.get("PERSONAL_HISTORIAN_REVISIONS", str(_historian_root() / "revisions")))
-    revisions = RevisionStore(revisions_root, domain=os.environ.get("PERSONAL_HISTORIAN_DOMAIN", "personal"))
-    store = _store()
+#: How many events one model turn may be asked to card, and how much material it
+#: may carry. One turn per event made the cost scale with the number of events
+#: (110 for three weeks of history) when it should scale with the amount of
+#: material; batching keeps each prompt a sane size while cutting the turns by an
+#: order of magnitude.
+EVENT_BATCH_MAX = 20
+EVENT_BATCH_MAX_CHARS = 120_000
+
+
+def _pending_event_cards(revisions: RevisionStore, store: ArtifactStore) -> list[dict[str, Any]]:
+    """The Event revisions that still need a card, with their fixed identities."""
+
+    pending: list[dict[str, Any]] = []
     for event in revisions.get_current_revisions():
         event_ref = {
             "artifact_id": event["event_id"],
@@ -236,11 +245,49 @@ def _prepare_event_card(payload: dict[str, Any]) -> dict[str, Any]:
             # summary artifact graph. Bridge that boundary explicitly before
             # asking a model to construct the replacement card.
             store.mark_stale(card_id, reason=f"Event revision changed: {event['event_id']}")
-        next_revision = (current["revision"] + 1) if current else 1
-        prepared = {"kind": "event", "event_ref": event_ref, "event_card_id": card_id, "revision": next_revision}
-        _prepared_path(payload["run_id"]).write_text(json.dumps(prepared, ensure_ascii=False), encoding="utf-8")
-        return {"status": "ready", "input_text": "Create exactly one EventCard JSON object for this Event revision. Its event_card_id and revision are fixed below; use event_ref verbatim.\n\n" + json.dumps({"event": event, **prepared}, ensure_ascii=False)}
-    return {"status": "not_ready", "reason": "no current Event revision needs an EventCard refresh"}
+        pending.append({
+            "event": event,
+            "event_ref": event_ref,
+            "event_card_id": card_id,
+            "revision": (current["revision"] + 1) if current else 1,
+        })
+    return pending
+
+
+def _prepare_event_card(payload: dict[str, Any]) -> dict[str, Any]:
+    revisions_root = Path(os.environ.get("PERSONAL_HISTORIAN_REVISIONS", str(_historian_root() / "revisions")))
+    revisions = RevisionStore(revisions_root, domain=os.environ.get("PERSONAL_HISTORIAN_DOMAIN", "personal"))
+    store = _store()
+    pending = _pending_event_cards(revisions, store)
+    if not pending:
+        return {"status": "not_ready", "reason": "no current Event revision needs an EventCard refresh"}
+
+    batch: list[dict[str, Any]] = []
+    characters = 0
+    for item in pending:
+        size = len(json.dumps(item["event"], ensure_ascii=False))
+        if batch and (len(batch) >= EVENT_BATCH_MAX or characters + size > EVENT_BATCH_MAX_CHARS):
+            break
+        batch.append(item)
+        characters += size
+
+    prepared = {
+        "kind": "event-batch",
+        "cards": [{"event_ref": item["event_ref"], "event_card_id": item["event_card_id"],
+                   "revision": item["revision"]} for item in batch],
+    }
+    _prepared_path(payload["run_id"]).write_text(json.dumps(prepared, ensure_ascii=False), encoding="utf-8")
+    return {
+        "status": "ready",
+        "input_text": (
+            f"Create exactly one EventCard JSON object for each of the {len(batch)} Event revisions below, and "
+            "return them as {\"event_cards\": [...]}. Each card's event_card_id and revision are fixed and given "
+            "with its event; use the given event_ref verbatim. One card per event, no extras.\n\n"
+            + json.dumps({"events": [item["event"] for item in batch], "cards": prepared["cards"]},
+                         ensure_ascii=False)
+        ),
+        "metadata": {"event_cards_offered": len(batch), "event_cards_pending": len(pending)},
+    }
 
 
 def _prepare_thread_card(payload: dict[str, Any]) -> dict[str, Any]:
@@ -492,17 +539,62 @@ def complete(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def _complete_event_card(payload: dict[str, Any]) -> dict[str, Any]:
+    """Validate and commit a batch of cards, one per offered Event revision.
+
+    Each card is validated on its own: §33 requires that a model artifact failing
+    validation is not committed, and it says nothing about discarding the rest of
+    a batch. Rejected cards are reported rather than silently dropped, and a batch
+    in which nothing validates is an error so the run cannot look like a no-op.
+    """
+
     try:
         prepared = json.loads(_prepared_path(str(payload["run_id"])).read_text(encoding="utf-8"))
-        card = parse_model_json(str(payload.get("model_reply", "")))
-        if card.get("event_card_id") != prepared["event_card_id"] or card.get("revision") != prepared["revision"]:
-            raise ValueError("model changed the fixed EventCard identity or revision")
-        # The Event revision is the card's input; the runtime states that, not the model.
-        card = seal_with_provenance(card, _runtime_provenance([dict(prepared["event_ref"])]))
-        CardLifecycle(_store()).commit_event_card(card, event_ref=prepared["event_ref"])
+        reply = parse_model_json(str(payload.get("model_reply", "")))
+        offered = {item["event_card_id"]: item for item in prepared["cards"]}
+        raw_cards = reply.get("event_cards")
+        if raw_cards is None and "event_card_id" in reply:
+            raw_cards = [reply]  # a batch of one, answered as a bare card
+        if not isinstance(raw_cards, list) or not raw_cards:
+            raise ValueError("model reply must contain a non-empty 'event_cards' list")
     except Exception as exc:
-        return _failure("validation", exc)
-    return {"status": "success", "response": "NO_REPLY"}
+        return _failure("model_output", exc)
+
+    store = _store()
+    lifecycle = CardLifecycle(store)
+    committed: list[str] = []
+    rejected: list[dict[str, str]] = []
+    for card in raw_cards:
+        if not isinstance(card, dict):
+            rejected.append({"event_card_id": "", "error": "not a JSON object"})
+            continue
+        identity = str(card.get("event_card_id", ""))
+        fixed = offered.get(identity)
+        if fixed is None:
+            rejected.append({"event_card_id": identity,
+                             "error": "not one of the Event revisions that were offered"})
+            continue
+        if card.get("revision") != fixed["revision"]:
+            rejected.append({"event_card_id": identity,
+                             "error": "model changed the fixed EventCard revision"})
+            continue
+        try:
+            # The Event revision is the card's input; the runtime states that, not the model.
+            sealed = seal_with_provenance(card, _runtime_provenance([dict(fixed["event_ref"])]))
+            lifecycle.commit_event_card(sealed, event_ref=fixed["event_ref"])
+        except Exception as exc:
+            rejected.append({"event_card_id": identity, "error": str(exc)})
+        else:
+            committed.append(identity)
+
+    missing = sorted(set(offered) - {card.get("event_card_id") for card in raw_cards
+                                     if isinstance(card, dict)})
+    metadata = {"event_cards_committed": committed, "event_cards_rejected": rejected,
+                "event_cards_missing": missing}
+    if not committed:
+        return {"status": "error", "failure_kind": "validation",
+                "error": f"no card in the batch validated; rejected {len(rejected)}",
+                "metadata": metadata}
+    return {"status": "success", "response": "NO_REPLY", "metadata": metadata}
 
 
 def _complete_thread_card(payload: dict[str, Any]) -> dict[str, Any]:

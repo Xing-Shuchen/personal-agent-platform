@@ -144,3 +144,19 @@ def _contract_fields(text: str) -> list[str]:
             if token and "_" in token and token.islower() and token.replace("_", "").isalnum():
                 fields.append(token)
     return fields
+
+
+def test_the_event_card_skill_describes_the_batch_protocol():
+    """The runtime asks for a batch; the skill is what tells the model so."""
+    text = (PROFILE / "skills/historian-event-card/SKILL.md").read_text(encoding="utf-8")
+    assert '"event_cards"' in text or "event_cards" in text
+    assert "one card per" in text.lower()
+    for field in ("event_ref", "event_card_id", "revision"):
+        assert field in text, field
+
+
+def test_the_event_card_batch_is_bounded():
+    """A batch must stay a sane prompt, so the bound is declared, not implied."""
+    source = (REPO / "agents/personal-historian/runtime/historian.py").read_text(encoding="utf-8")
+    assert "EVENT_BATCH_MAX =" in source
+    assert "EVENT_BATCH_MAX_CHARS =" in source

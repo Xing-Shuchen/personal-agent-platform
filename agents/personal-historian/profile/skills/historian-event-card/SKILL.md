@@ -8,16 +8,20 @@ description: Compress exactly one reconstructed Event revision into a provenance
 Read `../../references/epistemology.md` and
 `../../references/historian-terminology.md` before processing the input.
 
-The invocation input contains one reconstructed Event revision, its exact
-`event_ref`, and optional prior EventCard context. Return exactly one
-`historian.event-card.v1` JSON document, with no Markdown or commentary.
+The invocation input contains one or more reconstructed Event revisions, each
+with its exact `event_ref`, `event_card_id` and `revision`, plus optional prior
+EventCard context. Return one `historian.event-card.v1` document **per event**,
+wrapped as `{"event_cards": [ ... ]}` with no Markdown or commentary: one card per
+offered event, no extras, and none omitted. Cards are validated individually, so a
+bad card is rejected and reported while the rest of the batch is committed — but a
+batch in which nothing validates fails the run.
 
 Preserve the Event's uncertainty and evidence boundary. A browser visit proves
 only a recorded visit; a commit proves only recorded commit facts; testimony is
 testimony. Never add motivations, completion claims, or continuity that the
-Event does not support. The output must use the supplied `event_ref` verbatim,
-retain evidence references, and must not make the card more authoritative than
-its Event.
+Event does not support. Each output must use that event's supplied `event_ref`,
+`event_card_id` and `revision` verbatim, retain evidence references, and must not
+make the card more authoritative than its Event.
 
 ## Output contract
 

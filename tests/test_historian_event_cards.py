@@ -112,6 +112,10 @@ class Harness:
     def prepared(self, run_id):
         return json.loads((self.state / "prepared" / f"{run_id}.json").read_text(encoding="utf-8"))
 
+    def first(self, run_id):
+        """The batch's first fixed card identity — the tests act on one event."""
+        return self.prepared(run_id)["cards"][0]
+
     def card(self, fixed, *, revision, content_hash):
         return {
             "schema_version": "1.0.0", "artifact_type": "historian.event-card.v1",
@@ -142,23 +146,23 @@ def test_event_revision_produces_a_bound_card(tmp_path):
     harness = Harness(tmp_path)
     prepared = harness.run("prepare", "r1")
     assert prepared["status"] == "ready"
-    fixed = harness.prepared("r1")
+    fixed = harness.first("r1")
     assert fixed["revision"] == 1
     assert fixed["event_card_id"] == "event-card:" + harness.event["event_id"].split(":", 1)[1]
     assert fixed["event_ref"] == {"artifact_id": harness.event["event_id"], "revision": 1,
                                   "content_hash": fixed["event_ref"]["content_hash"]}
 
     card = harness.seal(harness.card(fixed, revision=1, content_hash=fixed["event_ref"]["content_hash"]))
-    assert harness.run("complete", "r1", model_reply=json.dumps(card))["status"] == "success"
+    assert harness.run("complete", "r1", model_reply=json.dumps({"event_cards": [card]}))["status"] == "success"
     assert (harness.store / "artifacts.jsonl").is_file()
 
 
 def test_an_unchanged_event_reuses_its_card(tmp_path):
     harness = Harness(tmp_path)
     prepared = harness.run("prepare", "r1")
-    fixed = harness.prepared("r1")
+    fixed = harness.first("r1")
     card = harness.seal(harness.card(fixed, revision=1, content_hash=fixed["event_ref"]["content_hash"]))
-    harness.run("complete", "r1", model_reply=json.dumps(card))
+    harness.run("complete", "r1", model_reply=json.dumps({"event_cards": [card]}))
 
     second = harness.run("prepare", "r2")
     assert second["status"] == "not_ready"
@@ -169,7 +173,7 @@ def test_a_changed_event_revision_stales_the_old_card(tmp_path):
     """Gate 5: event r2 -> old card stale, and the replacement binds event r2."""
     harness = Harness(tmp_path)
     harness.run("prepare", "r1")
-    fixed = harness.prepared("r1")
+    fixed = harness.first("r1")
     # A card bound to an older content hash stands in for an Event revision that
     # has since changed.  It is seeded directly, because the commit path rightly
     # refuses to bind a card to a revision that is not the current one.
@@ -178,7 +182,7 @@ def test_a_changed_event_revision_stales_the_old_card(tmp_path):
 
     refreshed = harness.run("prepare", "r2")
     assert refreshed["status"] == "ready"
-    replacement = harness.prepared("r2")
+    replacement = harness.first("r2")
     assert replacement["revision"] == 2
     assert replacement["event_card_id"] == fixed["event_card_id"]
     assert replacement["event_ref"]["content_hash"] != "0" * 64
@@ -200,9 +204,9 @@ def test_a_changed_event_revision_stales_the_old_card(tmp_path):
 def test_a_card_that_changes_identity_is_rejected(tmp_path):
     harness = Harness(tmp_path)
     harness.run("prepare", "r1")
-    fixed = harness.prepared("r1")
+    fixed = harness.first("r1")
     forged = harness.seal(harness.card(fixed, revision=9, content_hash=fixed["event_ref"]["content_hash"]))
-    result = harness.run("complete", "r1", model_reply=json.dumps(forged))
+    result = harness.run("complete", "r1", model_reply=json.dumps({"event_cards": [forged]}))
     assert result["status"] == "error"
     assert not (harness.store / "artifacts.jsonl").exists()
 
@@ -210,11 +214,11 @@ def test_a_card_that_changes_identity_is_rejected(tmp_path):
 def test_a_card_without_evidence_is_rejected(tmp_path):
     harness = Harness(tmp_path)
     harness.run("prepare", "r1")
-    fixed = harness.prepared("r1")
+    fixed = harness.first("r1")
     card = harness.card(fixed, revision=1, content_hash=fixed["event_ref"]["content_hash"])
     card["evidence_refs"] = []
     forged = harness.seal(card)
-    result = harness.run("complete", "r1", model_reply=json.dumps(forged))
+    result = harness.run("complete", "r1", model_reply=json.dumps({"event_cards": [forged]}))
     assert result["status"] == "error"
     assert not (harness.store / "artifacts.jsonl").exists()
 
@@ -228,8 +232,8 @@ def test_the_real_journal_yields_a_preparable_event(tmp_path):
     shutil.copytree(HISTORIAN_ROOT / "revisions", harness.revisions)
     prepared = harness.run("prepare", "real1")
     assert prepared["status"] == "ready"
-    fixed = harness.prepared("real1")
-    assert fixed["kind"] == "event"
+    fixed = harness.first("real1")
+    assert fixed["event_card_id"].startswith("event-card:")
     assert fixed["revision"] == 1
     assert len(fixed["event_ref"]["content_hash"]) == 64
 
@@ -253,7 +257,7 @@ def test_the_runtime_owns_provenance_not_the_model(tmp_path):
     """A model may assert a clock, a manifest hash and a model identity it cannot know."""
     harness = Harness(tmp_path)
     harness.run("prepare", "r1")
-    fixed = harness.prepared("r1")
+    fixed = harness.first("r1")
     card = harness.card(fixed, revision=1, content_hash=fixed["event_ref"]["content_hash"])
     card["provenance"] = {
         "generated_at": "1999-01-01T00:00:00+00:00", "generator": "the-model",
@@ -261,7 +265,7 @@ def test_the_runtime_owns_provenance_not_the_model(tmp_path):
         "input_refs": [], "input_manifest_hash": "0" * 64,
     }
     assert harness.run("complete", "r1", payload={"skill": "historian-event-card", "args": {}},
-                       model_reply=json.dumps(harness.seal(card)))["status"] == "success"
+                       model_reply=json.dumps({"event_cards": [harness.seal(card)]}))["status"] == "success"
 
     record = _stored_records(harness.store)[0]
     provenance = record["provenance"]
@@ -278,7 +282,7 @@ def test_the_runtime_owns_provenance_not_the_model(tmp_path):
 def test_the_runtime_records_the_model_pap_declares(tmp_path):
     harness = Harness(tmp_path)
     harness.run("prepare", "r1")
-    fixed = harness.prepared("r1")
+    fixed = harness.first("r1")
     card = harness.seal(harness.card(fixed, revision=1, content_hash=fixed["event_ref"]["content_hash"]))
     assert harness.run("complete", "r1", payload={"skill": "historian-event-card", "args": {}},
                        model_reply=json.dumps(card),
