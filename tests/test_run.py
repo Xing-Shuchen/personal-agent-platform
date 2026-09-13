@@ -136,3 +136,60 @@ def test_run_record_names_the_job_period_and_model(tmp_path):
     assert record["provider"] == "deepseek"
     # Token counts and cost are not synthesised: PAP cannot observe them.
     assert record["usage"] == {}
+
+
+# --- §34: retry classification -------------------------------------------------
+
+def test_only_transient_trouble_is_retryable():
+    from pap.run import is_retryable
+    # §34 names provider timeout, transient network failure, rate limit and
+    # temporary model failure as retryable.
+    assert is_retryable("timeout")
+    assert is_retryable("runner")
+    # ...and says not to blindly retry rejected output.
+    for kind in ("validation", "model_output", "commit", "runtime", "launch", ""):
+        assert not is_retryable(kind), kind
+
+
+def test_a_runner_failure_is_recorded_as_retryable(tmp_path):
+    root = Path(__file__).parents[1]
+    spec = load_spec(root / "agents/personal-historian/agent.yaml")
+
+    def failing_runner(command, **kwargs):
+        return subprocess.CompletedProcess(command, 1, "", "rate limit exceeded")
+
+    result = invoke(root=root, spec=spec, skill="historian-period-summary",
+                    args={"kind": "week", "period": "2026-W37"}, run_log=tmp_path / "runs.jsonl",
+                    command_runner=failing_runner, runtime=None)
+    assert result.status == "failed"
+    assert result.failure_kind == "runner"
+    assert runs(tmp_path / "runs.jsonl")[0]["retryable"] is True
+
+
+def test_a_timeout_is_recorded_as_retryable(tmp_path):
+    root = Path(__file__).parents[1]
+    spec = load_spec(root / "agents/personal-historian/agent.yaml")
+
+    def timing_out(command, **kwargs):
+        raise subprocess.TimeoutExpired(command, 1)
+
+    result = invoke(root=root, spec=spec, skill="historian-period-summary",
+                    args={"kind": "week", "period": "2026-W37"}, run_log=tmp_path / "runs.jsonl",
+                    command_runner=timing_out, runtime=None)
+    assert result.failure_kind == "timeout"
+    assert runs(tmp_path / "runs.jsonl")[0]["retryable"] is True
+
+
+def test_a_missing_runner_is_not_retryable(tmp_path):
+    root = Path(__file__).parents[1]
+    spec = load_spec(root / "agents/personal-historian/agent.yaml")
+
+    def missing(command, **kwargs):
+        raise FileNotFoundError("openclaw not found")
+
+    result = invoke(root=root, spec=spec, skill="historian-period-summary",
+                    args={"kind": "week", "period": "2026-W37"}, run_log=tmp_path / "runs.jsonl",
+                    command_runner=missing, runtime=None)
+    assert result.failure_kind == "launch"
+    # Retrying cannot install a missing binary.
+    assert runs(tmp_path / "runs.jsonl")[0]["retryable"] is False

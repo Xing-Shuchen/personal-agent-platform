@@ -408,6 +408,19 @@ def prepare(payload: dict[str, Any]) -> dict[str, Any]:
     return {"status": "error", "error": "unsupported historian skill"}
 
 
+def _failure(kind: str, error: Exception) -> dict[str, Any]:
+    """Report a failure PAP can classify (§34).
+
+    ``failure_kind`` says whether retrying could help. Anything the Historian
+    rejected — a schema violation, an invented reference, a changed identity — is
+    deterministic: the same input fails the same way, so §34 forbids retrying it
+    blindly. Transient trouble (a timed-out or failed model runner) is reported by
+    PAP itself and stays retryable.
+    """
+
+    return {"status": "error", "failure_kind": kind, "error": str(error)}
+
+
 def _provider(model: str | None) -> str | None:
     if not isinstance(model, str) or "/" not in model:
         return None
@@ -449,15 +462,19 @@ def complete(payload: dict[str, Any]) -> dict[str, Any]:
     try:
         prepared = json.loads(_prepared_path(str(payload["run_id"])).read_text(encoding="utf-8"))
         candidate = parse_model_json(str(payload.get("model_reply", "")))
-        if candidate.get("summary_id") != prepared["summary_id"] or candidate.get("revision") != prepared["revision"]:
-            raise ValueError("model changed the fixed PeriodSummary identity or revision")
+    except Exception as exc:
+        return _failure("model_output", exc)
+    if candidate.get("summary_id") != prepared["summary_id"] or candidate.get("revision") != prepared["revision"]:
+        return _failure("model_output", ValueError(
+            "model changed the fixed PeriodSummary identity or revision"))
+    try:
         # The summary's provenance is the sealed ContextPack's, not the model's.
         candidate = seal_with_provenance(candidate, _runtime_provenance(
             list(context["provenance"]["input_refs"]),
             manifest_hash=context["provenance"]["input_manifest_hash"],
         ))
     except Exception as exc:
-        return {"status": "error", "error": str(exc)}
+        return _failure("validation", exc)
     result = complete_period_summary(context, json.dumps(candidate, ensure_ascii=False), _store())
     if result.status is SummaryRunStatus.SUCCESS:
         summary = result.commit.artifact if result.commit else {}
@@ -467,7 +484,11 @@ def complete(payload: dict[str, Any]) -> dict[str, Any]:
         return {"status": "success", "response": "NO_REPLY", "warnings": list(result.warnings), "metadata": {"result_summary_id": summary["summary_id"], "summary_revision": summary["revision"]}}
     if result.status is SummaryRunStatus.NOT_READY:
         return {"status": "not_ready", "reason": "ContextPack became not ready"}
-    return {"status": "error", "error": result.error or result.status.value, "warnings": list(result.warnings)}
+    if result.status is SummaryRunStatus.FAILED_COMMIT:
+        return {"status": "error", "failure_kind": "commit",
+                "error": result.error or result.status.value, "warnings": list(result.warnings)}
+    return {"status": "error", "failure_kind": "validation",
+            "error": result.error or result.status.value, "warnings": list(result.warnings)}
 
 
 def _complete_event_card(payload: dict[str, Any]) -> dict[str, Any]:
@@ -480,7 +501,7 @@ def _complete_event_card(payload: dict[str, Any]) -> dict[str, Any]:
         card = seal_with_provenance(card, _runtime_provenance([dict(prepared["event_ref"])]))
         CardLifecycle(_store()).commit_event_card(card, event_ref=prepared["event_ref"])
     except Exception as exc:
-        return {"status": "error", "error": str(exc)}
+        return _failure("validation", exc)
     return {"status": "success", "response": "NO_REPLY"}
 
 
@@ -496,7 +517,7 @@ def _complete_thread_card(payload: dict[str, Any]) -> dict[str, Any]:
         card = seal_with_provenance(card, _runtime_provenance(list(prepared["input_refs"])))
         CardLifecycle(store, ThreadRegistry(store.root)).commit_thread_card(card)
     except Exception as exc:
-        return {"status": "error", "error": str(exc)}
+        return _failure("validation", exc)
     return {"status": "success", "response": "NO_REPLY"}
 
 

@@ -11,7 +11,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable, Iterator
 
-from .run import RunResult, invoke
+from .run import RunResult, invoke, is_retryable
 from .schedule import latest_due
 from .spec import AgentSpec, ProactiveJob, load_platform
 from .state import append_jsonl, load_json, save_json
@@ -114,7 +114,14 @@ def due_jobs(
                             attempts < MAX_ATTEMPTS_PER_SLOT
                             and now - retry_after >= RESERVATION_TTL
                         )
-                    elif previous_status == "failed" and attempts < MAX_ATTEMPTS_PER_SLOT:
+                    elif (
+                        previous_status == "failed"
+                        and attempts < MAX_ATTEMPTS_PER_SLOT
+                        # §34: only transient trouble is retried. Output the
+                        # Historian rejected fails the same way every time, so a
+                        # blind retry burns model calls and still fails.
+                        and entry.get("last_retryable") is True
+                    ):
                         retry_due = now - retry_after >= RETRY_DELAY
                 if retry_due and (slot is None or slot <= previous_slot):
                     found.append(DueJob(spec=spec, job=job, slot=previous_slot))
@@ -272,6 +279,9 @@ def tick(
         with _locked_state(state_path) as state:
             entry = state.setdefault("jobs", {}).setdefault(due.key, {})
             entry.update({"last_run_id": result.run_id, "last_status": result.status,
+                          "last_failure_kind": getattr(result, "failure_kind", ""),
+                          "last_retryable": is_retryable(getattr(result, "failure_kind", ""))
+                          if result.status == "failed" else None,
                           "last_delivery": delivery,
                           "last_finished_at": _now().isoformat(timespec="seconds")})
         results.append(TickResult(

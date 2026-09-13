@@ -1,5 +1,6 @@
 """Tests for scheduler slot reservation and delivery silence."""
 
+import json
 import subprocess
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -177,3 +178,42 @@ def test_delivery_sends_normal_chinese_brief():
 
     assert _deliver(result, job, target="ou_test", sender=sender) == "sent"
     assert calls
+
+
+def test_a_rejected_run_is_not_retried_but_transient_trouble_is(tmp_path):
+    """§34: never blindly retry output the Historian already rejected."""
+    from pap.scheduler import due_jobs
+
+    make_platform(tmp_path, "17 18 * * *")
+    slot = datetime(2026, 8, 31, 18, 17, tzinfo=CST)
+    state_path = tmp_path / "state.json"
+
+    for retryable, expect_due in ((False, False), (True, True)):
+        with (tmp_path / "state.json").open("w", encoding="utf-8") as handle:
+            json.dump({"jobs": {"sample/sample-job": {
+                "last_slot": slot.isoformat(timespec="minutes"),
+                "last_status": "failed",
+                "last_retryable": retryable,
+                "attempts": 1,
+                # The scheduler measures the retry delay from when the run finished.
+                "last_finished_at": (slot + timedelta(minutes=1)).isoformat(timespec="seconds"),
+            }}}, handle)
+        # Retrying stays within the same slot period.
+        due = due_jobs(tmp_path, now=slot + timedelta(minutes=10), state_path=state_path, reserve=False)
+        assert bool(due) is expect_due, f"last_retryable={retryable}"
+
+
+def test_a_pre_existing_failed_slot_without_a_classification_is_not_retried(tmp_path):
+    """State written before failures were classified must not be retried blindly."""
+    from pap.scheduler import due_jobs
+
+    make_platform(tmp_path, "17 18 * * *")
+    slot = datetime(2026, 8, 31, 18, 17, tzinfo=CST)
+    state_path = tmp_path / "state.json"
+    state_path.write_text(json.dumps({"jobs": {"sample/sample-job": {
+        "last_slot": slot.isoformat(timespec="minutes"),
+        "last_status": "failed",
+        "attempts": 1,
+        "last_finished_at": (slot + timedelta(minutes=1)).isoformat(timespec="seconds"),
+    }}}), encoding="utf-8")
+    assert due_jobs(tmp_path, now=slot + timedelta(minutes=10), state_path=state_path, reserve=False) == []

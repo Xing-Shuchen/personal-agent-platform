@@ -42,11 +42,22 @@ class RunResult:
     started_at: str
     completed_at: str
     usage: dict[str, Any]
+    failure_kind: str = ""
 
 
 def _input_fingerprint(value: str) -> dict[str, Any]:
     raw = value.encode("utf-8")
     return {"sha256": hashlib.sha256(raw).hexdigest(), "chars": len(value)}
+
+
+#: §34: retry trouble that may be transient; never blindly retry output the
+#: Historian already rejected, because the same input fails the same way and
+#: only a repair, a fallback model, or a human will change the outcome.
+RETRYABLE_FAILURES = frozenset({"timeout", "runner"})
+
+
+def is_retryable(failure_kind: str) -> bool:
+    return failure_kind in RETRYABLE_FAILURES
 
 
 def _model_provider(model: str | None) -> tuple[str | None, str | None]:
@@ -149,6 +160,7 @@ def invoke(
     })
 
     usage: dict[str, Any] = {}
+    failure_kind = ""
     response = ""
     error = ""
     returncode = 1
@@ -177,6 +189,7 @@ def invoke(
             prepared = _runtime_call(adapter, "prepare", {"run_id": run_id, "skill": skill, "args": args}, env)
         except Exception as exc:
             error = str(exc)
+            failure_kind = "runtime"
         else:
             if prepared.get("status") == "not_ready":
                 completed_at = _now()
@@ -187,6 +200,7 @@ def invoke(
                 return RunResult(run_id, spec.name, skill, status, 0, response, error, started.isoformat(timespec="seconds"), completed_at.isoformat(timespec="seconds"), usage)
             if prepared.get("status") != "ready" or not isinstance(prepared.get("input_text"), str):
                 error = str(prepared.get("error", "runtime did not prepare an invocation"))
+                failure_kind = "runtime"
             else:
                 input_text = prepared["input_text"]
                 usage["runtime"] = {"prepared": True}
@@ -222,6 +236,10 @@ def invoke(
         returncode = completed.returncode
         response = completed.stdout.strip()
         error = completed.stderr.strip()
+        if returncode:
+            # The model runner itself failed: a provider or transport problem is
+            # the usual cause, and §34 names those as retryable.
+            failure_kind = "runner"
         if returncode == 0 and adapter is not None:
             completed_runtime = _runtime_call(adapter, "complete", {"run_id": run_id, "skill": skill, "args": args, "model_reply": response}, env)
             runtime_status = completed_runtime.get("status")
@@ -235,16 +253,22 @@ def invoke(
             else:
                 returncode = 1
                 error = str(completed_runtime.get("error", "runtime rejected model output"))
+                # The runtime classifies its own rejections; a rejection is not
+                # something a retry can fix unless the runtime says otherwise.
+                failure_kind = str(completed_runtime.get("failure_kind") or "validation")
     except subprocess.TimeoutExpired as exc:
         response = exc.stdout.strip() if isinstance(exc.stdout, str) else ""
         error = f"OpenClaw invocation timed out after {exc.timeout}s"
         returncode = 124
+        failure_kind = "timeout"
     except OSError as exc:
         error = str(exc)
         returncode = 127
+        failure_kind = "launch"
     except RuntimeError as exc:
         error = str(exc)
         returncode = 1
+        failure_kind = "runtime"
     finally:
         Path(tmp_path).unlink(missing_ok=True)
     completed_at = _now()
@@ -263,6 +287,8 @@ def invoke(
         "returncode": returncode,
         "response": _input_fingerprint(response),
         "error": error[:1000],
+        "failure_kind": failure_kind,
+        "retryable": is_retryable(failure_kind) if status == "failed" else None,
         "usage": usage,
         "context_pack_id": usage.get("runtime", {}).get("context_pack_id"),
         "period": args.get("period"),
@@ -279,6 +305,7 @@ def invoke(
         started_at=started.isoformat(timespec="seconds"),
         completed_at=completed_at.isoformat(timespec="seconds"),
         usage=usage,
+        failure_kind=failure_kind,
     )
 
 
