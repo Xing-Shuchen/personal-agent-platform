@@ -331,6 +331,12 @@ def _prepare_summary(payload: dict[str, Any]) -> dict[str, Any]:
         provenance=_manifest(candidates, watermarks, coverage),
     )
     _context_path(payload["run_id"]).write_text(json.dumps(context, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    # The ContextPack is an execution artifact and may be retained (§4); keeping
+    # it in the canonical store is what lets §41 report what the model was
+    # actually offered, including when the run then failed.  Artifacts are
+    # immutable revisions, so the store allocates the revision: identical content
+    # is a no-op and changed content becomes the next revision.
+    store.commit(store.allocate(context))
     summary_id = f"summary:{kind}:{period.label}"
     existing = store.latest(summary_id)
     if existing and existing.get("provenance", {}).get("input_manifest_hash") == context["provenance"]["input_manifest_hash"] and not store.is_stale(summary_id):

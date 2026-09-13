@@ -239,3 +239,53 @@ def test_an_unsupported_kind_is_an_error_not_a_summary(tmp_path):
     result, _ = job.prepare("day", "2026-09-08", seed=SEPTEMBER_WEEKS)
     assert result["status"] == "error"
     assert "supported kind" in result["error"]
+
+
+def _stored_artifacts(store_dir):
+    path = Path(store_dir) / "artifacts.jsonl"
+    if not path.is_file():
+        return []
+    return [json.loads(line)["record"] for line in path.read_text(encoding="utf-8").splitlines()]
+
+
+def test_the_context_pack_is_retained_for_diagnostics(tmp_path):
+    """§4 allows retaining the execution artifact; §41 needs it to report."""
+    job = Job(tmp_path)
+    result, context_path = job.prepare("month", "2026-09", seed=SEPTEMBER_WEEKS)
+    pack = pack_of(result, context_path)
+
+    stored = [record for record in _stored_artifacts(job.store)
+              if record["artifact_type"] == "historian.context-pack.v1"]
+    assert len(stored) == 1
+    assert stored[0]["context_pack_id"] == pack["context_pack_id"]
+    assert stored[0]["revision"] == 1
+    assert stored[0]["content_hash"] == pack["content_hash"]
+
+
+def test_an_unchanged_context_pack_does_not_mint_a_second_revision(tmp_path):
+    job = Job(tmp_path)
+    assert job.prepare("month", "2026-09", seed=SEPTEMBER_WEEKS, run_id="a")[0]["status"] == "ready"
+    assert job.prepare("month", "2026-09", seed=SEPTEMBER_WEEKS, run_id="b")[0]["status"] == "ready"
+
+    packs = [record for record in _stored_artifacts(job.store)
+             if record["artifact_type"] == "historian.context-pack.v1"]
+    assert len(packs) == 1
+    assert packs[0]["revision"] == 1
+
+
+def test_a_changed_context_pack_becomes_the_next_revision(tmp_path):
+    job = Job(tmp_path)
+    assert job.prepare("month", "2026-09", seed=SEPTEMBER_WEEKS, run_id="a")[0]["status"] == "ready"
+    # A week receives a new revision, so the material the month is built from
+    # changes and the pack cannot stay at revision 1.
+    changed = week("2026-W39", "2026-09-21T00:00:00+08:00", "2026-09-28T00:00:00+08:00")
+    changed["next_level_digest"] = "A revised digest for the same week."
+    changed["revision"] = 2
+    changed["content_hash"] = _content_hash(changed)
+    second, _ = job.prepare("month", "2026-09",
+                            seed=[SEPTEMBER_WEEKS[0], SEPTEMBER_WEEKS[1], changed], run_id="b")
+    assert second["status"] == "ready"
+
+    packs = [record for record in _stored_artifacts(job.store)
+             if record["artifact_type"] == "historian.context-pack.v1"]
+    assert [record["revision"] for record in packs] == [1, 2]
