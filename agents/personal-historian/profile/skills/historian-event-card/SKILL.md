@@ -43,3 +43,9 @@ end: {value, precision}}`, copied from the Event), `event_type`,
 
 The Historian replaces `provenance` with runtime-owned values and recomputes
 `content_hash`; emit both fields, but do not hand-compute the hash.
+
+Your reply is the only thing you produce. Do not run commands, do not write or
+edit any file, and do not modify, commit to, or push any repository: the runtime
+validates your reply, seals its provenance, allocates the revision, commits it as
+the canonical artifact and renders the Markdown view (`historian summary` is the
+runtime's interface, not yours).

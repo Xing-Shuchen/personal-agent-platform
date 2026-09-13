@@ -160,3 +160,38 @@ def test_the_event_card_batch_is_bounded():
     source = (REPO / "agents/personal-historian/runtime/historian.py").read_text(encoding="utf-8")
     assert "EVENT_BATCH_MAX =" in source
     assert "EVENT_BATCH_MAX_CHARS =" in source
+
+
+def test_every_skill_says_the_reply_is_the_artifact():
+    """§16/§21: the model drafts, the runtime persists.
+
+    `historian-period-summary` used to tell the model to run `historian summary
+    commit` itself. A real run obeyed: it committed revision 1 by hand and then
+    the runtime refused its reply ("must use revision 2, got 1"). The revision
+    was spent and the run failed, while the artifact it wrote carried a
+    hand-written `generator` claiming the runtime had produced it — provenance
+    no runtime could substantiate. Every skill must say the opposite.
+    """
+
+    for skill in ("historian-event-card", "historian-thread-card", "historian-period-summary"):
+        text = (PROFILE / "skills" / skill / "SKILL.md").read_text(encoding="utf-8")
+        # Line wrapping must not decide whether the contract is stated.
+        flattened = " ".join(text.split())
+        for clause in (
+            "Do not run commands",
+            "do not write or edit any file",
+            "do not modify, commit to, or push any repository",
+        ):
+            assert clause in flattened, f"{skill}: {clause}"
+        # The instruction that caused it, verbatim. Naming the commands in the
+        # prohibition is fine; handing them to the model as its job is not.
+        assert "The Historian owns persistence" not in flattened, skill
+        assert "Use its `historian summary" not in flattened, skill
+        assert "operations with the configured local Historian" not in flattened, skill
+
+
+def test_the_runtime_owns_provenance_for_every_summary_artifact():
+    """§21: only the runtime may claim what the runtime can substantiate."""
+    source = (REPO / "agents/personal-historian/runtime/historian.py").read_text(encoding="utf-8")
+    assert "seal_with_provenance" in source
+    assert "pap.personal-historian.runtime/v1" in source
