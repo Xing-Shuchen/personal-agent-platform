@@ -5,10 +5,14 @@ __pycache__/
 .venv/
 .pytest_cache/
 
-# Runtime state (gate db, audit logs)
-var/state/
-var/world-historian/
-var/agents/
+# Runtime state (gate db, audit logs, per-agent run state)
+#
+# Every agent's runtime directory lives under var/ and holds real material:
+# prepared ContextPacks, model inputs and event payloads. Listing agents one by
+# one had already missed personal-historian, so ignore the whole tree and keep
+# var/.gitkeep tracked instead.
+/var/*
+!/var/.gitkeep
 agents/*/profile/var/
 
 # Local secrets / editor
@@ -17,7 +21,6 @@ agents/*/profile/var/
 *.sqlite
 *.sqlite3
 .DS_Store
-var/wechat-archivist/
 
 # Generated run artifacts
 agents/*/runtime/reflect-*.json
