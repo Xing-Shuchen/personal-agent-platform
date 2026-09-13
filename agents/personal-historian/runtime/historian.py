@@ -100,7 +100,7 @@ def _discover_collection_state() -> tuple[list[dict[str, Any]], dict[str, dateti
     coverage runs are read from the configured collection output directory and
     Event reconstruction windows from the append-only revision journal.
     """
-    root = Path(os.environ.get("PERSONAL_HISTORIAN_COLLECTION_ROOT", str(_historian_root() / "collection-runs")))
+    root = Path(os.environ.get("PERSONAL_HISTORIAN_COLLECTION_ROOT", str(_historian_root() / "examples" / "live-run")))
     records: list[dict[str, Any]] = []
     watermarks: dict[str, datetime | None] = {}
     if root.is_dir():
@@ -124,9 +124,7 @@ def _discover_collection_state() -> tuple[list[dict[str, Any]], dict[str, dateti
                     continue
                 prior = watermarks.get(name)
                 watermarks[name] = watermark if prior is None or watermark > prior else prior
-                ratio = record.get("coverage_ratio", 0)
-                status = "complete" if record.get("status") == "covered" and ratio == 1 else ("partial" if record.get("status") in {"covered", "partial"} else "poor")
-                records.append({"source": name, "status": status, "note": f"collector coverage from {path.name}"})
+                records.append({"source": name, "status": _coverage_status(record), "note": f"collector coverage from {path.name}"})
     revision_root = Path(os.environ.get("PERSONAL_HISTORIAN_REVISIONS", str(_historian_root() / "revisions")))
     journal = revision_root / "revisions.jsonl"
     if journal.is_file():
@@ -145,6 +143,27 @@ def _discover_collection_state() -> tuple[list[dict[str, Any]], dict[str, dateti
         if ends:
             watermarks["reconstruction"] = max(ends)
     return records, watermarks
+
+
+def _coverage_status(record: dict[str, Any]) -> str:
+    """Map collector coverage onto the ContextPack vocabulary (§15).
+
+    ``unknown`` must stay ``unknown``.  Zhihu's retention window makes feed
+    completeness unknowable, and reporting that as ``poor`` would assert a
+    coverage gap the collector never measured — the exact confusion between
+    "no evidence" and "evidence of absence" this project forbids.  A failed
+    collection is missing data, not poor data.
+    """
+
+    status = record.get("status")
+    ratio = record.get("coverage_ratio")
+    if status == "covered":
+        return "complete" if ratio == 1 else "good"
+    if status == "partial":
+        return "partial"
+    if status == "failed":
+        return "missing"
+    return "unknown"
 
 
 def _coverage() -> list[dict[str, Any]]:

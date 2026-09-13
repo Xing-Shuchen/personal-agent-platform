@@ -96,6 +96,12 @@ def test_declared_runtime_can_finish_not_ready_without_model_turn(tmp_path, monk
     root = Path(__file__).parents[1]
     spec = load_spec(root / "agents/personal-historian/agent.yaml")
     monkeypatch.delenv("PERSONAL_HISTORIAN_WATERMARKS_JSON", raising=False)
+    # Hermetic: point discovery at empty state so this test does not depend on
+    # whatever the developer happens to have collected locally.  Readiness is
+    # unmet because there is no state to read, not because the default path is
+    # wrong.
+    monkeypatch.setenv("PERSONAL_HISTORIAN_COLLECTION_ROOT", str(tmp_path / "no-collections"))
+    monkeypatch.setenv("PERSONAL_HISTORIAN_REVISIONS", str(tmp_path / "no-revisions"))
 
     def model_must_not_run(*args, **kwargs):
         raise AssertionError("model must not run before readiness is met")
