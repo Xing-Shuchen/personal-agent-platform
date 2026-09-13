@@ -30,7 +30,7 @@ def test_validate_json_output():
     data = json.loads(r.stdout)
     assert {d["name"] for d in data} == {
         "serendipity", "intelligence", "red-team", "world-historian", "compiler-news",
-        "wechat-archivist",
+        "wechat-archivist", "personal-historian",
     }
 
 

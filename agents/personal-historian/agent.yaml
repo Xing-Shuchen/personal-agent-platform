@@ -1,0 +1,20 @@
+apiVersion: pap/v1
+kind: Agent
+metadata:
+  name: personal-historian
+  description: Produces validated, provenance-bound personal historical cards and period summaries.
+spec:
+  profile:
+    name: personal-historian
+    source: profile
+  capabilities:
+    - local_state.read
+    - local_state.write
+  proactive:
+    enabled: false
+  state:
+    private:
+      - runs
+      - locks
+      - cache
+      - state
