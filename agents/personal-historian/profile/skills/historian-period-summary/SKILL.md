@@ -13,3 +13,9 @@ distinctions between observation, testimony, Event reconstruction, and prior
 summary. Do not invent events, causality, decisions, psychological states, or
 continuity. `basis_refs` must refer only to selected ContextPack artifacts. The
 period must match the ContextPack exactly.
+
+The Historian owns persistence. Use its `historian summary prepare`,
+`historian summary validate`, `historian summary commit`, and
+`historian summary render` operations with the configured local Historian
+checkout. If readiness is not met, return exactly `NOT_READY`; do not produce
+or commit a summary. Never store canonical history only in PAP `var/`.
