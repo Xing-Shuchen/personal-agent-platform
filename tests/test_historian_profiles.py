@@ -1,0 +1,146 @@
+"""The skills' output contracts must match the schemas that judge them.
+
+The skills are the only thing telling the model what to emit. They are also the
+one part of the system that no validator reads, so a schema can gain a required
+field and every model reply then fails with no hint that the instruction is stale.
+These tests pin the contract to the schema.
+
+Hermetic: the schemas are read from the historian checkout, no model runs.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+from pathlib import Path
+
+import pytest
+
+REPO = Path(__file__).parents[1]
+PROFILE = REPO / "agents/personal-historian/profile"
+HISTORIAN_ROOT = Path(os.environ.get("PERSONAL_HISTORIAN_ROOT", REPO.parent / "personal-historian-handoff"))
+SCHEMAS = HISTORIAN_ROOT / "schemas"
+
+#: skill -> (contract file, schema, artifact type)
+CONTRACTS = {
+    "historian-event-card": (
+        PROFILE / "skills/historian-event-card/SKILL.md", "event-card.v1.schema.json",
+        "historian.event-card.v1"),
+    "historian-thread-card": (
+        PROFILE / "skills/historian-thread-card/SKILL.md", "thread-card.v1.schema.json",
+        "historian.thread-card.v1"),
+    "historian-period-summary": (
+        PROFILE / "skills/historian-period-summary/references/output-contract.md",
+        "period-summary.v1.schema.json", "historian.period-summary.v1"),
+}
+
+pytestmark = pytest.mark.skipif(not SCHEMAS.is_dir(), reason="historian checkout unavailable")
+
+
+def _schema(name):
+    return json.loads((SCHEMAS / name).read_text(encoding="utf-8"))
+
+
+def _enum_values(schema) -> set[str]:
+    """Every enum literal the schema declares, so a value is not read as a field."""
+
+    values: set[str] = set()
+    for node in [*schema.get("properties", {}).values(), *schema.get("$defs", {}).values()]:
+        if isinstance(node, dict) and isinstance(node.get("enum"), list):
+            values.update(item for item in node["enum"] if isinstance(item, str))
+    return values
+
+
+def _flatten(text: str) -> str:
+    """Contract prose wraps; compare against unwrapped text."""
+    return " ".join(text.split())
+
+
+@pytest.mark.parametrize("skill", sorted(CONTRACTS))
+def test_the_contract_names_every_required_field(skill):
+    path, schema_name, _ = CONTRACTS[skill]
+    required = _schema(schema_name)["required"]
+    text = path.read_text(encoding="utf-8")
+    missing = [field for field in required if f"`{field}`" not in text]
+    assert missing == [], f"{path.name} does not name: {', '.join(missing)}"
+
+
+@pytest.mark.parametrize("skill", sorted(CONTRACTS))
+def test_the_contract_names_no_field_the_schema_rejects(skill):
+    path, schema_name, _ = CONTRACTS[skill]
+    properties = set(_schema(schema_name)["properties"])
+    text = path.read_text(encoding="utf-8")
+    # Every backticked field-like token inside the contract must be a real field.
+    for token in _contract_fields(text):
+        assert token in properties or token in _enum_values(_schema(schema_name)), (
+            f"{path.name} names unknown field {token!r}")
+
+
+@pytest.mark.parametrize("skill", sorted(CONTRACTS))
+def test_the_contract_states_the_artifact_type_and_schema_version(skill):
+    path, schema_name, artifact_type = CONTRACTS[skill]
+    schema = _schema(schema_name)
+    text = path.read_text(encoding="utf-8")
+    assert artifact_type in text
+    assert schema["properties"]["schema_version"]["const"] in text
+    assert schema["properties"]["artifact_type"]["const"] == artifact_type
+
+
+@pytest.mark.parametrize("skill", sorted(CONTRACTS))
+def test_the_contract_says_unknown_fields_are_rejected(skill):
+    path, schema_name, _ = CONTRACTS[skill]
+    assert _schema(schema_name).get("additionalProperties") is False
+    flattened = _flatten(path.read_text(encoding="utf-8")).lower()
+    assert "unknown fields" in flattened and "reject" in flattened
+
+
+def test_enum_values_stated_for_thread_status_match_the_schema():
+    path, schema_name, _ = CONTRACTS["historian-thread-card"]
+    statuses = _schema(schema_name)["properties"]["status"]["enum"]
+    text = path.read_text(encoding="utf-8")
+    flattened = _flatten(text)
+    start = flattened.index("`status` (")
+    stated = flattened[start:flattened.index(")", start)]
+    for status in statuses:
+        assert status in stated, status
+
+
+def test_enum_values_stated_for_period_status_match_the_schema():
+    path, schema_name, _ = CONTRACTS["historian-period-summary"]
+    statuses = _schema(schema_name)["properties"]["status"]["enum"]
+    text = path.read_text(encoding="utf-8")
+    flattened = _flatten(text)
+    start = flattened.index("| `status` |")
+    stated = flattened[start:flattened.index("|", start + 12)]
+    for status in statuses:
+        assert status in stated, status
+
+
+def test_every_level_reference_carries_its_digest_range():
+    """§19's soft limits belong where the model reads level guidance."""
+    expected = {"weekly.md": "300-700", "monthly.md": "400-900",
+                "quarterly.md": "500-1200", "halfyear.md": "600-1500"}
+    for name, span in expected.items():
+        text = (PROFILE / "skills/historian-period-summary/references" / name).read_text(encoding="utf-8")
+        assert span in text, name
+        assert "next_level_digest" in text, name
+
+
+def test_the_period_summary_contract_states_what_the_digest_must_preserve():
+    text = (PROFILE / "skills/historian-period-summary/references/output-contract.md").read_text(
+        encoding="utf-8")
+    for required in ("major state transitions", "major decisions", "thread lifecycle changes",
+                     "inflection points", "important unresolved issues"):
+        assert required in text, required
+    assert "not a shorter `overview`" in text
+
+
+def _contract_fields(text: str) -> list[str]:
+    """Backticked snake_case tokens that look like schema fields."""
+
+    fields = []
+    for line in text.splitlines():
+        for token in line.split("`")[1::2]:
+            if token and "_" in token and token.islower() and token.replace("_", "").isalnum():
+                fields.append(token)
+    return fields
