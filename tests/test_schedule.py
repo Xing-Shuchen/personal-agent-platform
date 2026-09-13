@@ -39,6 +39,12 @@ def test_latest_due_returns_only_latest_slot():
     assert due == datetime(2026, 8, 31, 18, 17, tzinfo=CST)
 
 
+def test_cron_can_be_evaluated_in_declared_timezone():
+    utc = timezone.utc
+    # 02:17 in Shanghai is 18:17 UTC on the previous day.
+    assert matches_schedule("17 2 * * *", datetime(2026, 8, 30, 18, 17, tzinfo=utc), timezone_name="Asia/Shanghai")
+
+
 @pytest.mark.parametrize("value", ["every 30s", "25:00", "0 0 0 * *", "*/0 * * * *"])
 def test_invalid_schedules(value):
     with pytest.raises(ScheduleError):
