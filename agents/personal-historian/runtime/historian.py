@@ -185,7 +185,11 @@ def _prepare_summary(payload: dict[str, Any]) -> dict[str, Any]:
         provenance=_manifest(candidates, watermarks, coverage),
     )
     _context_path(payload["run_id"]).write_text(json.dumps(context, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    return {"status": "ready", "input_text": "Create exactly one PeriodSummary JSON object for this sealed ContextPack. Do not add prose or use evidence outside it.\n\n" + json.dumps(context, ensure_ascii=False)}
+    summary_id = f"summary:{kind}:{period.label}"
+    existing = store.latest(summary_id)
+    prepared = {"kind": "summary", "summary_id": summary_id, "revision": (existing["revision"] + 1) if existing else 1}
+    _prepared_path(payload["run_id"]).write_text(json.dumps(prepared, ensure_ascii=False), encoding="utf-8")
+    return {"status": "ready", "input_text": "Create exactly one PeriodSummary JSON object for this sealed ContextPack. Do not add prose or use evidence outside it. summary_id and revision are fixed below.\n\n" + json.dumps({"context_pack": context, **prepared}, ensure_ascii=False)}
 
 
 def prepare(payload: dict[str, Any]) -> dict[str, Any]:
@@ -209,7 +213,14 @@ def complete(payload: dict[str, Any]) -> dict[str, Any]:
     if not path.is_file():
         return {"status": "error", "error": "prepared ContextPack is missing"}
     context = json.loads(path.read_text(encoding="utf-8"))
-    result = complete_period_summary(context, str(payload.get("model_reply", "")), _store())
+    try:
+        prepared = json.loads(_prepared_path(str(payload["run_id"])).read_text(encoding="utf-8"))
+        candidate = parse_model_json(str(payload.get("model_reply", "")))
+        if candidate.get("summary_id") != prepared["summary_id"] or candidate.get("revision") != prepared["revision"]:
+            raise ValueError("model changed the fixed PeriodSummary identity or revision")
+    except Exception as exc:
+        return {"status": "error", "error": str(exc)}
+    result = complete_period_summary(context, json.dumps(candidate, ensure_ascii=False), _store())
     if result.status is SummaryRunStatus.SUCCESS:
         summary = result.commit.artifact if result.commit else {}
         rendered = _state_dir() / "rendered"
