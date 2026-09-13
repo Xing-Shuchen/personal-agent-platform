@@ -7,7 +7,7 @@ spec:
   profile:
     name: compiler-news
     source: profile
-  model: deepseek/deepseek-flash
+  model: deepseek-compiler-news/deepseek-flash
   capabilities:
     - personal_context.read
     - web.search

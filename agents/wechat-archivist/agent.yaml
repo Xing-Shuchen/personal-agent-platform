@@ -7,7 +7,7 @@ spec:
   profile:
     name: wechat-archivist
     source: profile
-  model: deepseek/deepseek-flash
+  model: deepseek-wechat-archivist/deepseek-flash
   capabilities:
     - local_state.write
   proactive:

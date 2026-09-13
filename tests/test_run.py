@@ -27,7 +27,7 @@ spec:
   profile:
     name: sample
     source: profile
-  model: deepseek/deepseek-v4.1-flash-expires-on-0910
+  model: deepseek/deepseek-flash
 """,
         encoding="utf-8",
     )
@@ -66,7 +66,7 @@ def test_invoke_records_start_and_completion(tmp_path):
     )
     assert not captured["message_file"].exists()
     assert captured["command"][captured["command"].index("--model") + 1] == \
-        "deepseek/deepseek-v4.1-flash-expires-on-0910"
+        "deepseek/deepseek-flash"
     assert captured["input"] is None
     lifecycle = [json.loads(line)["event"] for line in log.read_text().splitlines()]
     assert lifecycle == ["run.started", "run.completed"]

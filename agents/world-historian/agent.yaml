@@ -7,7 +7,7 @@ spec:
   profile:
     name: world-historian
     source: profile
-  model: deepseek/deepseek-flash
+  model: deepseek-world-historian/deepseek-flash
   capabilities:
     - personal_context.read
     - web.search
