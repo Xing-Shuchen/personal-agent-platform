@@ -262,15 +262,32 @@ def test_the_context_pack_is_retained_for_diagnostics(tmp_path):
     assert stored[0]["content_hash"] == pack["content_hash"]
 
 
-def test_an_unchanged_context_pack_does_not_mint_a_second_revision(tmp_path):
+def test_unchanged_material_keeps_the_same_selection_identity(tmp_path):
+    """A rebuild is a new generation, but the selection it describes is unchanged.
+
+    The pack carries its generation timestamp, so it cannot be byte-identical
+    across runs.  What must not change is the input manifest hash: that is what
+    §32 idempotency keys on, and what tells a summary its material is the same.
+    """
     job = Job(tmp_path)
-    assert job.prepare("month", "2026-09", seed=SEPTEMBER_WEEKS, run_id="a")[0]["status"] == "ready"
-    assert job.prepare("month", "2026-09", seed=SEPTEMBER_WEEKS, run_id="b")[0]["status"] == "ready"
+    first, first_path = job.prepare("month", "2026-09", seed=SEPTEMBER_WEEKS, run_id="a")
+    second, second_path = job.prepare("month", "2026-09", seed=SEPTEMBER_WEEKS, run_id="b")
+    assert first["status"] == second["status"] == "ready"
+
+    first_pack = json.loads(first_path.read_text(encoding="utf-8"))
+    second_pack = json.loads(second_path.read_text(encoding="utf-8"))
+    assert (first_pack["selection_manifest"]["input_manifest_hash"]
+            == second_pack["selection_manifest"]["input_manifest_hash"])
+    assert sorted(first_pack["sections"]) == sorted(second_pack["sections"])
+    assert first_pack["token_budget"] == second_pack["token_budget"]
 
     packs = [record for record in _stored_artifacts(job.store)
              if record["artifact_type"] == "historian.context-pack.v1"]
-    assert len(packs) == 1
-    assert packs[0]["revision"] == 1
+    # Every retained generation describes the same selection.
+    assert {record["selection_manifest"]["input_manifest_hash"] for record in packs} == {
+        first_pack["selection_manifest"]["input_manifest_hash"]}
+    assert [record["revision"] for record in packs] == sorted(
+        {record["revision"] for record in packs})
 
 
 def test_a_changed_context_pack_becomes_the_next_revision(tmp_path):

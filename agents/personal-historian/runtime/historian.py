@@ -301,6 +301,24 @@ def _prepare_thread_card(payload: dict[str, Any]) -> dict[str, Any]:
             + json.dumps({"event_cards": uncovered, **prepared}, ensure_ascii=False)}
 
 
+def _current_events() -> list[dict[str, Any]]:
+    """The reconstructed Event revisions a summary may reach back to (§10).
+
+    EventCards live in the artifact store but the Events they compress live in
+    the v0.1 revision journal, so the adapter supplies them: the Historian then
+    decides which of them a period may see, and only ever the exact revision a
+    card is bound to.
+    """
+
+    root = Path(os.environ.get("PERSONAL_HISTORIAN_REVISIONS", str(_historian_root() / "revisions")))
+    domain = os.environ.get("PERSONAL_HISTORIAN_DOMAIN", "personal")
+    try:
+        return list(RevisionStore(root, domain=domain).get_current_revisions())
+    except Exception:
+        # An unreadable journal is a coverage gap, not a reason to fail a summary.
+        return []
+
+
 def _prepare_summary(payload: dict[str, Any]) -> dict[str, Any]:
     args = payload["args"]
     kind = args.get("kind")
@@ -323,7 +341,7 @@ def _prepare_summary(payload: dict[str, Any]) -> dict[str, Any]:
     missing_children = _missing_child_summaries(store, period)
     if missing_children:
         return {"status": "not_ready", "reason": "required child summaries are missing: " + ", ".join(missing_children)}
-    candidates = candidates_for_period(store, period)
+    candidates = candidates_for_period(store, period, events=_current_events())
     coverage = _coverage()
     policy_path = os.environ.get("PERSONAL_HISTORIAN_POLICY", str(_historian_root() / "config" / "historical-summary-policy.yaml"))
     context = ContextBuilder(domain=store.domain, policy=load_policy(policy_path, kind)).build(
