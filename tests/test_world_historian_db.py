@@ -145,9 +145,16 @@ def test_bad_claim_shape_rolls_back_whole_bundle(tmp_path):
 
 
 def test_runtime_state_is_gitignored():
-    gitignore = (REPO / ".gitignore").read_text(encoding="utf-8")
-    assert "var/world-historian/" in gitignore
-    r = subprocess.run(
-        ["git", "check-ignore", "-q", "var/world-historian/chronicle.sqlite"],
-        cwd=REPO, capture_output=True, text=True)
-    assert r.returncode == 0
+    """Runtime state is ignored by path, so a new agent cannot leak real data.
+
+    Asserting the behaviour rather than a literal .gitignore line: enumerating
+    agents one by one had already missed personal-historian, and its runtime
+    directory holds prepared ContextPacks and Event payloads.
+    """
+    for path in ("var/world-historian/chronicle.sqlite",
+                 "var/personal-historian/prepared/run.json",
+                 "var/xiaohao/sessions/log.jsonl",
+                 "var/state/runs.jsonl"):
+        r = subprocess.run(["git", "check-ignore", "-q", path],
+                           cwd=REPO, capture_output=True, text=True)
+        assert r.returncode == 0, path
