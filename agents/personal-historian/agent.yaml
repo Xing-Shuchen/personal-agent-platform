@@ -16,6 +16,7 @@ spec:
     desired_jobs:
       - name: historian-event-card-refresh
         schedule: "17 1 * * *"
+        timezone: Asia/Shanghai
         skill: historian-event-card
         runtime: historian
         args: {mode: refresh}
@@ -23,6 +24,7 @@ spec:
         delivery: local
       - name: historian-thread-weekly-update
         schedule: "47 1 * * 1"
+        timezone: Asia/Shanghai
         skill: historian-thread-card
         runtime: historian
         args: {mode: weekly-update}
@@ -30,6 +32,7 @@ spec:
         delivery: local
       - name: historian-weekly-summary
         schedule: "17 2 * * 1"
+        timezone: Asia/Shanghai
         skill: historian-period-summary
         runtime: historian
         args: {kind: week, period: previous, timezone: Asia/Shanghai}
@@ -37,6 +40,7 @@ spec:
         delivery: local
       - name: historian-monthly-summary
         schedule: "37 3 1 * *"
+        timezone: Asia/Shanghai
         skill: historian-period-summary
         runtime: historian
         args: {kind: month, period: previous, timezone: Asia/Shanghai}
@@ -44,6 +48,7 @@ spec:
         delivery: local
       - name: historian-quarterly-summary
         schedule: "17 4 1 1,4,7,10 *"
+        timezone: Asia/Shanghai
         skill: historian-period-summary
         runtime: historian
         args: {kind: quarter, period: previous, timezone: Asia/Shanghai}
@@ -51,6 +56,7 @@ spec:
         delivery: local
       - name: historian-halfyear-summary
         schedule: "37 5 1 1,7 *"
+        timezone: Asia/Shanghai
         skill: historian-period-summary
         runtime: historian
         args: {kind: halfyear, period: previous, timezone: Asia/Shanghai}

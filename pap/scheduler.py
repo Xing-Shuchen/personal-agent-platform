@@ -106,7 +106,7 @@ def due_jobs(
                     entry.get("reserved_at") if previous_status == "reserved"
                     else entry.get("last_finished_at")
                 )
-                slot = latest_due(job.schedule, start_exclusive=lower, end_inclusive=now)
+                slot = latest_due(job.schedule, start_exclusive=lower, end_inclusive=now, timezone_name=job.timezone)
                 retry_due = False
                 if previous_slot is not None and retry_after is not None:
                     if previous_status == "reserved":

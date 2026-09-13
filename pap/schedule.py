@@ -144,16 +144,17 @@ def validate_schedule(schedule: str) -> None:
         _expand_field(field, minimum, maximum, sunday=sunday)
 
 
-def matches_schedule(schedule: str, moment: datetime) -> bool:
+def matches_schedule(schedule: str, moment: datetime, *, timezone_name: str | None = None) -> bool:
     """Return whether *schedule* is due in the minute containing *moment*."""
     if moment.tzinfo is None:
         raise ScheduleError("scheduler moments must be timezone-aware")
     value = schedule.strip()
     validate_schedule(value)
+    zone = ZoneInfo(timezone_name) if timezone_name else None
 
     interval = _interval_minutes(value)
     if interval is not None:
-        local = moment.astimezone().replace(second=0, microsecond=0, tzinfo=None)
+        local = moment.astimezone(zone).replace(second=0, microsecond=0, tzinfo=None) if zone else moment.astimezone().replace(second=0, microsecond=0, tzinfo=None)
         epoch = datetime(1970, 1, 1)
         elapsed = int((local - epoch).total_seconds() // 60)
         return elapsed % interval == 0
@@ -167,13 +168,13 @@ def matches_schedule(schedule: str, moment: datetime) -> bool:
 
     clock = _CLOCK_RE.fullmatch(value)
     if clock:
-        zone = ZoneInfo(clock.group(3)) if clock.group(3) else moment.astimezone().tzinfo
-        local = moment.astimezone(zone)
+        clock_zone = ZoneInfo(clock.group(3)) if clock.group(3) else (zone or moment.astimezone().tzinfo)
+        local = moment.astimezone(clock_zone)
         return local.hour == int(clock.group(1)) and local.minute == int(clock.group(2))
 
     fields = _cron_fields(value)
     assert fields is not None
-    local = moment.astimezone()
+    local = moment.astimezone(zone) if zone else moment.astimezone()
     minute, hour, day, month, weekday = (
         local.minute,
         local.hour,
@@ -196,6 +197,7 @@ def latest_due(
     *,
     start_exclusive: datetime,
     end_inclusive: datetime,
+    timezone_name: str | None = None,
 ) -> datetime | None:
     """Return the latest due minute in ``(start_exclusive, end_inclusive]``."""
     if start_exclusive.tzinfo is None or end_inclusive.tzinfo is None:
@@ -203,7 +205,7 @@ def latest_due(
     cursor = end_inclusive.replace(second=0, microsecond=0)
     lower = start_exclusive.replace(second=0, microsecond=0)
     while cursor > lower:
-        if matches_schedule(schedule, cursor):
+        if matches_schedule(schedule, cursor, timezone_name=timezone_name):
             return cursor
         cursor -= timedelta(minutes=1)
     return None

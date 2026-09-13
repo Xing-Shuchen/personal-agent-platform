@@ -159,6 +159,8 @@ def invoke(
             else:
                 input_text = prepared["input_text"]
                 usage["runtime"] = {"prepared": True}
+                if isinstance(prepared.get("metadata"), dict):
+                    usage["runtime"].update(prepared["metadata"])
     with tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".md", delete=False) as tmp_file:
         tmp_file.write(_prompt(skill, skill_text, input_text, args))
         tmp_path = tmp_file.name
@@ -192,7 +194,9 @@ def invoke(
         if returncode == 0 and adapter is not None:
             completed_runtime = _runtime_call(adapter, "complete", {"run_id": run_id, "skill": skill, "args": args, "model_reply": response}, env)
             runtime_status = completed_runtime.get("status")
-            usage["runtime"] = {"prepared": True, "completion": runtime_status}
+            usage.setdefault("runtime", {"prepared": True})["completion"] = runtime_status
+            if isinstance(completed_runtime.get("metadata"), dict):
+                usage["runtime"].update(completed_runtime["metadata"])
             if runtime_status == "success":
                 response = str(completed_runtime.get("response", "NO_REPLY"))
             elif runtime_status == "not_ready":
@@ -225,6 +229,8 @@ def invoke(
         "response": _input_fingerprint(response),
         "error": error[:1000],
         "usage": usage,
+        "context_pack_id": usage.get("runtime", {}).get("context_pack_id"),
+        "result_summary_id": usage.get("runtime", {}).get("result_summary_id"),
     })
     return RunResult(
         run_id=run_id,

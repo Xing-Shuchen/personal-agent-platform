@@ -6,6 +6,7 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import yaml
 
@@ -28,6 +29,7 @@ class ProactiveJob:
     attach_to_session: bool = True
     delivery: str = "user-home"
     runtime: str | None = None
+    timezone: str | None = None
 
 
 @dataclass
@@ -151,6 +153,14 @@ def load_spec(path: Path) -> AgentSpec:
                 runtime = raw.get("runtime")
                 if runtime is not None and (not isinstance(runtime, str) or not NAME_RE.match(runtime)):
                     raise _err(path, f"{where}.runtime: must be a runtime identifier or null")
+                timezone = raw.get("timezone")
+                if timezone is not None:
+                    if not isinstance(timezone, str) or not timezone:
+                        raise _err(path, f"{where}.timezone: must be an IANA timezone")
+                    try:
+                        ZoneInfo(timezone)
+                    except ZoneInfoNotFoundError as exc:
+                        raise _err(path, f"{where}.timezone: unknown timezone {timezone!r}") from exc
                 jobs.append(
                     ProactiveJob(
                         name=jname,
@@ -160,6 +170,7 @@ def load_spec(path: Path) -> AgentSpec:
                         attach_to_session=bool(raw.get("attach_to_session", True)),
                         delivery=delivery,
                         runtime=runtime,
+                        timezone=timezone,
                     )
                 )
         elif proactive.get("desired_jobs"):

@@ -140,6 +140,11 @@ def _prepare_event_card(payload: dict[str, Any]) -> dict[str, Any]:
         current = store.latest(card_id)
         if current and current.get("event_ref") == event_ref and not store.is_stale(card_id):
             continue
+        if current and current.get("event_ref") != event_ref:
+            # Event revisions live in the v0.1 revision store, outside the
+            # summary artifact graph. Bridge that boundary explicitly before
+            # asking a model to construct the replacement card.
+            store.mark_stale(card_id, reason=f"Event revision changed: {event['event_id']}")
         next_revision = (current["revision"] + 1) if current else 1
         prepared = {"kind": "event", "event_ref": event_ref, "event_card_id": card_id, "revision": next_revision}
         _prepared_path(payload["run_id"]).write_text(json.dumps(prepared, ensure_ascii=False), encoding="utf-8")
@@ -204,7 +209,7 @@ def _prepare_summary(payload: dict[str, Any]) -> dict[str, Any]:
         return {"status": "not_ready", "reason": "identical summary input is already committed"}
     prepared = {"kind": "summary", "summary_id": summary_id, "revision": (existing["revision"] + 1) if existing else 1}
     _prepared_path(payload["run_id"]).write_text(json.dumps(prepared, ensure_ascii=False), encoding="utf-8")
-    return {"status": "ready", "input_text": "Create exactly one PeriodSummary JSON object for this sealed ContextPack. Do not add prose or use evidence outside it. summary_id and revision are fixed below.\n\n" + json.dumps({"context_pack": context, **prepared}, ensure_ascii=False)}
+    return {"status": "ready", "input_text": "Create exactly one PeriodSummary JSON object for this sealed ContextPack. Do not add prose or use evidence outside it. summary_id and revision are fixed below.\n\n" + json.dumps({"context_pack": context, **prepared}, ensure_ascii=False), "metadata": {"context_pack_id": context["context_pack_id"], "period": period.label, "idempotency_key": f"{kind}:{period.label}:{context['provenance']['input_manifest_hash']}"}}
 
 
 def _missing_child_summaries(store: ArtifactStore, period: Any) -> list[str]:
@@ -275,7 +280,7 @@ def complete(payload: dict[str, Any]) -> dict[str, Any]:
         rendered = _state_dir() / "rendered"
         rendered.mkdir(parents=True, exist_ok=True)
         (rendered / f"{summary['summary_id'].replace(':', '_')}.md").write_text(render_markdown(summary), encoding="utf-8")
-        return {"status": "success", "response": "NO_REPLY", "warnings": list(result.warnings)}
+        return {"status": "success", "response": "NO_REPLY", "warnings": list(result.warnings), "metadata": {"result_summary_id": summary["summary_id"], "summary_revision": summary["revision"]}}
     if result.status is SummaryRunStatus.NOT_READY:
         return {"status": "not_ready", "reason": "ContextPack became not ready"}
     return {"status": "error", "error": result.error or result.status.value, "warnings": list(result.warnings)}
