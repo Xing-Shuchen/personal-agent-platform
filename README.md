@@ -88,6 +88,15 @@ pap runs <run_id>
 
 `pap invoke` 从 repo profile 目录运行一个 OpenClaw Gateway turn：SOUL 由工作目录加载，指定 skill 的完整指令被作为可信 profile guidance 注入。每次调用在 `var/state/runs.jsonl` 写入 `run.started` 与 `run.completed`；输入仅记录哈希和长度，不把私人原文复制进全局 Run 日志。
 
+### 模型用量（token / cost）
+
+每次 turn 结束后 PAP 会向 runner 追问这一次实际消耗（`pap/usage.py`），并把结果写进同一条 Run 记录：
+
+- `openclaw sessions --agent <id> --json` 提供 `inputTokens` / `outputTokens` / model / provider；
+- agent 自己的 `openclaw-agent.sqlite`（`trajectory_runtime_events`）提供该次 `model.completed` 的 `usage.cost.total`。
+
+两个来源都按 PAP 自己分配的 session key `agent:<agent>:pap-<run_id>` 精确匹配，因此并发 run 之间不会串号；Run 记录里按 §31 的字段名给出 `input_tokens`、`output_tokens`、`cost`（完整报告含出处，见 `usage.model`）。**读不到的用量记为缺失而不是 0** —— 未测到的金额不能长得像「这次免费」。`pap runs` 的文本输出会显示 `tokens=? cost=?` 表示不可读。runner 不可用时（例如 cron 环境 PATH 里没有 `openclaw`）只是没有用量，run 本身照常成功。
+
 ## 平台调度
 
 所有 schedule 留在 `agent.yaml`，唯一调度入口是：

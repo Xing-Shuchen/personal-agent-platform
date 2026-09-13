@@ -138,6 +138,137 @@ def test_run_record_names_the_job_period_and_model(tmp_path):
     assert record["usage"] == {}
 
 
+# --- §31: model usage the runner reports ----------------------------------------
+
+def _usage_root(tmp_path):
+    """A historian-shaped spec, without needing the real agent's runtime."""
+
+    agent = tmp_path / "agents" / "sample"
+    skill = agent / "profile" / "skills" / "sample-skill"
+    skill.mkdir(parents=True)
+    (skill / "SKILL.md").write_text(
+        "---\nname: sample-skill\ndescription: Test skill.\n---\n\n# Test\n",
+        encoding="utf-8",
+    )
+    manifest = agent / "agent.yaml"
+    manifest.write_text(
+        """apiVersion: pap/v1
+kind: Agent
+metadata:
+  name: sample
+  description: Sample agent.
+spec:
+  profile:
+    name: sample
+    source: profile
+  model: deepseek/deepseek-flash
+""",
+        encoding="utf-8",
+    )
+    return load_spec(manifest)
+
+
+REPORTED = {
+    "session_key": "agent:sample:pap-run_x",
+    "input_tokens": 106795,
+    "output_tokens": 28800,
+    "cost": 0.085265796,
+    "source": "openclaw.sessions+openclaw.trajectory",
+}
+
+
+def test_reported_usage_reaches_the_run_record(tmp_path):
+    """§31's fields are recorded under their own names, not buried in a blob."""
+
+    spec = _usage_root(tmp_path)
+    log = tmp_path / "runs.jsonl"
+
+    invoke(
+        root=tmp_path, spec=spec, skill="sample-skill", run_log=log,
+        command_runner=lambda command, **kw: subprocess.CompletedProcess(command, 0, "ok", ""),
+        usage_probe=lambda agent_id, run_id: dict(REPORTED),
+    )
+    record = runs(log)[0]
+    assert record["input_tokens"] == 106795
+    assert record["output_tokens"] == 28800
+    assert record["cost"] == 0.085265796
+    assert record["usage"]["model"]["source"] == "openclaw.sessions+openclaw.trajectory"
+
+
+def test_unreadable_usage_is_recorded_as_absent_not_as_zero(tmp_path):
+    spec = _usage_root(tmp_path)
+    log = tmp_path / "runs.jsonl"
+
+    invoke(
+        root=tmp_path, spec=spec, skill="sample-skill", run_log=log,
+        command_runner=lambda command, **kw: subprocess.CompletedProcess(command, 0, "ok", ""),
+        usage_probe=lambda agent_id, run_id: None,
+    )
+    record = runs(log)[0]
+    assert record["input_tokens"] is None
+    assert record["output_tokens"] is None
+    assert record["cost"] is None
+    assert "model" not in record["usage"]
+
+
+def test_a_failed_model_turn_still_reports_what_it_spent(tmp_path):
+    """A run that failed after calling the model still cost money."""
+
+    spec = _usage_root(tmp_path)
+    log = tmp_path / "runs.jsonl"
+
+    result = invoke(
+        root=tmp_path, spec=spec, skill="sample-skill", run_log=log,
+        command_runner=lambda command, **kw: subprocess.CompletedProcess(command, 1, "", "rate limit"),
+        usage_probe=lambda agent_id, run_id: dict(REPORTED),
+    )
+    assert result.status == "failed"
+    assert runs(log)[0]["output_tokens"] == 28800
+
+
+def test_no_usage_is_read_when_no_model_turn_was_attempted(tmp_path):
+    """A run that never reached the model has no usage, and is not probed."""
+
+    spec = _usage_root(tmp_path)
+    probed = []
+
+    def missing(command, **kwargs):
+        raise FileNotFoundError("openclaw not found")
+
+    invoke(
+        root=tmp_path, spec=spec, skill="sample-skill", run_log=tmp_path / "runs.jsonl",
+        command_runner=missing,
+        usage_probe=lambda agent_id, run_id: probed.append(run_id),
+    )
+    assert probed == []
+
+
+def test_a_substituted_runner_does_not_reach_for_a_real_openclaw(tmp_path):
+    """Tests replace the runner; usage must not be read behind the stub's back."""
+
+    spec = _usage_root(tmp_path)
+    commands = []
+
+    def only_the_turn(command, **kwargs):
+        commands.append(command)
+        return subprocess.CompletedProcess(command, 0, "ok", "")
+
+    invoke(root=tmp_path, spec=spec, skill="sample-skill",
+           run_log=tmp_path / "runs.jsonl", command_runner=only_the_turn)
+    assert [command[1] for command in commands] == ["agent"]
+
+
+# --- §41: usage is visible without opening the JSON -----------------------------
+
+def test_the_run_list_shows_usage_and_admits_when_it_is_unknown():
+    from pap.cli import _usage_column
+
+    assert _usage_column({"input_tokens": 106795, "output_tokens": 28800, "cost": 0.085}) == \
+        "tokens=106795/28800 cost=0.085"
+    assert _usage_column({"input_tokens": 10, "output_tokens": 2}) == "tokens=10/2 cost=?"
+    assert _usage_column({}) == "tokens=? cost=?"
+
+
 # --- §34: retry classification -------------------------------------------------
 
 def test_only_transient_trouble_is_retryable():

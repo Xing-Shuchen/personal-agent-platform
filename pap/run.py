@@ -17,6 +17,7 @@ from typing import Any, Callable
 
 from .spec import AgentSpec
 from .state import append_jsonl, read_jsonl
+from .usage import probe_model_usage, session_key
 
 DEFAULT_RUN_LOG = Path("var/state/runs.jsonl")
 
@@ -66,9 +67,9 @@ def _model_provider(model: str | None) -> tuple[str | None, str | None]:
     ``model`` stays the full configured identifier — that is what the run used —
     and ``provider`` names the part before the slash when the id has one.
 
-    Token counts and cost are deliberately not synthesised here: they can only
-    come from what the model runner actually reports, and the OpenClaw
-    invocation PAP performs does not report usage on stdout.
+    Token counts and cost are not derived here: they come from what the runner
+    reports after the turn (``pap.usage``).  This function states the model PAP
+    *asked* for, which is known before the turn runs.
     """
 
     if not isinstance(model, str) or not model.strip():
@@ -127,6 +128,7 @@ def invoke(
     command_runner: Callable[..., subprocess.CompletedProcess[str]] | None = None,
     timeout_seconds: int | None = None,
     runtime: str | None = None,
+    usage_probe: Callable[[str, str], dict[str, Any] | None] | None = None,
 ) -> RunResult:
     """Invoke one installed-in-repo profile skill through an OpenClaw Gateway turn."""
     root = Path(root).resolve()
@@ -164,6 +166,14 @@ def invoke(
     response = ""
     error = ""
     returncode = 1
+    invoked = False
+    model_usage: dict[str, Any] | None = None
+    # Usage is read from the runner PAP actually invoked.  A caller that
+    # substitutes its own runner is off the production path (tests do this), and
+    # reaching for a real OpenClaw behind the stub's back would be neither
+    # hermetic nor attributable, so such a caller gets no usage unless it asks
+    # for a probe explicitly.
+    probe = usage_probe if usage_probe is not None else (probe_model_usage if command_runner is None else None)
     runner = command_runner or subprocess.run
     skill_text = skill_file.read_text(encoding="utf-8")
     env = os.environ.copy()
@@ -217,13 +227,14 @@ def invoke(
             os.environ.get("PAP_OPENCLAW_BIN", "openclaw"),
             "agent",
             "--agent", spec.name,
-            "--session-key", f"agent:{spec.name}:pap-{run_id}",
+            "--session-key", session_key(spec.name, run_id),
             "--message-file", tmp_path,
             "--thinking", os.environ.get("PAP_OPENCLAW_THINKING", "low"),
             "--timeout", str(timeout),
         ]
         if spec.model:
             command += ["--model", spec.model]
+        invoked = True
         completed = runner(
             command,
             cwd=profile_dir,
@@ -265,12 +276,21 @@ def invoke(
         error = str(exc)
         returncode = 127
         failure_kind = "launch"
+        # The runner never started, so there is no session to attribute usage to.
+        invoked = False
     except RuntimeError as exc:
         error = str(exc)
         returncode = 1
         failure_kind = "runtime"
     finally:
         Path(tmp_path).unlink(missing_ok=True)
+    if invoked and probe is not None:
+        # §31: what the model actually consumed is the runner's to report.  This
+        # asks after the turn — including after a failed or timed-out one, which
+        # still spent tokens — and never changes the run's outcome.
+        model_usage = probe(spec.name, run_id)
+        if model_usage is not None:
+            usage["model"] = model_usage
     completed_at = _now()
     status = "not_ready" if returncode == 0 and response == "NOT_READY" else ("success" if returncode == 0 else "failed")
     append_jsonl(run_log, {
@@ -293,6 +313,11 @@ def invoke(
         "context_pack_id": usage.get("runtime", {}).get("context_pack_id"),
         "period": args.get("period"),
         "result_summary_id": usage.get("runtime", {}).get("result_summary_id"),
+        # §31 names these directly, so the run record carries them directly;
+        # absent means the runner reported nothing, not that nothing was spent.
+        "input_tokens": model_usage.get("input_tokens") if model_usage else None,
+        "output_tokens": model_usage.get("output_tokens") if model_usage else None,
+        "cost": model_usage.get("cost") if model_usage else None,
     })
     return RunResult(
         run_id=run_id,

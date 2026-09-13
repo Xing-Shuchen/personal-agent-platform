@@ -9,6 +9,7 @@ import json
 import os
 import sys
 from pathlib import Path
+from typing import Mapping
 
 from . import spec as spec_mod
 from . import gate as gate_mod
@@ -197,8 +198,24 @@ def _cmd_runs(args: argparse.Namespace) -> int:
         for record in records:
             print(f"{record.get('run_id')}\t{record.get('agent_id')}\t"
                   f"{record.get('skill')}\t{record.get('status', 'running')}\t"
-                  f"{record.get('started_at')}")
+                  f"{record.get('started_at')}\t{_usage_column(record)}")
     return 0
+
+
+def _usage_column(record: Mapping[str, object]) -> str:
+    """§41: model token usage and cost stay visible without opening the JSON.
+
+    An unreadable measurement is rendered as unknown rather than as zero, so a
+    missing number can never be mistaken for "this run was free".
+    """
+
+    tokens_in = record.get("input_tokens")
+    tokens_out = record.get("output_tokens")
+    cost = record.get("cost")
+    if tokens_in is None and tokens_out is None and cost is None:
+        return "tokens=? cost=?"
+    return (f"tokens={tokens_in}/{tokens_out} "
+            f"cost={cost if cost is not None else '?'}")
 
 
 def _cmd_artifact(args: argparse.Namespace) -> int:
