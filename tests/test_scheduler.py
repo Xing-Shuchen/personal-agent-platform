@@ -270,16 +270,19 @@ def test_jobs_are_enabled_by_default(tmp_path):
     assert spec.jobs[0].enabled is True
 
 
-def test_the_historian_rollout_follows_spec_order():
-    """§40: EventCards, then the weekly thread update, then the summary levels."""
+def test_the_historian_jobs_are_all_scheduled():
+    """The owner chose to run the whole rollout at once rather than staged.
+
+    §40 allows staging through the `enabled` flag; this pins the decision that was
+    actually taken, so a future change to it is deliberate.
+    """
     from pap.spec import load_spec
 
     spec = load_spec(Path(__file__).parents[1] / "agents/personal-historian/agent.yaml")
-    stages = {job.name: job.enabled for job in spec.jobs}
-    assert stages["historian-event-card-refresh"] is True, "stage 1"
-    assert stages["historian-thread-weekly-update"] is True, "stage 2"
-    # The summary levels stay declared but unscheduled until the weekly level is
-    # verified on real data (§40: do not enable them all at once).
-    for name in ("historian-weekly-summary", "historian-monthly-summary",
-                 "historian-quarterly-summary", "historian-halfyear-summary"):
-        assert stages[name] is False, name
+    states = {job.name: job.enabled for job in spec.jobs}
+    assert set(states) == {
+        "historian-event-card-refresh", "historian-thread-weekly-update",
+        "historian-weekly-summary", "historian-monthly-summary",
+        "historian-quarterly-summary", "historian-halfyear-summary",
+    }
+    assert all(states.values()), states
