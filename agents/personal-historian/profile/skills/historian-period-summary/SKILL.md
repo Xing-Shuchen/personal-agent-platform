@@ -5,6 +5,10 @@ description: Synthesize exactly one ContextPack into a provenance-bound PeriodSu
 
 # Produce a PeriodSummary
 
+Read `../../references/epistemology.md`,
+`../../references/historian-terminology.md`, and the period-specific reference
+under `references/` before synthesizing.
+
 The invocation input is exactly one validated `historian.context-pack.v1`.
 Return exactly one `historian.period-summary.v1` JSON document and no prose.
 

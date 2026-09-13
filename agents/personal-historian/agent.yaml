@@ -32,28 +32,28 @@ spec:
         schedule: "17 2 * * 1"
         skill: historian-period-summary
         runtime: historian
-        args: {kind: week, period: previous}
+        args: {kind: week, period: previous, timezone: Asia/Shanghai}
         attach_to_session: false
         delivery: local
       - name: historian-monthly-summary
         schedule: "37 3 1 * *"
         skill: historian-period-summary
         runtime: historian
-        args: {kind: month, period: previous}
+        args: {kind: month, period: previous, timezone: Asia/Shanghai}
         attach_to_session: false
         delivery: local
       - name: historian-quarterly-summary
         schedule: "17 4 1 1,4,7,10 *"
         skill: historian-period-summary
         runtime: historian
-        args: {kind: quarter, period: previous}
+        args: {kind: quarter, period: previous, timezone: Asia/Shanghai}
         attach_to_session: false
         delivery: local
       - name: historian-halfyear-summary
         schedule: "37 5 1 1,7 *"
         skill: historian-period-summary
         runtime: historian
-        args: {kind: halfyear, period: previous}
+        args: {kind: halfyear, period: previous, timezone: Asia/Shanghai}
         attach_to_session: false
         delivery: local
   state:

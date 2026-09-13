@@ -157,8 +157,13 @@ def _prepare_thread_card(payload: dict[str, Any]) -> dict[str, Any]:
             continue
         card_id = _thread_card_id(thread_id)
         current = store.latest(card_id)
-        # A weekly pass is intentional even with no stale flag: the supplied
-        # evidence is the complete latest card set for this registered thread.
+        current_refs = {
+            (ref.get("artifact_id"), ref.get("content_hash"))
+            for ref in (current or {}).get("evidence_refs", [])
+        }
+        candidate_refs = {(card["event_card_id"], card["content_hash"]) for card in evidence}
+        if current and candidate_refs.issubset(current_refs) and not store.is_stale(card_id):
+            continue
         prepared = {"kind": "thread", "thread_id": thread_id, "thread_card_id": card_id, "revision": (current["revision"] + 1) if current else 1}
         _prepared_path(payload["run_id"]).write_text(json.dumps(prepared, ensure_ascii=False), encoding="utf-8")
         return {"status": "ready", "input_text": "Update exactly one registered ThreadCard. Its immutable identity and revision are fixed below. Return JSON only.\n\n" + json.dumps({"prior_thread_card": current, "event_cards": evidence, **prepared}, ensure_ascii=False)}
@@ -171,7 +176,9 @@ def _prepare_summary(payload: dict[str, Any]) -> dict[str, Any]:
     selector = args.get("period", "previous")
     if kind not in {"week", "month", "quarter", "halfyear"}:
         return {"status": "error", "error": "summary job needs a supported kind"}
-    zone = os.environ.get("PERSONAL_HISTORIAN_TIMEZONE", "Asia/Shanghai")
+    zone = args.get("timezone", os.environ.get("PERSONAL_HISTORIAN_TIMEZONE", "Asia/Shanghai"))
+    if not isinstance(zone, str):
+        return {"status": "error", "error": "summary timezone must be a string"}
     period = resolve_period(kind, selector, zone)
     watermarks = _watermarks()
     if watermarks is None:
@@ -180,7 +187,10 @@ def _prepare_summary(payload: dict[str, Any]) -> dict[str, Any]:
     if readiness["status"] != "ready":
         return {"status": "not_ready", "reason": json.dumps(readiness, ensure_ascii=False)}
     store = _store()
-    candidates = candidates_for_period(store)
+    missing_children = _missing_child_summaries(store, period)
+    if missing_children:
+        return {"status": "not_ready", "reason": "required child summaries are missing: " + ", ".join(missing_children)}
+    candidates = candidates_for_period(store, period)
     coverage = _decode_env_json("PERSONAL_HISTORIAN_COVERAGE_JSON", list, [])
     policy_path = os.environ.get("PERSONAL_HISTORIAN_POLICY", str(_historian_root() / "config" / "historical-summary-policy.yaml"))
     context = ContextBuilder(domain=store.domain, policy=load_policy(policy_path, kind)).build(
@@ -190,9 +200,45 @@ def _prepare_summary(payload: dict[str, Any]) -> dict[str, Any]:
     _context_path(payload["run_id"]).write_text(json.dumps(context, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     summary_id = f"summary:{kind}:{period.label}"
     existing = store.latest(summary_id)
+    if existing and existing.get("provenance", {}).get("input_manifest_hash") == context["provenance"]["input_manifest_hash"] and not store.is_stale(summary_id):
+        return {"status": "not_ready", "reason": "identical summary input is already committed"}
     prepared = {"kind": "summary", "summary_id": summary_id, "revision": (existing["revision"] + 1) if existing else 1}
     _prepared_path(payload["run_id"]).write_text(json.dumps(prepared, ensure_ascii=False), encoding="utf-8")
     return {"status": "ready", "input_text": "Create exactly one PeriodSummary JSON object for this sealed ContextPack. Do not add prose or use evidence outside it. summary_id and revision are fixed below.\n\n" + json.dumps({"context_pack": context, **prepared}, ensure_ascii=False)}
+
+
+def _missing_child_summaries(store: ArtifactStore, period: Any) -> list[str]:
+    child_kind = {"month": "week", "quarter": "month", "halfyear": "quarter"}.get(period.kind.value)
+    if child_kind is None:
+        return []
+    children = [record["summary_id"] for record in store.latest_records() if record["artifact_type"] == "historian.period-summary.v1" and record.get("period", {}).get("kind") == child_kind and _period_inside(record.get("period", {}), period)]
+    expected = _expected_children(child_kind, period)
+    return sorted(set(expected) - set(children))
+
+
+def _period_inside(child: dict[str, Any], parent: Any) -> bool:
+    try:
+        return datetime.fromisoformat(child["start"]) >= parent.start and datetime.fromisoformat(child["end_exclusive"]) <= parent.end_exclusive
+    except (KeyError, TypeError, ValueError):
+        return False
+
+
+def _expected_children(kind: str, period: Any) -> list[str]:
+    labels: list[str] = []
+    cursor = period.start
+    while cursor < period.end_exclusive:
+        if kind == "week":
+            iso = cursor.isocalendar()
+            label = f"{iso.year}-W{iso.week:02d}"
+        elif kind == "month":
+            label = f"{cursor.year}-{cursor.month:02d}"
+        else:
+            label = f"{cursor.year}-Q{(cursor.month - 1) // 3 + 1}"
+        candidate = resolve_period(kind, label, period.timezone)
+        if candidate.start >= period.start and candidate.end_exclusive <= period.end_exclusive:
+            labels.append(f"summary:{kind}:{label}")
+        cursor = candidate.end_exclusive
+    return labels
 
 
 def prepare(payload: dict[str, Any]) -> dict[str, Any]:

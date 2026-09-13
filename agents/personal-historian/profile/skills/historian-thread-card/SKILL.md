@@ -5,6 +5,9 @@ description: Update an existing, immutable historical thread from EventCards and
 
 # Update a ThreadCard
 
+Read `../../references/epistemology.md` and
+`../../references/historian-terminology.md` before processing the input.
+
 The input provides a registered ThreadCard identity plus selected EventCards,
 period summaries, and evidence references. Return exactly one
 `historian.thread-card.v1` JSON document.
