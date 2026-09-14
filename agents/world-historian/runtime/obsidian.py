@@ -200,7 +200,10 @@ def render_snapshot(snapshot: dict[str, Any], synced_at: str,
     lines.append("## 时间线\n")
     if not events:
         lines.append("_（尚无事件）_\n")
-    for event in events:
+    # Newest first (user decision 2026-09-14): the most recent event must be
+    # the first thing visible when the note is opened. The Chronicle keeps its
+    # canonical ascending order; only this projection reverses it.
+    for event in reversed(events):
         lines.append(f"### {labels[event['id']]}")
         occurred = event.get("occurred_at")
         occurred_text = (

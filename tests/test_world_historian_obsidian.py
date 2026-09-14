@@ -73,6 +73,25 @@ def test_capture_creates_one_file_with_projection(tmp_path):
     assert "## 手工批注" in text
 
 
+def test_timeline_is_rendered_newest_first(tmp_path):
+    """The rendered 时间线 lists the most recent event first (2026-09-14)."""
+    conn = fresh(tmp_path)
+    result = db.store_bundle(conn, capture_bundle())
+    tid = result["refs"]["t1"]
+    db.store_bundle(conn, {
+        "events": [{"ref": "e2", "summary": "Later development",
+                    "occurred_at": "2026-09-10", "occurred_at_precision": "day",
+                    "reported_at": "2026-09-10T09:00:00+08:00",
+                    "observed_at": "2026-09-10T10:00:00+08:00",
+                    "thread_refs": [tid]}],
+    })
+    vault, outcome = sync(conn, tmp_path, [tid])
+    assert outcome["written"] and not outcome["errors"]
+    text = only_file(vault).read_text(encoding="utf-8")
+    timeline = text.split("## 时间线", 1)[1]
+    assert timeline.index("Later development") < timeline.index("Example changed")
+
+
 def test_bundle_without_thread_touch_writes_nothing(tmp_path):
     """Only thread create/modify triggers the export."""
     conn = fresh(tmp_path)
