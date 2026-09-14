@@ -220,6 +220,8 @@ def store_bundle(conn: sqlite3.Connection, bundle: dict[str, Any]) -> dict[str, 
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                    ON CONFLICT(id) DO UPDATE SET
                      title=excluded.title, status=excluded.status, priority=excluded.priority,
+                     seed_type=COALESCE(excluded.seed_type, threads.seed_type),
+                     seed_text=COALESCE(excluded.seed_text, threads.seed_text),
                      last_checked_at=COALESCE(excluded.last_checked_at, threads.last_checked_at),
                      next_check_at=COALESCE(excluded.next_check_at, threads.next_check_at),
                      quiet_count=excluded.quiet_count, updated_at=excluded.updated_at""",
