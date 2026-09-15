@@ -24,3 +24,13 @@ agents/*/profile/var/
 
 # Generated run artifacts
 agents/*/runtime/reflect-*.json
+
+# SQLite transient sidecars. The primary database is already covered by
+# *.sqlite above; these files are recreated by SQLite and must not be tracked.
+agents/*/runtime/*.sqlite-wal
+agents/*/runtime/*.sqlite-shm
+agents/*/runtime/*.sqlite-journal
+
+# Local OpenClaw debugging exports can contain prompts, tool transcripts, and
+# session metadata. Keep future project-level OpenClaw configuration trackable.
+.openclaw/trajectory-exports/
