@@ -4,7 +4,7 @@ import json
 import subprocess
 from pathlib import Path
 
-from pap.run import _prompt, invoke, runs
+from pap.run import OPENCLAW_EMPTY_FINALIZATION_FALLBACK, _prompt, invoke, runs
 from pap.spec import load_spec
 
 
@@ -109,6 +109,24 @@ def test_invoke_removes_message_file_when_runner_fails(tmp_path):
 
     assert result.status == "failed"
     assert not captured["message_file"].exists()
+
+
+def test_invoke_normalizes_openclaw_empty_finalization_to_no_reply(tmp_path):
+    spec = load_spec(make_agent(tmp_path))
+    log = tmp_path / "runs.jsonl"
+
+    def fake_runner(command, **kwargs):
+        return subprocess.CompletedProcess(command, 0, stdout=OPENCLAW_EMPTY_FINALIZATION_FALLBACK, stderr="")
+
+    result = invoke(root=tmp_path, spec=spec, skill="sample-skill", run_log=log,
+                    command_runner=fake_runner)
+
+    assert result.status == "success"
+    assert result.response == "NO_REPLY"
+    record = runs(log)[0]
+    assert record["response_normalization"] == "openclaw-empty-finalization"
+    assert record["response"]["chars"] == len("NO_REPLY")
+    assert record["raw_response"]["chars"] == len(OPENCLAW_EMPTY_FINALIZATION_FALLBACK)
 
 
 def test_declared_runtime_can_finish_not_ready_without_model_turn(tmp_path, monkeypatch):

@@ -196,7 +196,7 @@ def test_delivery_suppresses_openclaw_missing_final_summary_fallback():
     def sender(*args, **kwargs):
         raise AssertionError("OpenClaw fallback text must not be sent")
 
-    assert _deliver(result, job, target="ou_test", sender=sender) == "leaked-suppressed"
+    assert _deliver(result, job, target="ou_test", sender=sender) == "silent"
 
 
 def test_delivery_suppresses_no_reply_with_model_prose():

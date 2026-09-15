@@ -21,6 +21,26 @@ from .usage import probe_model_usage, session_key
 
 DEFAULT_RUN_LOG = Path("var/state/runs.jsonl")
 
+# OpenClaw emits this text only after a tool-using turn settles without any
+# assistant-visible answer and its own two tool-free finalization attempts also
+# produce no text.  It is runtime plumbing, never a user-facing result.
+OPENCLAW_EMPTY_FINALIZATION_FALLBACK = (
+    "The tool run finished, but no final summary was produced. "
+    "I did not repeat any completed actions."
+)
+
+
+def normalize_terminal_response(response: str) -> tuple[str, str | None]:
+    """Turn OpenClaw's empty-finalization placeholder into intentional silence.
+
+    A scheduled skill that completed work but produced no final assistant text
+    must follow PAP's silence contract.  Keep a reason for the append-only run
+    record so this does not hide an upstream regression.
+    """
+    if response.strip() == OPENCLAW_EMPTY_FINALIZATION_FALLBACK:
+        return "NO_REPLY", "openclaw-empty-finalization"
+    return response, None
+
 
 def _now() -> datetime:
     return datetime.now(timezone.utc).astimezone()
@@ -329,6 +349,10 @@ def invoke(
         model_usage = probe(spec.name, run_id)
         if model_usage is not None:
             usage["model"] = model_usage
+    raw_response = response
+    response_normalization: str | None = None
+    if returncode == 0:
+        response, response_normalization = normalize_terminal_response(response)
     completed_at = _now()
     status = "not_ready" if returncode == 0 and response == "NOT_READY" else ("success" if returncode == 0 else "failed")
     append_jsonl(run_log, {
@@ -344,6 +368,10 @@ def invoke(
         "status": status,
         "returncode": returncode,
         "response": _input_fingerprint(response),
+        # The normalized value is the delivery contract; preserve only a
+        # fingerprint of the runtime placeholder for diagnosis.
+        "raw_response": _input_fingerprint(raw_response) if response_normalization else None,
+        "response_normalization": response_normalization,
         "error": error[:1000],
         "failure_kind": failure_kind,
         "retryable": is_retryable(failure_kind) if status == "failed" else None,

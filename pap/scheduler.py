@@ -13,7 +13,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable, Iterator
 
-from .run import RunResult, invoke, is_retryable
+from .run import RunResult, invoke, is_retryable, normalize_terminal_response
 from .schedule import matches_schedule
 from .spec import AgentSpec, ProactiveJob, load_platform
 from .state import append_jsonl, load_json, save_json
@@ -268,13 +268,15 @@ def _deliver(
     sender: Callable[..., subprocess.CompletedProcess[str]] | None = None,
 ) -> str:
     """Deliver user-facing run output through the OpenClaw Gateway CLI."""
+    # Defense in depth for callers or older records that bypassed invoke().
+    response, _ = normalize_terminal_response(result.response)
     if result.status != "success":
         return "not-attempted"
-    if not result.response or _intentional_silence(result.response):
+    if not response or _intentional_silence(response):
         return "silent"
-    if _requests_silence(result.response):
+    if _requests_silence(response):
         return "silence-suppressed"
-    if _looks_like_leaked_output(result.response):
+    if _looks_like_leaked_output(response):
         return "leaked-suppressed"
     if job.delivery == "local":
         return "local"
@@ -291,7 +293,7 @@ def _deliver(
                 "--channel", channel,
                 "--account", account,
                 "--target", target,
-                "--message", result.response,
+                "--message", response,
             ],
             capture_output=True,
             text=True,
