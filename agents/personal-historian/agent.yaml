@@ -42,6 +42,17 @@ spec:
         args: {kind: week, period: previous, timezone: Asia/Shanghai}
         attach_to_session: false
         delivery: local
+      - name: historian-weekly-literary-render
+        schedule: "27 2 * * 1"
+        timezone: Asia/Shanghai
+        skill: historian-literary-renderer
+        model: gpt-5.6-sol
+        runner: codex
+        runtime: historian
+        args: {kind: week, period: previous, timezone: Asia/Shanghai}
+        attach_to_session: false
+        delivery: local
+        enabled: true
       - name: historian-monthly-summary
         schedule: "37 3 1 * *"
         timezone: Asia/Shanghai

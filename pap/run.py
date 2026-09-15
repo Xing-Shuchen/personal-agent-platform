@@ -128,6 +128,8 @@ def invoke(
     command_runner: Callable[..., subprocess.CompletedProcess[str]] | None = None,
     timeout_seconds: int | None = None,
     runtime: str | None = None,
+    model: str | None = None,
+    runner_backend: str = "openclaw",
     usage_probe: Callable[[str, str], dict[str, Any] | None] | None = None,
 ) -> RunResult:
     """Invoke one installed-in-repo profile skill through an OpenClaw Gateway turn."""
@@ -143,7 +145,10 @@ def invoke(
     started = _now()
     run_id = new_run_id(started)
     run_log = Path(run_log)
-    model_name, provider_name = _model_provider(spec.model)
+    effective_model = model if model is not None else spec.model
+    model_name, provider_name = _model_provider(effective_model)
+    if runner_backend == "codex" and model_name and provider_name is None:
+        provider_name = "openai"
     job_id = None
     if isinstance(trigger, dict) and isinstance(trigger.get("job_id"), str):
         job_id = trigger["job_id"]
@@ -176,6 +181,18 @@ def invoke(
     probe = usage_probe if usage_probe is not None else (probe_model_usage if command_runner is None else None)
     runner = command_runner or subprocess.run
     skill_text = skill_file.read_text(encoding="utf-8")
+    if skill == "historian-literary-renderer":
+        reference_files = [
+            profile_dir / "references" / "epistemology.md",
+            skill_file.parent / "references" / "weekly.md",
+        ]
+        for reference_file in reference_files:
+            if not reference_file.is_file():
+                raise ValueError(f"required skill reference not found: {reference_file}")
+            skill_text += (
+                f"\n\n# Trusted reference: {reference_file.name}\n\n"
+                + reference_file.read_text(encoding="utf-8")
+            )
     env = os.environ.copy()
     env.update({
         "PAP_ROOT": str(root),
@@ -183,10 +200,12 @@ def invoke(
         "PAP_RUN_ID": run_id,
         "PAP_AGENT_STATE_DIR": str(root / "var" / spec.name),
     })
-    if spec.model:
+    if effective_model:
         # The runtime records authoritative provenance (§21); it can only do that
         # for the model if PAP, which owns model policy (§35), tells it.
-        env["PAP_AGENT_MODEL"] = spec.model
+        env["PAP_AGENT_MODEL"] = effective_model
+    if provider_name:
+        env["PAP_AGENT_PROVIDER"] = provider_name
     # The adapter resolves this path again in its own process.  Supplying
     # it here makes its virtual-environment selection deterministic.
     env.setdefault("PERSONAL_HISTORIAN_ROOT", str(root.parent / "personal-historian-handoff"))
@@ -223,17 +242,30 @@ def invoke(
         if error:
             raise RuntimeError(error)
         timeout = timeout_seconds or int(os.environ.get("PAP_RUN_TIMEOUT_SECONDS", "900"))
-        command = [
-            os.environ.get("PAP_OPENCLAW_BIN", "openclaw"),
-            "agent",
-            "--agent", spec.name,
-            "--session-key", session_key(spec.name, run_id),
-            "--message-file", tmp_path,
-            "--thinking", os.environ.get("PAP_OPENCLAW_THINKING", "low"),
-            "--timeout", str(timeout),
-        ]
-        if spec.model:
-            command += ["--model", spec.model]
+        if runner_backend == "codex":
+            command = [
+                os.environ.get("PAP_CODEX_BIN", "codex"),
+                "--sandbox", "read-only", "--ask-for-approval", "never",
+                "exec", "--ephemeral", "--color", "never",
+                "--output-last-message", tmp_path + ".response",
+                "-C", str(profile_dir), "-",
+            ]
+            if effective_model:
+                command[1:1] = ["--model", effective_model]
+        elif runner_backend == "openclaw":
+            command = [
+                os.environ.get("PAP_OPENCLAW_BIN", "openclaw"),
+                "agent",
+                "--agent", spec.name,
+                "--session-key", session_key(spec.name, run_id),
+                "--message-file", tmp_path,
+                "--thinking", os.environ.get("PAP_OPENCLAW_THINKING", "low"),
+                "--timeout", str(timeout),
+            ]
+            if effective_model:
+                command += ["--model", effective_model]
+        else:
+            raise ValueError(f"unsupported runner backend: {runner_backend}")
         invoked = True
         completed = runner(
             command,
@@ -241,12 +273,17 @@ def invoke(
             env=env,
             capture_output=True,
             text=True,
-            input=None,
+            input=(Path(tmp_path).read_text(encoding="utf-8") if runner_backend == "codex" else None),
             timeout=timeout,
         )
         returncode = completed.returncode
-        response = completed.stdout.strip()
-        error = completed.stderr.strip()
+        if runner_backend == "codex":
+            response_path = Path(tmp_path + ".response")
+            response = response_path.read_text(encoding="utf-8").strip() if response_path.is_file() else ""
+            response_path.unlink(missing_ok=True)
+        else:
+            response = completed.stdout.strip()
+        error = completed.stderr.strip() if returncode else ""
         if returncode:
             # The model runner itself failed: a provider or transport problem is
             # the usual cause, and §34 names those as retryable.
@@ -269,7 +306,7 @@ def invoke(
                 failure_kind = str(completed_runtime.get("failure_kind") or "validation")
     except subprocess.TimeoutExpired as exc:
         response = exc.stdout.strip() if isinstance(exc.stdout, str) else ""
-        error = f"OpenClaw invocation timed out after {exc.timeout}s"
+        error = f"{runner_backend} invocation timed out after {exc.timeout}s"
         returncode = 124
         failure_kind = "timeout"
     except OSError as exc:
@@ -284,7 +321,8 @@ def invoke(
         failure_kind = "runtime"
     finally:
         Path(tmp_path).unlink(missing_ok=True)
-    if invoked and probe is not None:
+        Path(tmp_path + ".response").unlink(missing_ok=True)
+    if invoked and probe is not None and runner_backend == "openclaw":
         # §31: what the model actually consumed is the runner's to report.  This
         # asks after the turn — including after a failed or timed-out one, which
         # still spent tokens — and never changes the run's outcome.

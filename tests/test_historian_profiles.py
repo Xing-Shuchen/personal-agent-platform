@@ -135,6 +135,21 @@ def test_the_period_summary_contract_states_what_the_digest_must_preserve():
     assert "not a shorter `overview`" in text
 
 
+def test_literary_renderer_is_a_human_view_with_a_canonical_boundary():
+    path = PROFILE / "skills/historian-literary-renderer/SKILL.md"
+    text = path.read_text(encoding="utf-8")
+    assert "human-facing" in text
+    assert "MUST NOT introduce" in text
+    assert "artifact IDs" in text
+    assert "runtime owns" in text
+    weekly = (path.parent / "references/weekly.md").read_text(encoding="utf-8")
+    for role in ("主线", "副线", "背景"):
+        assert role in weekly
+    assert "first person" in weekly
+    assert "relationship, care, travel" in weekly
+    assert "audit appendix" in weekly
+
+
 def _contract_fields(text: str) -> list[str]:
     """Backticked snake_case tokens that look like schema fields."""
 

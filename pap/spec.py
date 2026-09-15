@@ -30,6 +30,10 @@ class ProactiveJob:
     delivery: str = "user-home"
     runtime: str | None = None
     timezone: str | None = None
+    # A synthesis job may need a stronger model than the agent's routine work.
+    # When absent, the agent-level model remains the policy default.
+    model: str | None = None
+    runner: str = "openclaw"
     #: §40 stages a rollout: a declared job may exist, be visible and be audited
     #: while not yet scheduled. Disabling is not deleting — the declaration and
     #: its schedule stay in the spec so enabling is a one-line change.
@@ -168,6 +172,14 @@ def load_spec(path: Path) -> AgentSpec:
                         ZoneInfo(timezone)
                     except ZoneInfoNotFoundError as exc:
                         raise _err(path, f"{where}.timezone: unknown timezone {timezone!r}") from exc
+                job_model = raw.get("model")
+                if job_model is not None and (
+                    not isinstance(job_model, str) or not job_model.strip()
+                ):
+                    raise _err(path, f"{where}.model: must be a non-empty string")
+                job_runner = raw.get("runner", "openclaw")
+                if job_runner not in ("openclaw", "codex"):
+                    raise _err(path, f"{where}.runner: must be 'openclaw' or 'codex'")
                 jobs.append(
                     ProactiveJob(
                         name=jname,
@@ -178,6 +190,8 @@ def load_spec(path: Path) -> AgentSpec:
                         delivery=delivery,
                         runtime=runtime,
                         timezone=timezone,
+                        model=job_model,
+                        runner=job_runner,
                         enabled=enabled,
                     )
                 )

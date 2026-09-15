@@ -66,10 +66,43 @@ def test_dry_run_does_not_create_scheduler_state(tmp_path):
     assert not (tmp_path / "var/state/scheduler-state.json").exists()
 
 
+def test_slot_jitter_is_stable_and_stays_within_five_minutes():
+    from pap.scheduler import _jitter_minutes
+
+    slot = datetime(2026, 8, 31, 18, 17, tzinfo=CST)
+    first = _jitter_minutes("test-seed", "sample/sample-job", slot)
+    assert first == _jitter_minutes("test-seed", "sample/sample-job", slot)
+    assert -5 <= first <= 5
+
+
+def test_negative_jitter_can_dispatch_before_the_nominal_slot(tmp_path, monkeypatch):
+    from pap.scheduler import due_jobs
+
+    make_platform(tmp_path, "17 18 * * *")
+    slot = datetime(2026, 8, 31, 18, 17, tzinfo=CST)
+    monkeypatch.setattr("pap.scheduler._jitter_minutes", lambda *_: -5)
+
+    due = due_jobs(tmp_path, now=slot - timedelta(minutes=5), reserve=False)
+    assert [(item.slot, item.jitter_minutes) for item in due] == [(slot, -5)]
+
+
+def test_positive_jitter_delays_dispatch_after_the_nominal_slot(tmp_path, monkeypatch):
+    from pap.scheduler import due_jobs
+
+    make_platform(tmp_path, "17 18 * * *")
+    slot = datetime(2026, 8, 31, 18, 17, tzinfo=CST)
+    monkeypatch.setattr("pap.scheduler._jitter_minutes", lambda *_: 5)
+
+    assert due_jobs(tmp_path, now=slot + timedelta(minutes=4), reserve=False) == []
+    due = due_jobs(tmp_path, now=slot + timedelta(minutes=5), reserve=False)
+    assert [(item.slot, item.jitter_minutes) for item in due] == [(slot, 5)]
+
+
 def test_failed_slot_is_retried_after_delay(tmp_path, monkeypatch):
     make_platform(tmp_path, "17 18 * * *")
     now = datetime(2026, 8, 31, 18, 17, tzinfo=CST)
     monkeypatch.setattr("pap.scheduler._now", lambda: now)
+    monkeypatch.setattr("pap.scheduler.JITTER_MAX_MINUTES", 0)
     calls = []
 
     def failing_runner(command, **kwargs):
@@ -144,6 +177,24 @@ def test_delivery_suppresses_leaked_tool_echo():
 
     def sender(*args, **kwargs):
         raise AssertionError("leaked output must not be sent")
+
+    assert _deliver(result, job, target="ou_test", sender=sender) == "leaked-suppressed"
+
+
+def test_delivery_suppresses_openclaw_missing_final_summary_fallback():
+    result = RunResult(
+        run_id="run_test", agent_id="sample", skill="sample-skill", status="success",
+        returncode=0,
+        response=(
+            "The tool run finished, but no final summary was produced. "
+            "I did not repeat any completed actions."
+        ),
+        error="", started_at="", completed_at="", usage={},
+    )
+    job = type("Job", (), {"delivery": "user-home"})()
+
+    def sender(*args, **kwargs):
+        raise AssertionError("OpenClaw fallback text must not be sent")
 
     assert _deliver(result, job, target="ou_test", sender=sender) == "leaked-suppressed"
 
@@ -280,9 +331,10 @@ def test_the_historian_jobs_are_all_scheduled():
 
     spec = load_spec(Path(__file__).parents[1] / "agents/personal-historian/agent.yaml")
     states = {job.name: job.enabled for job in spec.jobs}
-    assert set(states) == {
+    assert {name for name, enabled in states.items() if enabled} == {
         "historian-event-card-refresh", "historian-thread-weekly-update",
         "historian-weekly-summary", "historian-monthly-summary",
         "historian-quarterly-summary", "historian-halfyear-summary",
+        "historian-weekly-literary-render",
     }
-    assert all(states.values()), states
+    assert states["historian-weekly-literary-render"] is True

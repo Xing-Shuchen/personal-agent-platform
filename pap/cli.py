@@ -135,6 +135,8 @@ def _cmd_job_run(args: argparse.Namespace) -> int:
             root=root, spec=spec, skill=job.skill, args=job_args,
             trigger={"type": "manual-job", "job_id": job.name},
             run_log=_path_under(root, args.runs), runtime=job.runtime,
+            model=job.model,
+            runner_backend=job.runner,
         )
     except (spec_mod.SpecError, ValueError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)

@@ -75,6 +75,26 @@ def test_invoke_records_start_and_completion(tmp_path):
     assert merged[0]["usage"] == {}
 
 
+def test_invoke_job_model_overrides_agent_model(tmp_path):
+    spec = load_spec(make_agent(tmp_path))
+    captured = {}
+
+    def fake_runner(command, **kwargs):
+        captured["command"] = command
+        captured["env"] = kwargs["env"]
+        return subprocess.CompletedProcess(command, 0, stdout="done\n", stderr="")
+
+    log = tmp_path / "runs.jsonl"
+    invoke(root=tmp_path, spec=spec, skill="sample-skill", run_log=log,
+           command_runner=fake_runner, model="deepseek/deepseek-v4-pro")
+    assert captured["command"][captured["command"].index("--model") + 1] == \
+        "deepseek/deepseek-v4-pro"
+    assert captured["env"]["PAP_AGENT_MODEL"] == "deepseek/deepseek-v4-pro"
+    record = runs(log)[0]
+    assert record["model"] == "deepseek/deepseek-v4-pro"
+    assert record["provider"] == "deepseek"
+
+
 def test_invoke_removes_message_file_when_runner_fails(tmp_path):
     spec = load_spec(make_agent(tmp_path))
     captured = {}

@@ -168,7 +168,8 @@ def reply_for(pack, fixed, *, summary_id=None, revision=None, extra_ref=None, st
         "contradictions": [], "evidence_gaps": [], "next_level_digest": "September digest.",
         "basis_refs": references,
         "provenance": {"generated_at": "1999-01-01T00:00:00+00:00", "generator": "the-model",
-                       "input_refs": [], "input_manifest_hash": "0" * 64},
+                       "input_refs": [], "input_manifest_hash": "0" * 64,
+                       "content_hash": "not-a-provenance-field"},
     }
     document["content_hash"] = _content_hash(document)
     return document

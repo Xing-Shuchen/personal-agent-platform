@@ -39,7 +39,7 @@ material does not support a synthesis at all.
 | `evidence_gaps` | list of strings |
 | `next_level_digest` | see below |
 | `basis_refs` | artifact refs; at least one |
-| `provenance` | object; the Historian replaces it with runtime-owned values |
+| `provenance` | emit `{}`; the Historian discards it and supplies the complete runtime-owned object |
 | `content_hash` | the Historian recomputes this — emit the field, do not hand-compute it |
 
 An artifact ref is `{"artifact_id": "...", "revision": N, "content_hash": "..."}`

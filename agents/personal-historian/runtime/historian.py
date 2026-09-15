@@ -13,7 +13,7 @@ coverage.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import hashlib
 import json
 import os
@@ -21,6 +21,8 @@ from pathlib import Path
 import re
 import sys
 from typing import Any
+
+import yaml
 
 
 def _historian_root() -> Path:
@@ -202,6 +204,24 @@ def _prepared_path(run_id: str) -> Path:
     directory = _state_dir() / "prepared"
     directory.mkdir(parents=True, exist_ok=True)
     return directory / f"{run_id}.json"
+
+
+def _literary_path(summary_id: str) -> Path:
+    directory = _state_dir() / "literary"
+    directory.mkdir(parents=True, exist_ok=True)
+    return directory / f"{summary_id.replace(':', '_')}.md"
+
+
+def _obsidian_literary_path(period: Any) -> Path | None:
+    configured = os.environ.get("PERSONAL_HISTORIAN_OBSIDIAN_VAULT")
+    if not configured:
+        return None
+    vault = Path(configured).expanduser().resolve()
+    target = (vault / "Dairies" / str(period.start.year) /
+              f"summary_week_{period.label}.md").resolve()
+    if vault not in target.parents:
+        raise ValueError("literary target escapes the configured Obsidian vault")
+    return target
 
 
 def _canonical_hash(value: dict[str, Any]) -> str:
@@ -411,6 +431,38 @@ def _prepare_summary(payload: dict[str, Any]) -> dict[str, Any]:
     return {"status": "ready", "input_text": "Create exactly one PeriodSummary JSON object for this sealed ContextPack. Do not add prose or use evidence outside it. summary_id and revision are fixed below.\n\n" + json.dumps({"context_pack": context, **prepared}, ensure_ascii=False), "metadata": {"context_pack_id": context["context_pack_id"], "period": period.label, "idempotency_key": f"{kind}:{period.label}:{context['provenance']['input_manifest_hash']}"}}
 
 
+def _prepare_literary(payload: dict[str, Any]) -> dict[str, Any]:
+    args = payload["args"]
+    if args.get("kind") != "week":
+        return {"status": "error", "error": "literary rendering currently supports week only"}
+    zone = args.get("timezone", os.environ.get("PERSONAL_HISTORIAN_TIMEZONE", "Asia/Shanghai"))
+    period = resolve_period("week", args.get("period", "previous"), zone)
+    summary_id = f"summary:week:{period.label}"
+    summary = _store().latest(summary_id)
+    if summary is None:
+        return {"status": "not_ready", "reason": f"canonical summary is missing: {summary_id}"}
+    if _store().is_stale(summary_id):
+        return {"status": "not_ready", "reason": f"canonical summary is stale: {summary_id}"}
+    prepared = {
+        "kind": "literary", "summary_id": summary_id,
+        "summary_revision": summary["revision"], "summary_hash": summary["content_hash"],
+        "period": period.to_dict(),
+    }
+    _prepared_path(payload["run_id"]).write_text(json.dumps(prepared, ensure_ascii=False), encoding="utf-8")
+    return {
+        "status": "ready",
+        "input_text": (
+            "Render this canonical PeriodSummary as one human-facing weekly narrative. "
+            "The summary is the factual boundary; return Markdown only.\n\n" +
+            json.dumps({"period_summary": summary}, ensure_ascii=False)
+        ),
+        "metadata": {
+            "period": period.label,
+            "idempotency_key": f"literary:{summary_id}:{summary['content_hash']}",
+        },
+    }
+
+
 def _missing_child_summaries(store: ArtifactStore, period: Any) -> list[str]:
     child_kind = {"month": "week", "quarter": "month", "halfyear": "quarter"}.get(period.kind.value)
     if child_kind is None:
@@ -446,6 +498,8 @@ def _expected_children(kind: str, period: Any) -> list[str]:
 
 
 def prepare(payload: dict[str, Any]) -> dict[str, Any]:
+    if payload.get("skill") == "historian-literary-renderer":
+        return _prepare_literary(payload)
     if payload.get("skill") == "historian-period-summary":
         return _prepare_summary(payload)
     if payload.get("skill") == "historian-event-card":
@@ -485,17 +539,20 @@ def _runtime_provenance(input_refs: list[dict[str, Any]], *, manifest_hash: str 
     """
 
     model = os.environ.get("PAP_AGENT_MODEL") or None
+    provider = os.environ.get("PAP_AGENT_PROVIDER") or _provider(model)
     return {
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "generator": "pap.personal-historian.runtime/v1",
         "input_refs": input_refs,
         "input_manifest_hash": manifest_hash or input_manifest_hash(input_refs),
         "model": model,
-        "provider": _provider(model),
+        "provider": provider,
     }
 
 
 def complete(payload: dict[str, Any]) -> dict[str, Any]:
+    if payload.get("skill") == "historian-literary-renderer":
+        return _complete_literary(payload)
     if payload.get("skill") == "historian-event-card":
         return _complete_event_card(payload)
     if payload.get("skill") == "historian-thread-card":
@@ -516,6 +573,10 @@ def complete(payload: dict[str, Any]) -> dict[str, Any]:
             "model changed the fixed PeriodSummary identity or revision"))
     try:
         # The summary's provenance is the sealed ContextPack's, not the model's.
+        # Discard the model block wholesale.  Keeping unknown nested fields made
+        # a model-authored ``provenance.content_hash`` survive the merge and
+        # fail strict schema validation even though provenance is runtime-owned.
+        candidate["provenance"] = {}
         candidate = seal_with_provenance(candidate, _runtime_provenance(
             list(context["provenance"]["input_refs"]),
             manifest_hash=context["provenance"]["input_manifest_hash"],
@@ -536,6 +597,81 @@ def complete(payload: dict[str, Any]) -> dict[str, Any]:
                 "error": result.error or result.status.value, "warnings": list(result.warnings)}
     return {"status": "error", "failure_kind": "validation",
             "error": result.error or result.status.value, "warnings": list(result.warnings)}
+
+
+def _complete_literary(payload: dict[str, Any]) -> dict[str, Any]:
+    try:
+        prepared = json.loads(_prepared_path(str(payload["run_id"])).read_text(encoding="utf-8"))
+        reply = str(payload.get("model_reply", "")).strip()
+        # Some capable models add a brief compliance acknowledgement before an
+        # otherwise valid document. Projection may discard that transport
+        # chatter, but it must never attempt to repair or rewrite the prose.
+        frontmatter_start = reply.find("---\n")
+        if frontmatter_start < 0:
+            raise ValueError("literary renderer must return YAML Properties")
+        document = reply[frontmatter_start:]
+        closing = document.find("\n---", 4)
+        if closing < 0:
+            raise ValueError("literary renderer returned unterminated YAML Properties")
+        properties = yaml.safe_load(document[4:closing])
+        if not isinstance(properties, dict):
+            raise ValueError("literary renderer Properties must be a mapping")
+        summary = _store().latest(prepared["summary_id"])
+        if summary is None or summary.get("content_hash") != prepared["summary_hash"]:
+            return {"status": "not_ready", "reason": "canonical summary changed during rendering"}
+        period_data = summary["period"]
+        expected = {
+            "schema_version": 1,
+            "week": period_data["label"],
+            "type": "ethnography-weekly",
+            "status": summary["status"],
+            "period_start": period_data["start"][:10],
+            "period_end": (datetime.fromisoformat(period_data["end_exclusive"]) - timedelta(days=1)).date().isoformat(),
+        }
+        for key, value in expected.items():
+            actual = properties.get(key)
+            if hasattr(actual, "isoformat"):
+                actual = actual.isoformat()
+            if actual != value:
+                raise ValueError(f"literary renderer Property {key!r} must equal {value!r}")
+        index_keys = ("people", "projects", "topics", "artifacts", "phrases", "scenes", "threads")
+        for key in index_keys:
+            values = properties.get(key)
+            if not isinstance(values, list) or not all(isinstance(value, str) and value.strip() for value in values):
+                raise ValueError(f"literary renderer Property {key!r} must be a string list")
+        allowed = set(expected) | set(index_keys)
+        if set(properties) != allowed:
+            raise ValueError("literary renderer returned unknown or missing Properties")
+        body = document[closing + 4:].lstrip()
+        if not body.startswith("# "):
+            raise ValueError("literary renderer narrative must begin with a level-1 heading")
+        markdown = document.strip()
+        if "```" in markdown or len(markdown) < 200:
+            raise ValueError("literary renderer returned an empty or wrapped document")
+        forbidden = ("event-card:", "thread-card:", "observation:", "## Basis", "**Status:**")
+        leaked = [token for token in forbidden if token in markdown]
+        if leaked:
+            raise ValueError("literary renderer exposed audit-layer material: " + ", ".join(leaked))
+        state_target = _literary_path(prepared["summary_id"])
+        state_target.write_text(markdown + "\n", encoding="utf-8")
+        period = resolve_period("week", prepared["period"]["label"], prepared["period"]["timezone"])
+        vault_target = _obsidian_literary_path(period)
+        if vault_target is not None:
+            vault_target.parent.mkdir(parents=True, exist_ok=True)
+            temporary = vault_target.with_suffix(vault_target.suffix + ".tmp")
+            temporary.write_text(markdown + "\n", encoding="utf-8")
+            os.replace(temporary, vault_target)
+        return {
+            "status": "success", "response": "NO_REPLY",
+            "metadata": {
+                "result_summary_id": prepared["summary_id"],
+                "summary_revision": prepared["summary_revision"],
+                "literary_path": str(state_target),
+                "obsidian_path": str(vault_target) if vault_target else None,
+            },
+        }
+    except Exception as exc:
+        return _failure("model_output", exc)
 
 
 def _complete_event_card(payload: dict[str, Any]) -> dict[str, Any]:
@@ -631,9 +767,17 @@ def _complete_thread_creation(payload: dict[str, Any], prepared: dict[str, Any],
     if card.get("revision") != prepared["revision"]:
         raise ValueError("model changed the fixed ThreadCard revision")
     registry = ThreadRegistry(store.root)
+    provenance = _runtime_provenance(list(prepared["input_refs"]))
+    # The runtime owns provenance (§21); the model only drafts it.  Seal the
+    # draft *before* create_thread() validates it, because that validation runs
+    # against the schema and would otherwise reject a card whose provenance is
+    # missing the runtime-owned fields (input_manifest_hash, ...) that the seal
+    # below is about to supply.  Identity and content_hash are recomputed inside
+    # create_thread(), so the card is sealed once more afterwards.
+    card = seal_with_provenance(card, provenance)
     created = create_thread(card, registry=registry,
                             known_event_card_ids=prepared["event_card_ids"])
-    created = seal_with_provenance(created, _runtime_provenance(list(prepared["input_refs"])))
+    created = seal_with_provenance(created, provenance)
     CardLifecycle(store, registry).commit_thread_card(created)
     return {"status": "success", "response": "NO_REPLY",
             "metadata": {"thread_created": created["thread_id"],

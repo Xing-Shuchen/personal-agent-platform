@@ -184,6 +184,35 @@ def test_an_accepted_proposal_registers_a_derived_identity(tmp_path):
     assert card["content_hash"] == _content_hash(card)
 
 
+def test_a_proposal_without_runtime_owned_provenance_still_commits(tmp_path):
+    """The runtime replaces provenance, so a model draft must not be validated
+    against runtime-owned fields first.
+
+    Regression: the 2026-09-14 historian-thread-weekly-update run failed with
+    ``thread-card.v1.schema.json invalid at provenance: 'input_manifest_hash' is
+    a required property`` because create_thread() validated the unsealed draft.
+    """
+
+    harness = Harness(tmp_path, [event_card("one", title="First"), event_card("two", title="Second")])
+    harness.run("prepare")
+    proposal = _proposal(harness)
+    # What a model actually emits: a provenance block, but without the fields the
+    # runtime owns (input_manifest_hash in particular).
+    proposal["provenance"] = {"generated_at": STAMP, "generator": "model", "input_refs": []}
+    proposal["content_hash"] = _content_hash(proposal)
+
+    result = harness.run("complete", reply=json.dumps(proposal))
+    assert result["status"] == "success", result.get("error")
+    assert result["metadata"]["thread_created"] == "thread:compiler-learning"
+
+    stored = harness.thread_cards()
+    assert len(stored) == 1
+    card = stored[0]
+    assert card["provenance"]["generator"] == "pap.personal-historian.runtime/v1"
+    assert card["provenance"]["input_manifest_hash"]
+    assert card["content_hash"] == _content_hash(card)
+
+
 def test_a_proposal_citing_one_event_is_refused_and_registers_nothing(tmp_path):
     harness = Harness(tmp_path, [event_card("one", title="First"), event_card("two", title="Second")])
     harness.run("prepare")

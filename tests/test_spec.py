@@ -52,7 +52,29 @@ def test_valid_spec(tmp_path: Path):
     assert spec.jobs[0].schedule == "every 4h"
     assert spec.jobs[0].skill == "test-skill"
     assert spec.jobs[0].args == {}
+    assert spec.jobs[0].model is None
+    assert spec.jobs[0].runner == "openclaw"
     assert spec.private_state == ["notes"]
+
+
+def test_job_model_override(tmp_path: Path):
+    body = VALID.replace(
+        "            skill: test-skill",
+        "            skill: test-skill\n            model: deepseek/deepseek-v4-pro",
+    )
+    write_agent(tmp_path, "test-agent", body)
+    spec = load_spec(tmp_path / "agents" / "test-agent" / "agent.yaml")
+    assert spec.jobs[0].model == "deepseek/deepseek-v4-pro"
+
+
+def test_job_codex_runner(tmp_path: Path):
+    body = VALID.replace(
+        "            skill: test-skill",
+        "            skill: test-skill\n            runner: codex",
+    )
+    write_agent(tmp_path, "test-agent", body)
+    spec = load_spec(tmp_path / "agents" / "test-agent" / "agent.yaml")
+    assert spec.jobs[0].runner == "codex"
 
 
 def test_proactive_disabled(tmp_path: Path):

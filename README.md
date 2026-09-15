@@ -105,7 +105,7 @@ pap runs <run_id>
 pap tick
 ```
 
-它会在 `var/state/scheduler-state.json` 原子预留到期槽位，再调用对应 profile + skill。重复执行同一分钟不会重复跑；失败 run 延迟 5 分钟后最多重试三次，超过 20 分钟的孤立 reservation 可被回收；停机恢复最多补最近 24 小时内每个 job 的最新一个到期槽位。
+它会在 `var/state/scheduler-state.json` 原子预留到期槽位，再调用对应 profile + skill。每个已启用 job 的每个计划槽位会稳定地随机前后浮动最多 5 分钟，让主动消息不是机械地卡在整点；重复执行同一分钟不会重复跑；失败 run 延迟 5 分钟后最多重试三次，超过 20 分钟的孤立 reservation 可被回收；停机恢复最多补最近 24 小时内每个 job 的最新一个到期槽位。
 
 先预览当前到期任务：
 

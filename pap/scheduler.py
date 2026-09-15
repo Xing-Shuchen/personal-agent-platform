@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import fcntl
+import hashlib
 import os
+import secrets
 import subprocess
 from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass
@@ -12,7 +14,7 @@ from pathlib import Path
 from typing import Any, Callable, Iterator
 
 from .run import RunResult, invoke, is_retryable
-from .schedule import latest_due
+from .schedule import matches_schedule
 from .spec import AgentSpec, ProactiveJob, load_platform
 from .state import append_jsonl, load_json, save_json
 
@@ -21,7 +23,14 @@ MAX_CATCHUP = timedelta(hours=24)
 RESERVATION_TTL = timedelta(minutes=90)  # 必须大于最长单次运行时长（PAP_RUN_TIMEOUT_SECONDS 上限 3600s），否则超长运行会被后续 tick 重复认领
 RETRY_DELAY = timedelta(minutes=5)
 MAX_ATTEMPTS_PER_SLOT = 3
-LEAK_MARKERS = ("<invoke name=", "</｜｜DSML｜", "｜｜DSML｜｜", "sqlite3.connect(")
+JITTER_MAX_MINUTES = 5
+LEAK_MARKERS = (
+    "<invoke name=",
+    "</｜｜DSML｜",
+    "｜｜DSML｜｜",
+    "sqlite3.connect(",
+    "The tool run finished, but no final summary was produced.",
+)
 
 
 def _now() -> datetime:
@@ -57,10 +66,51 @@ class DueJob:
     spec: AgentSpec
     job: ProactiveJob
     slot: datetime
+    jitter_minutes: int = 0
 
     @property
     def key(self) -> str:
         return f"{self.spec.name}/{self.job.name}"
+
+
+def _jitter_minutes(seed: str, job_key: str, slot: datetime) -> int:
+    """Return a stable, uniformly distributed +/- five-minute slot offset.
+
+    The scheduler sees each slot repeatedly while polling every minute.  A
+    state-backed seed makes its offset random when first deployed, yet stable
+    across those polls and across restarts.  That stability is what lets a
+    negative offset run before the nominal cron minute without duplicates.
+    """
+    if JITTER_MAX_MINUTES == 0:
+        return 0
+    material = f"{seed}:{job_key}:{slot.isoformat(timespec='minutes')}".encode("utf-8")
+    value = int.from_bytes(hashlib.sha256(material).digest()[:8], "big")
+    return value % (JITTER_MAX_MINUTES * 2 + 1) - JITTER_MAX_MINUTES
+
+
+def _latest_jittered_due(
+    job: ProactiveJob,
+    *,
+    job_key: str,
+    start_exclusive: datetime,
+    now: datetime,
+    seed: str,
+) -> tuple[datetime, int] | None:
+    """Find the newest canonical slot whose jittered dispatch time has arrived.
+
+    Search slightly into the future because a negative offset may make the
+    next nominal slot eligible up to five minutes early.
+    """
+    window = timedelta(minutes=JITTER_MAX_MINUTES)
+    cursor = (now + window).replace(second=0, microsecond=0)
+    lower = (start_exclusive - window).replace(second=0, microsecond=0)
+    while cursor >= lower:
+        if matches_schedule(job.schedule, cursor, timezone_name=job.timezone):
+            jitter = _jitter_minutes(seed, job_key, cursor)
+            if cursor + timedelta(minutes=jitter) <= now:
+                return cursor, jitter
+        cursor -= timedelta(minutes=1)
+    return None
 
 
 @dataclass
@@ -91,6 +141,12 @@ def due_jobs(
         else nullcontext(load_json(state_path, {"version": 1, "jobs": {}}))
     )
     with state_context as state:
+        # Keep one random seed in scheduler state.  It is not a credential; it
+        # only makes each job/slot's jitter stable across ticks and restarts.
+        if reserve:
+            jitter_seed = state.setdefault("jitter_seed", secrets.token_hex(16))
+        else:
+            jitter_seed = state.get("jitter_seed", "pap-scheduler-jitter-preview-v1")
         previous_tick = _parse_time(state.get("last_tick_at"))
         lower = previous_tick or (now - timedelta(minutes=1))
         lower = max(lower, now - MAX_CATCHUP)
@@ -109,7 +165,14 @@ def due_jobs(
                     entry.get("reserved_at") if previous_status == "reserved"
                     else entry.get("last_finished_at")
                 )
-                slot = latest_due(job.schedule, start_exclusive=lower, end_inclusive=now, timezone_name=job.timezone)
+                jittered_due = _latest_jittered_due(
+                    job,
+                    job_key=key,
+                    start_exclusive=lower,
+                    now=now,
+                    seed=jitter_seed,
+                )
+                slot, jitter_minutes = jittered_due or (None, 0)
                 retry_due = False
                 if previous_slot is not None and retry_after is not None:
                     if previous_status == "reserved":
@@ -143,11 +206,18 @@ def due_jobs(
                 last_slot = previous_slot
                 if last_slot is not None and last_slot >= slot:
                     continue
-                found.append(DueJob(spec=spec, job=job, slot=slot))
+                found.append(DueJob(
+                    spec=spec,
+                    job=job,
+                    slot=slot,
+                    jitter_minutes=jitter_minutes,
+                ))
                 if reserve:
                     job_state[key] = {
                         **entry,
                         "last_slot": slot.isoformat(timespec="minutes"),
+                        "last_jitter_minutes": jitter_minutes,
+                        "dispatch_at": (slot + timedelta(minutes=jitter_minutes)).isoformat(timespec="minutes"),
                         "reserved_at": now.isoformat(timespec="seconds"),
                         "last_status": "reserved",
                         "last_run_id": None,
@@ -267,10 +337,13 @@ def tick(
                 "type": "schedule",
                 "job_id": due.job.name,
                 "scheduled_for": due.slot.isoformat(timespec="minutes"),
+                "jitter_minutes": due.jitter_minutes,
             },
             run_log=run_log,
             command_runner=command_runner,
             runtime=due.job.runtime,
+            model=due.job.model,
+            runner_backend=due.job.runner,
         )
         delivery = _deliver(result, due.job, target=target, sender=sender)
         append_jsonl(run_log, {
