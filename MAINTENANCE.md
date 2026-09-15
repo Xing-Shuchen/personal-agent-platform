@@ -25,12 +25,14 @@
 
 ### Model assignments
 
-- PAP `intelligence-pulse` and `serendipity-pulse` use `zai/glm-5.3`.
+- PAP `intelligence-pulse` and `serendipity-pulse` use
+  `zai-intelligence-serendipity/glm-5.3`.
   Gateway connectivity was verified on 2026-09-09.
-- Other PAP agents use
-  `deepseek/deepseek-v4.1-flash-expires-on-0910`.
-- All OpenClaw `agentTurn` automations explicitly use
-  `deepseek/deepseek-v4.1-flash-expires-on-0910`.
+- Dedicated PAP providers use their configured `deepseek-v4.1-flash` model:
+  `deepseek-world-historian`, `deepseek-compiler-news`, and
+  `deepseek-wechat-archivist`.
+- All OpenClaw `agentTurn` automations must use a model permitted by the live
+  OpenClaw `agents.defaults.modelPolicy.allow` list.
 - A one-shot OpenClaw reminder is scheduled for 2026-09-10 09:00
   Asia/Shanghai, executed and delivered through the OpenClaw `feishu3`
   profile/account. It reminds the user to replace the expiring DeepSeek model
