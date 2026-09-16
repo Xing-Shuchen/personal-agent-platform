@@ -16,7 +16,7 @@ spec:
     class: conversational
     desired_jobs:
       - name: serendipity-pulse
-        enabled: true
+        enabled: false
         schedule: "15 1-23/2 * * *"
         skill: proactive-serendipity
         attach_to_session: true
