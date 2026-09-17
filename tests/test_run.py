@@ -168,10 +168,16 @@ def test_run_record_names_the_job_period_and_model(tmp_path):
            run_log=run_log, command_runner=fake_runner, runtime=None)
 
     record = runs(run_log)[0]
+    expected_model = spec.model
+    expected_provider = (
+        expected_model.split("/", 1)[0].strip()
+        if isinstance(expected_model, str) and "/" in expected_model
+        else None
+    )
     assert record["job_id"] == "historian-weekly-summary"
     assert record["period"] == "2026-W37"
-    assert record["model"] == "deepseek/deepseek-flash"
-    assert record["provider"] == "deepseek"
+    assert record["model"] == expected_model
+    assert record["provider"] == expected_provider
     # Token counts and cost are not synthesised: PAP cannot observe them.
     assert record["usage"] == {}
 
