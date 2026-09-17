@@ -38,21 +38,13 @@ not write anything to the Chronicle and do not run the gate.
    - prefer: major policy shifts, market/economy moves, company events with
      real consequences, significant social/people stories, genuine
      international developments;
-   - items tied to active tracked threads — first obtain their titles with the
-     following read-only query, then flag them as 「追踪中」:
+   - items tied to active tracked threads — first obtain their titles, then
+     flag them as 「追踪中」:
 
      ```bash
-     "/home/xingzeng/personal-agent-platform/.venv/bin/python" - <<'PY'
-     import sqlite3
-     db = sqlite3.connect(
-         "file:/home/xingzeng/personal-agent-platform/var/world-historian/chronicle.sqlite?mode=ro",
-         uri=True,
-     )
-     for (title,) in db.execute(
-         "SELECT title FROM threads WHERE status = 'active' ORDER BY updated_at DESC"
-     ):
-         print(title)
-     PY
+     "/home/xingzeng/personal-agent-platform/.venv/bin/python" \
+       "/home/xingzeng/personal-agent-platform/agents/world-historian/runtime/cli.py" \
+       active-thread-titles
      ```
    - when both a domestic and a foreign story cover the same topic, prefer the
      domestic one.

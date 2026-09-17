@@ -83,14 +83,12 @@ bucket, and a minimal redacted descriptor. Raw `statement`, `facts`,
    persist only when its public topic terms and the public Chronicle event make
    the proposed relation plausible. Never use private wording as a query.
    Never call web tools.
-4. Check duplicates only with this exact query, replacing the placeholders:
+4. Check duplicates only with this exact command, replacing the placeholders:
 
 ```bash
-sqlite3 "file:/home/xingzeng/personal-agent-platform/var/world-historian/chronicle.sqlite?mode=ro" \
-  "SELECT 1 FROM personal_links
-    WHERE world_event_id = 'WORLD_EVENT_ID'
-      AND personal_event_id = 'PERSONAL_EVENT_ID'
-    LIMIT 1;"
+"/home/xingzeng/personal-agent-platform/.venv/bin/python" \
+  "/home/xingzeng/personal-agent-platform/agents/world-historian/runtime/cli.py" \
+  personal-link-exists "WORLD_EVENT_ID" "PERSONAL_EVENT_ID"
 ```
 
 5. Write a nonempty bundle only to:

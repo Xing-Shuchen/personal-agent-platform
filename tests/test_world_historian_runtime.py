@@ -2,6 +2,7 @@
 
 import json
 import os
+import sqlite3
 import subprocess
 import sys
 from pathlib import Path
@@ -125,3 +126,134 @@ def test_roster_formats_orders_and_filters_delivery_threads(tmp_path):
     assert first.returncode == 0, first.stderr
     assert first.stdout == expected
     assert second.stdout == expected
+
+
+def test_active_thread_titles_orders_newest_first_and_handles_empty_db(tmp_path):
+    db = tmp_path / "chronicle.sqlite"
+    empty_bundle = tmp_path / "empty.json"
+    empty_bundle.write_text("{}", encoding="utf-8")
+    initialized = run_runtime(db, "store-bundle", "--json", str(empty_bundle))
+    assert initialized.returncode == 0, initialized.stderr
+
+    empty = run_runtime(db, "active-thread-titles")
+    assert empty.returncode == 0, empty.stderr
+    assert empty.stdout == ""
+
+    bundle = tmp_path / "threads.json"
+    bundle.write_text(json.dumps({"threads": [
+        {"title": "Old active"},
+        {"title": "New active"},
+        {"title": "Closed", "status": "closed"},
+    ]}), encoding="utf-8")
+    stored = run_runtime(db, "store-bundle", "--json", str(bundle))
+    assert stored.returncode == 0, stored.stderr
+    with sqlite3.connect(db) as conn:
+        conn.execute("UPDATE threads SET updated_at = ? WHERE title = ?",
+                     ("2026-09-15T01:00:00+00:00", "Old active"))
+        conn.execute("UPDATE threads SET updated_at = ? WHERE title = ?",
+                     ("2026-09-16T01:00:00+00:00", "New active"))
+
+    titles = run_runtime(db, "active-thread-titles")
+    assert titles.returncode == 0, titles.stderr
+    assert titles.stdout == "New active\nOld active\n"
+
+
+def test_personal_link_exists_prints_one_only_for_existing_pair(tmp_path):
+    db = tmp_path / "chronicle.sqlite"
+    data = sample_bundle()
+    data["events"][0]["id"] = "world-event-1"
+    data["personal_links"] = [{
+        "world_event_ref": "event", "personal_event_id": "personal-1",
+        "relation_type": "affected_by", "explanation": "Relevant public context.",
+        "confidence": 0.8, "evidence": ["personal-1"],
+    }]
+    bundle = tmp_path / "link.json"
+    bundle.write_text(json.dumps(data), encoding="utf-8")
+    stored = run_runtime(db, "store-bundle", "--json", str(bundle))
+    assert stored.returncode == 0, stored.stderr
+
+    exists = run_runtime(db, "personal-link-exists", "world-event-1", "personal-1")
+    missing = run_runtime(db, "personal-link-exists", "world-event-1", "personal-2")
+    assert exists.returncode == 0, exists.stderr
+    assert exists.stdout == "1\n"
+    assert missing.returncode == 0, missing.stderr
+    assert missing.stdout == ""
+
+
+def test_daily_stats_combines_run_log_and_chronicle_for_requested_day(tmp_path):
+    db = tmp_path / "chronicle.sqlite"
+    data = sample_bundle()
+    data["threads"][0]["id"] = "thread-1"
+    data["events"][0]["id"] = "event-1"
+    bundle = tmp_path / "daily.json"
+    bundle.write_text(json.dumps(data), encoding="utf-8")
+    stored = run_runtime(db, "store-bundle", "--json", str(bundle))
+    assert stored.returncode == 0, stored.stderr
+    with sqlite3.connect(db) as conn:
+        for table in ("threads", "events", "claims"):
+            conn.execute(f"UPDATE {table} SET created_at = ?", ("2026-09-16T09:00:00+08:00",))
+        conn.execute("UPDATE threads SET updated_at = ?", ("2026-09-16T10:00:00+08:00",))
+
+    runs = tmp_path / "runs.jsonl"
+    records = [
+        {"event": "run.delivery", "run_id": "brief", "delivery": "sent"},
+        {"event": "run.completed", "run_id": "brief", "agent_id": "world-historian",
+         "completed_at": "2026-09-16T09:00:00+08:00", "status": "success",
+         "trigger": {"job_id": "morning-brief"}},
+        {"event": "run.completed", "run_id": "stats", "agent_id": "world-historian",
+         "completed_at": "2026-09-16T23:59:00+08:00", "status": "timeout",
+         "trigger": {"job_id": "daily-stats"}},
+        {"event": "run.delivery", "run_id": "stats", "delivery": "silent"},
+        {"event": "run.completed", "run_id": "other", "agent_id": "other-agent",
+         "completed_at": "2026-09-16T12:00:00+08:00", "status": "success",
+         "trigger": {"job_id": "other"}},
+    ]
+    runs.write_text("".join(json.dumps(record) + "\n" for record in records), encoding="utf-8")
+
+    result = run_runtime(db, "daily-stats", "--day", "2026-09-16", "--runs", str(runs))
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == (
+        "day 2026-09-16\n"
+        "runs\n"
+        "job daily-stats delivery:silent=1 timeout=1\n"
+        "job morning-brief delivery:sent=1 success=1\n"
+        "chronicle\n"
+        "threads 1\n"
+        "events 1\n"
+        "claims 1\n"
+        "updated-thread thread-1 Example transition normal active\n"
+    )
+
+
+def test_lifecycle_candidates_apply_stale_thresholds_and_priority_rules(tmp_path):
+    db = tmp_path / "chronicle.sqlite"
+    bundle = tmp_path / "lifecycle.json"
+    bundle.write_text(json.dumps({
+        "threads": [
+            {"id": "no-event", "title": "No event", "status": "active"},
+            {"id": "idle-active", "title": "Idle active", "status": "active"},
+            {"id": "idle-background", "title": "Idle background", "status": "active",
+             "priority": "background"},
+            {"id": "recent", "title": "Recent", "status": "active"},
+        ],
+        "events": [
+            {"id": "idle-event", "summary": "Idle", "occurred_at": "2026-08-20",
+             "occurred_at_precision": "day", "observed_at": "2026-08-20T00:00:00",
+             "thread_refs": ["idle-active"]},
+            {"id": "background-event", "summary": "Background", "occurred_at": "2026-08-20",
+             "occurred_at_precision": "day", "observed_at": "2026-08-20T00:00:00",
+             "thread_refs": ["idle-background"]},
+            {"id": "recent-event", "summary": "Recent", "occurred_at": "2026-09-10",
+             "occurred_at_precision": "day", "observed_at": "2026-09-10T00:00:00",
+             "thread_refs": ["recent"]},
+        ],
+    }), encoding="utf-8")
+    stored = run_runtime(db, "store-bundle", "--json", str(bundle))
+    assert stored.returncode == 0, stored.stderr
+
+    result = run_runtime(db, "lifecycle-candidates", "--now", "2026-09-17T00:00:00")
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == (
+        "DEMOTE\tidle-active\tIdle active\n"
+        "CLOSE\tno-event\tNo event\n"
+    )

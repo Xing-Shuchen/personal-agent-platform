@@ -109,34 +109,13 @@ Applied by the `world-follow-background` job before it selects its work set
 - No new event for over 60 days (two months): set `status: closed`. A closed
   thread is not followed at all and must not appear in the tracked roster.
 
-Find candidates with exactly this read-only query:
+Find candidates with this read-only command (use the defaults unless testing a
+different lifecycle window):
 
 ```bash
-"/home/xingzeng/personal-agent-platform/.venv/bin/python" - <<'PY'
-import sqlite3, datetime
-db = sqlite3.connect("file:/home/xingzeng/personal-agent-platform/var/world-historian/chronicle.sqlite?mode=ro", uri=True)
-def parse(s):
-    if not s: return None
-    for f in ("%Y-%m-%dT%H:%M:%S%z", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d"):
-        try:
-            d = datetime.datetime.strptime(s.strip(), f)
-            return d.replace(tzinfo=None) if d.tzinfo else d
-        except Exception: pass
-    return None
-agg = {}
-for tid, title, pri, occ, obs, rep in db.execute("""SELECT t.id,t.title,t.priority,e.occurred_at,e.observed_at,e.reported_at
-FROM threads t LEFT JOIN thread_events te ON te.thread_id=t.id LEFT JOIN events e ON e.id=te.event_id
-WHERE t.status='active'"""):
-    last = max([d for d in (parse(occ), parse(obs), parse(rep)) if d], default=None)
-    cur = agg.setdefault(tid, {"title": title, "pri": pri, "last": None})
-    if last and (cur["last"] is None or last > cur["last"]): cur["last"] = last
-now = datetime.datetime.now()
-for tid, v in agg.items():
-    if v["last"] is None or v["last"] < now - datetime.timedelta(days=60):
-        print(f"CLOSE\t{tid}\t{v['title']}")
-    elif v["pri"] != "background" and v["last"] < now - datetime.timedelta(days=14):
-        print(f"DEMOTE\t{tid}\t{v['title']}")
-PY
+"/home/xingzeng/personal-agent-platform/.venv/bin/python" \
+  "/home/xingzeng/personal-agent-platform/agents/world-historian/runtime/cli.py" \
+  lifecycle-candidates
 ```
 
 Persist each change through `store-bundle`: `DEMOTE` → the thread's `id`,
