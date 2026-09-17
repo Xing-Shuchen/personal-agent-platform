@@ -95,3 +95,33 @@ def test_store_bundle_syncs_to_configured_vault(tmp_path):
     text = (vault / files[0]).read_text(encoding="utf-8")
     assert "thread_id:" in text and "## 手工批注" in text
     assert (tmp_path / "obsidian-index.json").exists()  # index lives next to the DB
+
+
+def test_roster_formats_orders_and_filters_delivery_threads(tmp_path):
+    db = tmp_path / "chronicle.sqlite"
+    bundle = tmp_path / "roster.json"
+    bundle.write_text(json.dumps({
+        "threads": [
+            {"title": "Zulu high", "priority": "high"},
+            {"title": "Bravo high", "priority": "high"},
+            {"title": "Alpha normal", "priority": "normal"},
+            {"title": "Zulu normal", "priority": "normal"},
+            {"title": "Excluded low", "priority": "low"},
+            {"title": "Excluded background", "priority": "background"},
+            {"title": "Excluded closed", "priority": "high", "status": "closed"},
+        ],
+    }), encoding="utf-8")
+    stored = run_runtime(db, "store-bundle", "--json", str(bundle))
+    assert stored.returncode == 0, stored.stderr
+
+    first = run_runtime(db, "roster")
+    second = run_runtime(db, "roster")
+    expected = (
+        "- 🟥 **Bravo high**（high）\n"
+        "- 🟥 **Zulu high**（high）\n"
+        "- 🟦 **Alpha normal**（normal）\n"
+        "- 🟦 **Zulu normal**（normal）\n"
+    )
+    assert first.returncode == 0, first.stderr
+    assert first.stdout == expected
+    assert second.stdout == expected

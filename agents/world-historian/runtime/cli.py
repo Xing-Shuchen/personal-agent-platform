@@ -76,6 +76,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("init", help="create runtime directories and apply migrations")
     sub.add_parser("stats", help="show table counts")
+    sub.add_parser("roster", help="print the deterministic follow-update thread roster")
 
     p_store = sub.add_parser("store-bundle", help="atomically validate and persist a JSON bundle")
     p_store.add_argument("--json", required=True, help="JSON file path, or - for stdin")
@@ -113,6 +114,22 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "init":
             path, applied = initialize(db_path)
             _print({"database": str(path), "migrations_applied": applied})
+            return 0
+
+        if args.command == "roster":
+            # This deliberately bypasses ``connect``: that helper creates parent
+            # directories and configures WAL, whereas the delivery roster must be
+            # a strictly read-only projection of an existing Chronicle database.
+            readonly_uri = f"{db_path.resolve().as_uri()}?mode=ro"
+            with sqlite3.connect(readonly_uri, uri=True) as conn:
+                rows = conn.execute(
+                    "SELECT title, priority FROM threads "
+                    "WHERE status = 'active' AND priority IN ('high', 'normal') "
+                    "ORDER BY CASE priority WHEN 'high' THEN 0 ELSE 1 END, title"
+                )
+                for title, priority in rows:
+                    emoji = "🟥" if priority == "high" else "🟦"
+                    print(f"- {emoji} **{title}**（{priority}）")
             return 0
 
         with connect(db_path) as conn:

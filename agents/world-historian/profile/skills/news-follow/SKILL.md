@@ -88,22 +88,14 @@ formulas/expressions get `$` delimiters.
 
 ## Thread roster (read-only, delivery set)
 
-To list the threads a follow update delivers, run exactly this read-only query
+To list the threads a follow update delivers, run this read-only command
 (do not probe any other Chronicle path). The delivered set is `high` and
 `normal` only; `low` and `background` threads stay tracked in the Chronicle but
 must never appear in a follow update.
 
 ```bash
-"/home/xingzeng/personal-agent-platform/.venv/bin/python" - <<'PY'
-import sqlite3
-db = sqlite3.connect("file:/home/xingzeng/personal-agent-platform/var/world-historian/chronicle.sqlite?mode=ro", uri=True)
-for title, pri in db.execute(
-    "SELECT title, priority FROM threads WHERE status='active' "
-    "AND priority IN ('high','normal') "
-    "ORDER BY CASE priority WHEN 'high' THEN 0 ELSE 1 END, title"
-):
-    print(f"- {title}（{pri}）")
-PY
+"/home/xingzeng/personal-agent-platform/.venv/bin/python" \
+  agents/world-historian/runtime/cli.py roster
 ```
 
 ## Priority lifecycle (background demotion, then close)
@@ -179,11 +171,10 @@ channel renders it), with exactly this shape and nothing else:
 - **<线程标题>** — <新增/修正了什么事件，一句话>（[来源](<url>)）
 
 **追踪中**
-- 🟥 **<线程标题>**（high）
-- 🟦 **<线程标题>**（normal）
+<`roster` command stdout, pasted verbatim>
 ```
 
 Formatting rules:
 1. 进展 — 每个有新进展的 `high`/`normal` thread 一条：加粗线程标题、一句话说明新增或修正的事件、有来源就附行内链接。不写检索过程、不写被排除的候选；`low`/`background` 绝不出现。
-2. 追踪中 — 用上面 delivery-set roster 查询的输出，High 在前、Normal 在后，每行 `- <emoji> **<标题>**（<优先级>）`；只列 `high`/`normal`。
+2. 追踪中 — 将上面 `roster` command 的 stdout 原样粘贴：不得由模型选择 emoji、不得重新加粗、不得重排、不得添加或删除行。
 3. 保持紧凑：每个 thread 一行。Feishu 卡片渲染加粗、列表、链接、表情和空行——不要用表格，分节标签用加粗（`**进展**`）而不是 `#` 标题。
