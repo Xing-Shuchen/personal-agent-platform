@@ -368,3 +368,43 @@ def test_a_missing_runner_is_not_retryable(tmp_path):
     assert result.failure_kind == "launch"
     # Retrying cannot install a missing binary.
     assert runs(tmp_path / "runs.jsonl")[0]["retryable"] is False
+
+
+def test_command_runner_is_model_free_and_normalizes_silence(tmp_path):
+    spec = load_spec(make_agent(tmp_path))
+    log = tmp_path / "runs.jsonl"
+    seen = {}
+
+    def command_only(argv, **kwargs):
+        seen.update(argv=argv, cwd=kwargs["cwd"], env=kwargs["env"])
+        return subprocess.CompletedProcess(argv, 0, "NO_REPLY\n", "")
+
+    result = invoke(
+        root=tmp_path, spec=spec, skill="sample-skill", run_log=log,
+        runner_backend="command", command=["deterministic-tool", "update"],
+        command_runner=command_only,
+    )
+    record = runs(log)[0]
+    assert result.status == "success"
+    assert result.response == "NO_REPLY"
+    assert seen["argv"] == ["deterministic-tool", "update"]
+    assert seen["cwd"] == tmp_path.resolve()
+    assert seen["env"]["PAP_ROOT"] == str(tmp_path.resolve())
+    assert seen["env"]["PAP_AGENT_ID"] == "sample"
+    assert "PAP_AGENT_MODEL" not in seen["env"]
+    assert record["runner"] == "command"
+    assert "model" not in record and "provider" not in record
+    assert "model" not in record["usage"]
+    assert record["input_tokens"] is None
+
+
+def test_command_failure_is_not_retryable(tmp_path):
+    spec = load_spec(make_agent(tmp_path))
+    result = invoke(
+        root=tmp_path, spec=spec, skill="sample-skill", run_log=tmp_path / "runs.jsonl",
+        runner_backend="command", command=["tool"],
+        command_runner=lambda argv, **kwargs: subprocess.CompletedProcess(argv, 3, "", "bad input"),
+    )
+    assert result.status == "failed"
+    assert result.failure_kind == "command"
+    assert runs(tmp_path / "runs.jsonl")[0]["retryable"] is False

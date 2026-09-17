@@ -150,9 +150,10 @@ def invoke(
     runtime: str | None = None,
     model: str | None = None,
     runner_backend: str = "openclaw",
+    command: list[str] | None = None,
     usage_probe: Callable[[str, str], dict[str, Any] | None] | None = None,
 ) -> RunResult:
-    """Invoke one installed-in-repo profile skill through an OpenClaw Gateway turn."""
+    """Invoke one installed-in-repo profile skill through its declared runner."""
     root = Path(root).resolve()
     profile_dir = root / "agents" / spec.name / "profile"
     skill_file = profile_dir / "skills" / skill / "SKILL.md"
@@ -165,14 +166,14 @@ def invoke(
     started = _now()
     run_id = new_run_id(started)
     run_log = Path(run_log)
-    effective_model = model if model is not None else spec.model
+    effective_model = None if runner_backend == "command" else (model if model is not None else spec.model)
     model_name, provider_name = _model_provider(effective_model)
     if runner_backend == "codex" and model_name and provider_name is None:
         provider_name = "openai"
     job_id = None
     if isinstance(trigger, dict) and isinstance(trigger.get("job_id"), str):
         job_id = trigger["job_id"]
-    append_jsonl(run_log, {
+    started_record = {
         "event": "run.started",
         "run_id": run_id,
         "agent_id": spec.name,
@@ -180,11 +181,13 @@ def invoke(
         "trigger": trigger or {"type": "manual"},
         "skill": skill,
         "args": args,
-        "model": model_name,
-        "provider": provider_name,
+        "runner": runner_backend,
         "input": _input_fingerprint(input_text),
         "started_at": started.isoformat(timespec="seconds"),
-    })
+    }
+    if runner_backend != "command":
+        started_record.update({"model": model_name, "provider": provider_name})
+    append_jsonl(run_log, started_record)
 
     usage: dict[str, Any] = {}
     failure_kind = ""
@@ -200,8 +203,10 @@ def invoke(
     # for a probe explicitly.
     probe = usage_probe if usage_probe is not None else (probe_model_usage if command_runner is None else None)
     runner = command_runner or subprocess.run
-    skill_text = skill_file.read_text(encoding="utf-8")
-    if skill == "historian-literary-renderer":
+    skill_text = ""
+    if runner_backend != "command":
+        skill_text = skill_file.read_text(encoding="utf-8")
+    if runner_backend != "command" and skill == "historian-literary-renderer":
         reference_files = [
             profile_dir / "references" / "epistemology.md",
             skill_file.parent / "references" / "weekly.md",
@@ -220,6 +225,11 @@ def invoke(
         "PAP_RUN_ID": run_id,
         "PAP_AGENT_STATE_DIR": str(root / "var" / spec.name),
     })
+    if runner_backend == "command":
+        # A cron environment may have policy variables from a previous model
+        # invocation; command jobs must not inherit model provenance.
+        env.pop("PAP_AGENT_MODEL", None)
+        env.pop("PAP_AGENT_PROVIDER", None)
     if effective_model:
         # The runtime records authoritative provenance (§21); it can only do that
         # for the model if PAP, which owns model policy (§35), tells it.
@@ -245,7 +255,7 @@ def invoke(
                 status = "not_ready"
                 response = "NOT_READY"
                 error = str(prepared.get("reason", "upstream readiness is unmet"))
-                append_jsonl(run_log, {"event": "run.completed", "run_id": run_id, "agent_id": spec.name, "job_id": job_id, "skill": skill, "args": args, "model": model_name, "provider": provider_name, "completed_at": completed_at.isoformat(timespec="seconds"), "status": status, "returncode": 0, "response": _input_fingerprint(response), "error": error[:1000], "usage": usage})
+                append_jsonl(run_log, {"event": "run.completed", "run_id": run_id, "agent_id": spec.name, "job_id": job_id, "skill": skill, "args": args, "runner": runner_backend, "model": model_name, "provider": provider_name, "completed_at": completed_at.isoformat(timespec="seconds"), "status": status, "returncode": 0, "response": _input_fingerprint(response), "error": error[:1000], "usage": usage})
                 return RunResult(run_id, spec.name, skill, status, 0, response, error, started.isoformat(timespec="seconds"), completed_at.isoformat(timespec="seconds"), usage)
             if prepared.get("status") != "ready" or not isinstance(prepared.get("input_text"), str):
                 error = str(prepared.get("error", "runtime did not prepare an invocation"))
@@ -255,15 +265,21 @@ def invoke(
                 usage["runtime"] = {"prepared": True}
                 if isinstance(prepared.get("metadata"), dict):
                     usage["runtime"].update(prepared["metadata"])
-    with tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".md", delete=False) as tmp_file:
-        tmp_file.write(_prompt(skill, skill_text, input_text, args))
-        tmp_path = tmp_file.name
+    tmp_path: str | None = None
+    if runner_backend != "command":
+        with tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".md", delete=False) as tmp_file:
+            tmp_file.write(_prompt(skill, skill_text, input_text, args))
+            tmp_path = tmp_file.name
     try:
         if error:
             raise RuntimeError(error)
-        timeout = timeout_seconds or int(os.environ.get("PAP_RUN_TIMEOUT_SECONDS", "900"))
-        if runner_backend == "codex":
-            command = [
+        timeout = timeout_seconds or int(os.environ.get("PAP_COMMAND_TIMEOUT_SECONDS" if runner_backend == "command" else "PAP_RUN_TIMEOUT_SECONDS", "300" if runner_backend == "command" else "900"))
+        if runner_backend == "command":
+            if command is None:
+                raise ValueError("command runner requires command")
+            invocation = command
+        elif runner_backend == "codex":
+            invocation = [
                 os.environ.get("PAP_CODEX_BIN", "codex"),
                 "--sandbox", "read-only", "--ask-for-approval", "never",
                 "exec", "--ephemeral", "--color", "never",
@@ -271,9 +287,9 @@ def invoke(
                 "-C", str(profile_dir), "-",
             ]
             if effective_model:
-                command[1:1] = ["--model", effective_model]
+                invocation[1:1] = ["--model", effective_model]
         elif runner_backend == "openclaw":
-            command = [
+            invocation = [
                 os.environ.get("PAP_OPENCLAW_BIN", "openclaw"),
                 "agent",
                 "--agent", spec.name,
@@ -283,13 +299,13 @@ def invoke(
                 "--timeout", str(timeout),
             ]
             if effective_model:
-                command += ["--model", effective_model]
+                invocation += ["--model", effective_model]
         else:
             raise ValueError(f"unsupported runner backend: {runner_backend}")
         invoked = True
         completed = runner(
-            command,
-            cwd=profile_dir,
+            invocation,
+            cwd=root if runner_backend == "command" else profile_dir,
             env=env,
             capture_output=True,
             text=True,
@@ -307,7 +323,7 @@ def invoke(
         if returncode:
             # The model runner itself failed: a provider or transport problem is
             # the usual cause, and §34 names those as retryable.
-            failure_kind = "runner"
+            failure_kind = "command" if runner_backend == "command" else "runner"
         if returncode == 0 and adapter is not None:
             completed_runtime = _runtime_call(adapter, "complete", {"run_id": run_id, "skill": skill, "args": args, "model_reply": response}, env)
             runtime_status = completed_runtime.get("status")
@@ -340,8 +356,9 @@ def invoke(
         returncode = 1
         failure_kind = "runtime"
     finally:
-        Path(tmp_path).unlink(missing_ok=True)
-        Path(tmp_path + ".response").unlink(missing_ok=True)
+        if tmp_path is not None:
+            Path(tmp_path).unlink(missing_ok=True)
+            Path(tmp_path + ".response").unlink(missing_ok=True)
     if invoked and probe is not None and runner_backend == "openclaw":
         # §31: what the model actually consumed is the runner's to report.  This
         # asks after the turn — including after a failed or timed-out one, which
@@ -355,15 +372,14 @@ def invoke(
         response, response_normalization = normalize_terminal_response(response)
     completed_at = _now()
     status = "not_ready" if returncode == 0 and response == "NOT_READY" else ("success" if returncode == 0 else "failed")
-    append_jsonl(run_log, {
+    completed_record = {
         "event": "run.completed",
         "run_id": run_id,
         "agent_id": spec.name,
         "job_id": job_id,
         "skill": skill,
         "args": args,
-        "model": model_name,
-        "provider": provider_name,
+        "runner": runner_backend,
         "completed_at": completed_at.isoformat(timespec="seconds"),
         "status": status,
         "returncode": returncode,
@@ -384,7 +400,10 @@ def invoke(
         "input_tokens": model_usage.get("input_tokens") if model_usage else None,
         "output_tokens": model_usage.get("output_tokens") if model_usage else None,
         "cost": model_usage.get("cost") if model_usage else None,
-    })
+    }
+    if runner_backend != "command":
+        completed_record.update({"model": model_name, "provider": provider_name})
+    append_jsonl(run_log, completed_record)
     return RunResult(
         run_id=run_id,
         agent_id=spec.name,

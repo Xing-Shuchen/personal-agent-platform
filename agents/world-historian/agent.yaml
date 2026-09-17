@@ -31,6 +31,12 @@ spec:
         args: {}
         attach_to_session: false
         delivery: local
+        runner: command
+        command:
+          - /home/xingzeng/personal-agent-platform/.venv/bin/python
+          - agents/world-historian/runtime/cli.py
+          - feeds
+          - update
       - name: world-follow-normal
         schedule: "43 3,13,21 * * *"
         skill: news-follow

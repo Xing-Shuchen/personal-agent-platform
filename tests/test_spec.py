@@ -77,6 +77,24 @@ def test_job_codex_runner(tmp_path: Path):
     assert spec.jobs[0].runner == "codex"
 
 
+def test_command_runner_validation_and_loading(tmp_path: Path):
+    command = "            runner: command\n            command: [python3, -c, 'print(1)']"
+    cases = [
+        ("            runner: command", "required for runner"),
+        ("            command: [python3]", "only be set"),
+        (command + "\n            runtime: adapter", "cannot be set"),
+        (command + "\n            model: x/y", "cannot be set"),
+    ]
+    for i, (replacement, message) in enumerate(cases):
+        path = write_agent(tmp_path / str(i), "test-agent", VALID.replace("            skill: test-skill", "            skill: test-skill\n" + replacement))
+        with pytest.raises(SpecError, match=message):
+            load_spec(path)
+    path = write_agent(tmp_path / "valid", "test-agent", VALID.replace("            skill: test-skill", "            skill: test-skill\n" + command))
+    job = load_spec(path).jobs[0]
+    assert job.runner == "command"
+    assert job.command == ["python3", "-c", "print(1)"]
+
+
 def test_proactive_disabled(tmp_path: Path):
     body = VALID.replace("enabled: true", "enabled: false").replace(
         "        desired_jobs:\n          - name: test-pulse\n"

@@ -34,6 +34,7 @@ class ProactiveJob:
     # When absent, the agent-level model remains the policy default.
     model: str | None = None
     runner: str = "openclaw"
+    command: list[str] | None = None
     #: §40 stages a rollout: a declared job may exist, be visible and be audited
     #: while not yet scheduled. Disabling is not deleting — the declaration and
     #: its schedule stay in the spec so enabling is a one-line change.
@@ -178,8 +179,20 @@ def load_spec(path: Path) -> AgentSpec:
                 ):
                     raise _err(path, f"{where}.model: must be a non-empty string")
                 job_runner = raw.get("runner", "openclaw")
-                if job_runner not in ("openclaw", "codex"):
-                    raise _err(path, f"{where}.runner: must be 'openclaw' or 'codex'")
+                if job_runner not in ("openclaw", "codex", "command"):
+                    raise _err(path, f"{where}.runner: must be 'openclaw', 'codex', or 'command'")
+                command = raw.get("command")
+                if job_runner == "command":
+                    if not isinstance(command, list) or not command or not all(
+                        isinstance(item, str) and item for item in command
+                    ):
+                        raise _err(path, f"{where}.command: required for runner 'command' and must be a non-empty list of non-empty strings")
+                    if runtime is not None:
+                        raise _err(path, f"{where}.runtime: cannot be set with runner 'command'")
+                    if job_model is not None:
+                        raise _err(path, f"{where}.model: cannot be set with runner 'command'")
+                elif command is not None:
+                    raise _err(path, f"{where}.command: can only be set with runner 'command'")
                 jobs.append(
                     ProactiveJob(
                         name=jname,
@@ -192,6 +205,7 @@ def load_spec(path: Path) -> AgentSpec:
                         timezone=timezone,
                         model=job_model,
                         runner=job_runner,
+                        command=list(command) if command is not None else None,
                         enabled=enabled,
                     )
                 )

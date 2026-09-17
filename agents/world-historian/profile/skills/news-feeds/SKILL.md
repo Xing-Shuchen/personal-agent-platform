@@ -5,27 +5,17 @@ description: Deterministic RSS/Atom ingestion into the Chronicle sources table; 
 
 # Ingest configured RSS feeds
 
-This job is deterministic: it runs the runtime fetcher and reports counts. It
-does not reason about the news, does not search the web, and produces no
-user-facing digest.
+This job is deterministic and runs through the manifest's `runner: command`:
+there is no model turn and zero model tokens. The declared argv is exactly:
 
-1. Run the ingestion (all `kind: rss` sources from this profile's
-   `config.yaml` are fetched; failures are isolated per feed):
+```text
+/home/xingzeng/personal-agent-platform/.venv/bin/python agents/world-historian/runtime/cli.py feeds update
+```
 
-   ```bash
-   "/home/xingzeng/personal-agent-platform/.venv/bin/python" \
-     "/home/xingzeng/personal-agent-platform/agents/world-historian/runtime/cli.py" feeds update
-   ```
+PAP executes that argv from the repository root. It fetches all `kind: rss`
+sources from this profile's `config.yaml`; per-feed failures are reported by
+the command and do not cause an in-run retry. Its JSON stdout stays local, so
+ingestion is never interruption-worthy; `news-follow` decides what matters.
 
-2. Note `entries_added` and any per-feed `errors`. Feed failures are normal
-   (site outages, anti-scraping); they are recorded in the output and must
-   not be retried in this run.
-3. Optionally verify with:
-
-   ```bash
-   "/home/xingzeng/personal-agent-platform/.venv/bin/python" \
-     "/home/xingzeng/personal-agent-platform/agents/world-historian/runtime/cli.py" feeds recent --hours 24
-   ```
-
-4. Finish with exactly `NO_REPLY`. Ingestion itself is never
-   interruption-worthy; `news-follow` decides what matters.
+This skill file remains as the job's audit trail and is validated before the
+command is launched; it is not supplied to a model.

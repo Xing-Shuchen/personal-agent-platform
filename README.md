@@ -57,6 +57,11 @@ agent 执行和消息投递，不负责 PAP job 的调度。
 
 OpenClaw automation 仅可用于 PAP 范围之外的独立任务。
 
+Job 的 `runner` 默认为 `openclaw`，也可为 `codex`；确定性工作可声明
+`runner: command` 及非空的 argv 列表 `command`。command runner 在仓库根目录直接
+执行该 argv，不创建模型会话、不消耗模型 tokens，并仍写入完整 Run 生命周期记录。
+它不能与 `runtime` 或 `model` 一起使用。
+
 ## 快速开始
 
 ```bash

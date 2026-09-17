@@ -92,8 +92,9 @@ def _cmd_jobs(args: argparse.Namespace) -> int:
         for job in spec.jobs:
             rendered_args = json.dumps(job.args, ensure_ascii=False, sort_keys=True)
             state = "enabled" if job.enabled else "disabled"
+            runner = f"\trunner={job.runner}" if job.runner != "openclaw" else ""
             print(f"{spec.name}/{job.name}\t{job.schedule}\t{job.skill}\t"
-                  f"delivery={job.delivery}\t{state}\targs={rendered_args}")
+                  f"delivery={job.delivery}\t{state}\targs={rendered_args}{runner}")
     return 0
 
 
@@ -125,6 +126,10 @@ def _cmd_job_run(args: argparse.Namespace) -> int:
     """Run one manifest job through its declared runtime adapter."""
     root = Path(args.root).resolve()
     try:
+        if args.job is None:
+            if "/" not in args.agent:
+                raise ValueError("job must be given as AGENT JOB or AGENT/JOB")
+            args.agent, args.job = args.agent.split("/", 1)
         spec = _find_spec(root, args.agent)
         job = next((item for item in spec.jobs if item.name == args.job), None)
         if job is None:
@@ -137,6 +142,7 @@ def _cmd_job_run(args: argparse.Namespace) -> int:
             run_log=_path_under(root, args.runs), runtime=job.runtime,
             model=job.model,
             runner_backend=job.runner,
+            command=job.command,
         )
     except (spec_mod.SpecError, ValueError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
@@ -306,7 +312,7 @@ def build_parser() -> argparse.ArgumentParser:
     job_sub = p_job.add_subparsers(dest="job_command", required=True)
     p_job_run = job_sub.add_parser("run", help="run one declared job now")
     p_job_run.add_argument("agent")
-    p_job_run.add_argument("job")
+    p_job_run.add_argument("job", nargs="?")
     p_job_run.add_argument("--arg", action="append", default=[], metavar="KEY=VALUE")
     p_job_run.add_argument("--root", default=".")
     p_job_run.add_argument("--runs", type=Path, default=run_mod.DEFAULT_RUN_LOG)

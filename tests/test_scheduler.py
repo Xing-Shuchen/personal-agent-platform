@@ -57,6 +57,19 @@ def test_tick_claims_slot_once(tmp_path):
     assert len(calls) == 1
 
 
+def test_tick_command_job_does_not_invoke_a_model_runner(tmp_path):
+    make_platform(tmp_path)
+    manifest = tmp_path / "agents/sample/agent.yaml"
+    manifest.write_text(manifest.read_text(encoding="utf-8").replace(
+        "        delivery: local", "        delivery: local\n        runner: command\n        command: [tool, update]"
+    ), encoding="utf-8")
+    now = datetime(2026, 8, 31, 18, 17, tzinfo=CST)
+    calls = []
+    result = tick(tmp_path, now=now, command_runner=lambda argv, **kw: (calls.append(argv) or subprocess.CompletedProcess(argv, 0, "NO_REPLY", "")))
+    assert result[0].run.status == "success"
+    assert calls == [["tool", "update"]]
+
+
 def test_dry_run_does_not_create_scheduler_state(tmp_path):
     make_platform(tmp_path)
     now = datetime(2026, 8, 31, 18, 17, tzinfo=CST)
