@@ -87,6 +87,8 @@ spec:
         args: {}
         attach_to_session: true
         delivery: user-home
+        runner: opencode
+        model: opencode/mimo-v2.5-free
       - name: world-weekly-report
         schedule: "0 20 * * 0"
         skill: news-synthesize

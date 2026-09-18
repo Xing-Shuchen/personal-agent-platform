@@ -96,12 +96,66 @@ PROVIDER_REJECTION_MARKERS = (
     "malformed diagnostic json",
 )
 
+# OpenCode Zen failures which selecting the same model and prompt cannot fix.
+# The free tier is CLI-only, time-limited, has no SLA, and may use prompt data
+# for feedback; it is therefore only suitable for low-sensitivity jobs.
+OPENCODE_PROVIDER_FAILURE_MARKERS = (
+    "freetiererror",
+    "regionerror",
+    "creditserror",
+    "model is unavailable",
+)
+
 
 def provider_rejection(*texts: str | None) -> bool:
     """True when the runner's own words name a provider refusal."""
 
     haystack = " ".join(text for text in texts if text).lower()
     return any(marker in haystack for marker in PROVIDER_REJECTION_MARKERS)
+
+
+def opencode_provider_failure(*texts: str | None) -> bool:
+    """True when OpenCode names a permanent provider/model condition."""
+
+    haystack = " ".join(text for text in texts if text).lower()
+    return any(marker in haystack for marker in OPENCODE_PROVIDER_FAILURE_MARKERS)
+
+
+def _opencode_output(stdout: str) -> tuple[str, dict[str, Any]]:
+    """Read OpenCode's JSON-lines response and runner-reported token usage."""
+
+    text_parts: list[str] = []
+    input_tokens = output_tokens = 0
+    cost = 0.0
+    saw_usage = False
+    for line in stdout.splitlines():
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(event, dict):
+            continue
+        if event.get("type") == "text":
+            payload = event.get("part")
+            part = payload.get("text") if isinstance(payload, dict) else event.get("text")
+            if isinstance(part, str):
+                text_parts.append(part)
+        if event.get("type") == "step_finish":
+            payload = event.get("part")
+            tokens = payload.get("tokens") if isinstance(payload, dict) else event.get("tokens")
+            if isinstance(tokens, dict):
+                input_value, output_value = tokens.get("input"), tokens.get("output")
+                if isinstance(input_value, (int, float)) and isinstance(output_value, (int, float)):
+                    input_tokens += int(input_value)
+                    output_tokens += int(output_value)
+                    saw_usage = True
+            event_cost = payload.get("cost") if isinstance(payload, dict) else event.get("cost")
+            if isinstance(event_cost, (int, float)):
+                cost += event_cost
+                saw_usage = True
+    usage = ({"input_tokens": input_tokens, "output_tokens": output_tokens,
+              "cost": cost, "source": "opencode.run"} if saw_usage else {})
+    return "".join(text_parts).strip(), usage
 
 
 def _model_provider(model: str | None) -> tuple[str | None, str | None]:
@@ -225,11 +279,13 @@ def invoke(
     # reaching for a real OpenClaw behind the stub's back would be neither
     # hermetic nor attributable, so such a caller gets no usage unless it asks
     # for a probe explicitly.
-    probe = usage_probe if usage_probe is not None else (probe_model_usage if command_runner is None else None)
+    probe = usage_probe if usage_probe is not None else (
+        probe_model_usage if command_runner is None and runner_backend == "openclaw" else None
+    )
     # The refusal is read from the runner's own store, which only the production
     # path may touch; a caller substituting its own runner gets no such read.
     read_failure = failure_probe if failure_probe is not None else (
-        session_failure if command_runner is None else None
+        session_failure if command_runner is None and runner_backend == "openclaw" else None
     )
     runner = command_runner or subprocess.run
     skill_text = ""
@@ -317,6 +373,14 @@ def invoke(
             ]
             if effective_model:
                 invocation[1:1] = ["--model", effective_model]
+        elif runner_backend == "opencode":
+            if not effective_model:
+                raise ValueError("opencode runner requires a model")
+            invocation = [
+                os.environ.get("PAP_OPENCODE_BIN", "opencode"), "run", "--pure",
+                "--format", "json", "--title", f"{spec.name}/{job_id or skill}",
+                "--model", effective_model,
+            ]
         elif runner_backend == "openclaw":
             invocation = [
                 os.environ.get("PAP_OPENCLAW_BIN", "openclaw"),
@@ -338,11 +402,11 @@ def invoke(
         invoked = True
         completed = runner(
             invocation,
-            cwd=root if runner_backend == "command" else profile_dir,
+            cwd=root if runner_backend in ("command", "opencode") else profile_dir,
             env=env,
             capture_output=True,
             text=True,
-            input=(Path(tmp_path).read_text(encoding="utf-8") if runner_backend == "codex" else None),
+            input=(Path(tmp_path).read_text(encoding="utf-8") if runner_backend in ("codex", "opencode") else None),
             timeout=timeout,
         )
         returncode = completed.returncode
@@ -350,6 +414,10 @@ def invoke(
             response_path = Path(tmp_path + ".response")
             response = response_path.read_text(encoding="utf-8").strip() if response_path.is_file() else ""
             response_path.unlink(missing_ok=True)
+        elif runner_backend == "opencode":
+            response, model_usage = _opencode_output(completed.stdout)
+            if model_usage:
+                usage["model"] = model_usage
         else:
             response = completed.stdout.strip()
         error = completed.stderr.strip() if returncode else ""
@@ -362,6 +430,10 @@ def invoke(
             if runner_backend == "openclaw" and read_failure is not None:
                 if provider_rejection(response, error, read_failure(spec.name, run_id)):
                     failure_kind = PROVIDER_REJECTION
+            elif runner_backend == "opencode" and opencode_provider_failure(
+                response, error, completed.stdout
+            ):
+                failure_kind = PROVIDER_REJECTION
         if returncode == 0 and adapter is not None:
             completed_runtime = _runtime_call(adapter, "complete", {"run_id": run_id, "skill": skill, "args": args, "model_reply": response}, env)
             runtime_status = completed_runtime.get("status")

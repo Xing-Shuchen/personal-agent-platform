@@ -129,6 +129,31 @@ def test_failed_slot_is_retried_after_delay(tmp_path, monkeypatch):
     assert len(calls) == 2
 
 
+def test_opencode_provider_rejection_is_not_retried(tmp_path, monkeypatch):
+    make_platform(tmp_path, "17 18 * * *")
+    manifest = tmp_path / "agents/sample/agent.yaml"
+    manifest.write_text(manifest.read_text(encoding="utf-8").replace(
+        "        delivery: local", "        delivery: local\n        runner: opencode\n        model: opencode/muse-spark-1.2-contributor-free"
+    ), encoding="utf-8")
+    now = datetime(2026, 8, 31, 18, 17, tzinfo=CST)
+    monkeypatch.setattr("pap.scheduler._now", lambda: now)
+    monkeypatch.setattr("pap.scheduler.JITTER_MAX_MINUTES", 0)
+    calls = []
+
+    def region_blocked(command, **kwargs):
+        calls.append(command)
+        return subprocess.CompletedProcess(
+            command, 1,
+            '{"type":"error","error":{"data":{"responseBody":"RegionError"}}}', "",
+        )
+
+    first = tick(tmp_path, now=now, command_runner=region_blocked)
+    retry = tick(tmp_path, now=now + timedelta(minutes=6), command_runner=region_blocked)
+    assert first[0].run.failure_kind == "provider_rejection"
+    assert retry == []
+    assert len(calls) == 1
+
+
 def test_intentional_silence_marker_shapes():
     from pap.scheduler import _intentional_silence
 

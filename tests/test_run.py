@@ -4,7 +4,7 @@ import json
 import subprocess
 from pathlib import Path
 
-from pap.run import OPENCLAW_EMPTY_FINALIZATION_FALLBACK, _prompt, invoke, is_retryable, runs
+from pap.run import OPENCLAW_EMPTY_FINALIZATION_FALLBACK, _opencode_output, _prompt, invoke, is_retryable, runs
 from pap.spec import load_spec
 
 
@@ -93,6 +93,52 @@ def test_invoke_job_model_overrides_agent_model(tmp_path):
     record = runs(log)[0]
     assert record["model"] == "deepseek/deepseek-v4-pro"
     assert record["provider"] == "deepseek"
+
+
+def test_opencode_invocation_uses_stdin_json_and_runner_usage(tmp_path, monkeypatch):
+    spec = load_spec(make_agent(tmp_path))
+    log = tmp_path / "runs.jsonl"
+    seen = {}
+    monkeypatch.setenv("PAP_OPENCODE_BIN", "/opt/opencode")
+
+    def fake_runner(command, **kwargs):
+        seen.update(command=command, cwd=kwargs["cwd"], input=kwargs["input"])
+        stdout = "\n".join((
+            '{"type":"text","part":{"text":"first "}}',
+            '{"type":"text","part":{"text":"second"}}',
+            '{"type":"step_finish","part":{"tokens":{"input":12,"output":3},"cost":0}}',
+            '{"type":"step_finish","part":{"tokens":{"input":4,"output":2},"cost":0}}',
+        ))
+        return subprocess.CompletedProcess(command, 0, stdout, "")
+
+    result = invoke(
+        root=tmp_path, spec=spec, skill="sample-skill", run_log=log,
+        trigger={"type": "manual-job", "job_id": "sample-job"},
+        runner_backend="opencode", model="opencode/mimo-v2.5-free", command_runner=fake_runner,
+    )
+    assert result.response == "first second"
+    assert seen["command"] == [
+        "/opt/opencode", "run", "--pure", "--format", "json", "--title", "sample/sample-job",
+        "--model", "opencode/mimo-v2.5-free",
+    ]
+    assert seen["cwd"] == tmp_path.resolve()
+    assert "Run the 'sample-skill' skill exactly as written." in seen["input"]
+    record = runs(log)[0]
+    assert record["runner"] == "opencode"
+    assert record["model"] == "opencode/mimo-v2.5-free"
+    assert record["provider"] == "opencode"
+    assert (record["input_tokens"], record["output_tokens"], record["cost"]) == (16, 5, 0)
+    assert record["usage"]["model"]["source"] == "opencode.run"
+
+
+def test_opencode_json_event_parser_accepts_cli_event_shape():
+    response, usage = _opencode_output(
+        '{"type":"text","part":{"text":"PICKLE"}}\n'
+        '{"type":"text","part":{"text":"_OK"}}\n'
+        '{"type":"step_finish","part":{"tokens":{"input":213,"output":6},"cost":0}}\n'
+    )
+    assert response == "PICKLE_OK"
+    assert usage == {"input_tokens": 213, "output_tokens": 6, "cost": 0, "source": "opencode.run"}
 
 
 def test_invoke_removes_message_file_when_runner_fails(tmp_path):
@@ -478,3 +524,20 @@ def test_transport_trouble_stays_retryable(tmp_path):
     )
     assert result.failure_kind == "runner"
     assert runs(log)[0]["retryable"] is True
+
+
+def test_opencode_permanent_provider_failure_is_not_retryable(tmp_path):
+    spec = load_spec(make_agent(tmp_path))
+    log = tmp_path / "runs.jsonl"
+    result = invoke(
+        root=tmp_path, spec=spec, skill="sample-skill", run_log=log,
+        runner_backend="opencode", model="opencode/muse-spark-1.2-contributor-free",
+        command_runner=lambda command, **kw: subprocess.CompletedProcess(
+            command, 1,
+            '{"type":"error","error":{"data":{"responseBody":"RegionError: This model is not available in your country"}}}',
+            "",
+        ),
+    )
+    assert result.status == "failed"
+    assert result.failure_kind == "provider_rejection"
+    assert runs(log)[0]["retryable"] is False

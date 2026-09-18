@@ -184,8 +184,8 @@ def load_spec(path: Path) -> AgentSpec:
                 ):
                     raise _err(path, f"{where}.model: must be a non-empty string")
                 job_runner = raw.get("runner", "openclaw")
-                if job_runner not in ("openclaw", "codex", "command"):
-                    raise _err(path, f"{where}.runner: must be 'openclaw', 'codex', or 'command'")
+                if job_runner not in ("openclaw", "codex", "opencode", "command"):
+                    raise _err(path, f"{where}.runner: must be 'openclaw', 'codex', 'opencode', or 'command'")
                 command = raw.get("command")
                 if job_runner == "command":
                     if not isinstance(command, list) or not command or not all(
@@ -198,6 +198,15 @@ def load_spec(path: Path) -> AgentSpec:
                         raise _err(path, f"{where}.model: cannot be set with runner 'command'")
                 elif command is not None:
                     raise _err(path, f"{where}.command: can only be set with runner 'command'")
+                if job_runner == "opencode":
+                    # OpenCode's CLI selection is provider/model; do not let an
+                    # ambiguous agent-level default silently select a model.
+                    if not isinstance(job_model, str) or job_model.count("/") != 1 or any(
+                        not part.strip() for part in job_model.split("/", 1)
+                    ):
+                        raise _err(path, f"{where}.model: required for runner 'opencode' and must be '<provider>/<model>'")
+                    # ``attach_to_session`` is OpenClaw-specific and is ignored
+                    # by OpenCode's isolated one-shot ``run`` invocation.
                 jobs.append(
                     ProactiveJob(
                         name=jname,

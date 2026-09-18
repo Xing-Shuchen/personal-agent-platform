@@ -77,6 +77,29 @@ def test_job_codex_runner(tmp_path: Path):
     assert spec.jobs[0].runner == "codex"
 
 
+def test_job_opencode_runner_requires_a_provider_model(tmp_path: Path):
+    cases = [
+        ("            runner: opencode", "required for runner"),
+        ("            runner: opencode\n            model: mimo-v2.5-free", "<provider>/<model>"),
+        ("            runner: opencode\n            model: opencode/", "<provider>/<model>"),
+        ("            runner: opencode\n            model: opencode/mimo-v2.5-free\n            command: [tool]", "only be set"),
+    ]
+    for i, (replacement, message) in enumerate(cases):
+        path = write_agent(tmp_path / str(i), "test-agent", VALID.replace(
+            "            skill: test-skill", "            skill: test-skill\n" + replacement
+        ))
+        with pytest.raises(SpecError, match=message):
+            load_spec(path)
+
+    path = write_agent(tmp_path / "valid-opencode", "test-agent", VALID.replace(
+        "            skill: test-skill",
+        "            skill: test-skill\n            runner: opencode\n            model: opencode/mimo-v2.5-free",
+    ))
+    job = load_spec(path).jobs[0]
+    assert job.runner == "opencode"
+    assert job.model == "opencode/mimo-v2.5-free"
+
+
 def test_command_runner_validation_and_loading(tmp_path: Path):
     command = "            runner: command\n            command: [python3, -c, 'print(1)']"
     cases = [
