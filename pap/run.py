@@ -17,7 +17,7 @@ from typing import Any, Callable
 
 from .spec import AgentSpec
 from .state import append_jsonl, read_jsonl
-from .usage import probe_model_usage, session_key
+from .usage import probe_model_usage, session_failure, session_key
 
 DEFAULT_RUN_LOG = Path("var/state/runs.jsonl")
 
@@ -79,6 +79,29 @@ RETRYABLE_FAILURES = frozenset({"timeout", "runner"})
 
 def is_retryable(failure_kind: str) -> bool:
     return failure_kind in RETRYABLE_FAILURES
+
+
+#: A provider that refused the generated text refuses the same text again, so
+#: the refusal gets its own kind and never joins the retryable ``runner`` bucket
+#: reserved for transport trouble.  The markers are what the refusing provider
+#: actually said, read from the run's own transcript record; the malformed-400
+#: placeholder is a provider client error whose body OpenClaw will not replay,
+#: and re-sending the identical prompt fails the same way.
+PROVIDER_REJECTION = "provider_rejection"
+PROVIDER_REJECTION_MARKERS = (
+    "inappropriate content",
+    "content exists risk",
+    "data_inspection_failed",
+    "content_filter",
+    "malformed diagnostic json",
+)
+
+
+def provider_rejection(*texts: str | None) -> bool:
+    """True when the runner's own words name a provider refusal."""
+
+    haystack = " ".join(text for text in texts if text).lower()
+    return any(marker in haystack for marker in PROVIDER_REJECTION_MARKERS)
 
 
 def _model_provider(model: str | None) -> tuple[str | None, str | None]:
@@ -152,6 +175,7 @@ def invoke(
     runner_backend: str = "openclaw",
     command: list[str] | None = None,
     usage_probe: Callable[[str, str], dict[str, Any] | None] | None = None,
+    failure_probe: Callable[[str, str], str | None] | None = None,
 ) -> RunResult:
     """Invoke one installed-in-repo profile skill through its declared runner."""
     root = Path(root).resolve()
@@ -202,6 +226,11 @@ def invoke(
     # hermetic nor attributable, so such a caller gets no usage unless it asks
     # for a probe explicitly.
     probe = usage_probe if usage_probe is not None else (probe_model_usage if command_runner is None else None)
+    # The refusal is read from the runner's own store, which only the production
+    # path may touch; a caller substituting its own runner gets no such read.
+    read_failure = failure_probe if failure_probe is not None else (
+        session_failure if command_runner is None else None
+    )
     runner = command_runner or subprocess.run
     skill_text = ""
     if runner_backend != "command":
@@ -298,7 +327,11 @@ def invoke(
                 "--thinking", os.environ.get("PAP_OPENCLAW_THINKING", "low"),
                 "--timeout", str(timeout),
             ]
-            if effective_model:
+            # An agent whose model policy is the configured OpenClaw route must
+            # not be pinned with --model: that flag is a strict one-off
+            # selection, and pinning it skips the fallback chain the route was
+            # configured with (§35 keeps the primary in the spec).
+            if effective_model and not spec.model_fallback:
                 invocation += ["--model", effective_model]
         else:
             raise ValueError(f"unsupported runner backend: {runner_backend}")
@@ -322,8 +355,13 @@ def invoke(
         error = completed.stderr.strip() if returncode else ""
         if returncode:
             # The model runner itself failed: a provider or transport problem is
-            # the usual cause, and §34 names those as retryable.
+            # the usual cause, and §34 names those as retryable.  A provider that
+            # refused the text is not transport trouble, so the run's own record
+            # is read before settling for the retryable default.
             failure_kind = "command" if runner_backend == "command" else "runner"
+            if runner_backend == "openclaw" and read_failure is not None:
+                if provider_rejection(response, error, read_failure(spec.name, run_id)):
+                    failure_kind = PROVIDER_REJECTION
         if returncode == 0 and adapter is not None:
             completed_runtime = _runtime_call(adapter, "complete", {"run_id": run_id, "skill": skill, "args": args, "model_reply": response}, env)
             runtime_status = completed_runtime.get("status")

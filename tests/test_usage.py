@@ -12,6 +12,7 @@ from pathlib import Path
 
 from pap.usage import (
     probe_model_usage,
+    session_failure,
     session_key,
     session_usage,
     trajectory_usage,
@@ -263,3 +264,72 @@ def test_nothing_readable_is_no_usage_at_all(tmp_path):
     assert probe_model_usage(
         "personal-historian", RUN, command_runner=unavailable, state_dir=tmp_path,
     ) is None
+
+
+# --- the run's terminal provider failure, read from its own transcript --------
+
+WH_RUN = "run_20260918_000701_bc96f2"
+WH_SESSION = session_key("world-historian", WH_RUN)
+
+
+def write_transcript(state_dir: Path, events, *, agent="world-historian", session=WH_SESSION) -> Path:
+    """Build the runner's session + transcript store with the observed schema."""
+
+    path = state_dir / "agents" / agent / "agent" / "openclaw-agent.sqlite"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    connection = sqlite3.connect(path)
+    connection.execute(
+        "CREATE TABLE session_nodes (session_key TEXT PRIMARY KEY, current_session_id TEXT NOT NULL)"
+    )
+    connection.execute(
+        """CREATE TABLE transcript_events (
+             session_id TEXT NOT NULL,
+             seq INTEGER NOT NULL,
+             event_json TEXT NOT NULL,
+             PRIMARY KEY (session_id, seq)
+           )"""
+    )
+    connection.execute("INSERT INTO session_nodes VALUES (?, ?)", (session, "d6294eb2"))
+    for index, event in enumerate(events):
+        connection.execute(
+            "INSERT INTO transcript_events VALUES (?, ?, ?)",
+            ("d6294eb2", index, json.dumps(event)),
+        )
+    connection.commit()
+    connection.close()
+    return path
+
+
+def test_a_provider_refusal_is_read_from_the_run_transcript(tmp_path):
+    write_transcript(
+        tmp_path,
+        [
+            {"type": "message", "message": {"role": "toolResult", "content": [{"type": "text", "text": "ok"}]}},
+            {"type": "message", "message": {
+                "role": "assistant", "stopReason": "error",
+                "errorMessage": "Output data may contain inappropriate content.",
+            }},
+        ],
+    )
+    assert session_failure("world-historian", WH_RUN, state_dir=tmp_path) == (
+        "Output data may contain inappropriate content."
+    )
+
+
+def test_a_settled_turn_reports_no_failure(tmp_path):
+    write_transcript(
+        tmp_path,
+        [{"type": "message", "message": {"role": "assistant", "stopReason": "stop"}}],
+    )
+    assert session_failure("world-historian", WH_RUN, state_dir=tmp_path) is None
+
+
+def test_another_runs_session_key_is_not_this_runs_failure(tmp_path):
+    write_transcript(tmp_path, [{"type": "message", "message": {
+        "role": "assistant", "stopReason": "error", "errorMessage": "Output data may contain inappropriate content.",
+    }}])
+    assert session_failure("world-historian", "run_20260918_999999_zzzzzz", state_dir=tmp_path) is None
+
+
+def test_an_unreadable_store_is_no_failure_reading_at_all(tmp_path):
+    assert session_failure("world-historian", WH_RUN, state_dir=tmp_path / "absent") is None

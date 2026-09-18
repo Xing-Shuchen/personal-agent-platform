@@ -4,7 +4,7 @@ import json
 import subprocess
 from pathlib import Path
 
-from pap.run import OPENCLAW_EMPTY_FINALIZATION_FALLBACK, _prompt, invoke, runs
+from pap.run import OPENCLAW_EMPTY_FINALIZATION_FALLBACK, _prompt, invoke, is_retryable, runs
 from pap.spec import load_spec
 
 
@@ -408,3 +408,73 @@ def test_command_failure_is_not_retryable(tmp_path):
     assert result.status == "failed"
     assert result.failure_kind == "command"
     assert runs(tmp_path / "runs.jsonl")[0]["retryable"] is False
+
+
+def test_an_agent_on_the_configured_route_omits_the_model_override(tmp_path):
+    """Pinning --model is a strict selection and would skip the fallback chain."""
+
+    manifest = make_agent(tmp_path)
+    manifest.write_text(
+        manifest.read_text(encoding="utf-8") + "  model_fallback: true\n",
+        encoding="utf-8",
+    )
+    spec = load_spec(manifest)
+    assert spec.model_fallback is True
+    captured = {}
+
+    def fake_runner(command, **kwargs):
+        captured["command"] = command
+        return subprocess.CompletedProcess(command, 0, stdout="ok\n", stderr="")
+
+    invoke(root=tmp_path, spec=spec, skill="sample-skill", run_log=tmp_path / "runs.jsonl",
+           command_runner=fake_runner)
+    assert "--model" not in captured["command"]
+    record = runs(tmp_path / "runs.jsonl")[0]
+    # The run still records the model the spec asked for.
+    assert record["model"] == "deepseek/deepseek-flash"
+
+
+def test_a_pinned_agent_still_receives_its_model(tmp_path):
+    spec = load_spec(make_agent(tmp_path))
+    assert spec.model_fallback is False
+    captured = {}
+
+    def fake_runner(command, **kwargs):
+        captured["command"] = command
+        return subprocess.CompletedProcess(command, 0, stdout="ok\n", stderr="")
+
+    invoke(root=tmp_path, spec=spec, skill="sample-skill", run_log=tmp_path / "runs.jsonl",
+           command_runner=fake_runner)
+    assert captured["command"][-2:] == ["--model", "deepseek/deepseek-flash"]
+
+
+def test_a_provider_refusal_is_recorded_as_non_retryable(tmp_path):
+    """§34: the same text fails the same way, so a refusal is never blind-retried."""
+
+    spec = load_spec(make_agent(tmp_path))
+    log = tmp_path / "runs.jsonl"
+    result = invoke(
+        root=tmp_path, spec=spec, skill="sample-skill", run_log=log,
+        command_runner=lambda command, **kw: subprocess.CompletedProcess(
+            command, 1, stdout="\u26a0\ufe0f call failed.", stderr=""
+        ),
+        failure_probe=lambda agent_id, run_id: "Output data may contain inappropriate content.",
+    )
+    assert result.status == "failed"
+    assert result.failure_kind == "provider_rejection"
+    assert is_retryable(result.failure_kind) is False
+    assert runs(log)[0]["retryable"] is False
+
+
+def test_transport_trouble_stays_retryable(tmp_path):
+    spec = load_spec(make_agent(tmp_path))
+    log = tmp_path / "runs.jsonl"
+    result = invoke(
+        root=tmp_path, spec=spec, skill="sample-skill", run_log=log,
+        command_runner=lambda command, **kw: subprocess.CompletedProcess(
+            command, 1, stdout="", stderr="Connection error."
+        ),
+        failure_probe=lambda agent_id, run_id: "LLM request timed out.",
+    )
+    assert result.failure_kind == "runner"
+    assert runs(log)[0]["retryable"] is True

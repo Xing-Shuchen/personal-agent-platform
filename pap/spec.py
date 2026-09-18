@@ -52,6 +52,11 @@ class AgentSpec:
     jobs: list[ProactiveJob] = field(default_factory=list)
     private_state: list[str] = field(default_factory=list)
     model: str | None = None
+    #: §35: PAP owns model policy, but a route may be configured with a fallback
+    #: chain in OpenClaw itself.  Pinning the model on the command line is a
+    #: strict one-off selection that skips that chain, so an agent that wants the
+    #: configured chain opts in here and runs without the override.
+    model_fallback: bool = False
     source_path: Path | None = None
 
 
@@ -220,6 +225,10 @@ def load_spec(path: Path) -> AgentSpec:
     if model is not None and (not isinstance(model, str) or not model.strip()):
         raise _err(path, "spec.model: must be a non-empty string in 'provider/model' form")
 
+    model_fallback = spec.get("model_fallback", False)
+    if not isinstance(model_fallback, bool):
+        raise _err(path, "spec.model_fallback: must be a boolean")
+
     return AgentSpec(
         name=name,
         description=description,
@@ -230,6 +239,7 @@ def load_spec(path: Path) -> AgentSpec:
         jobs=jobs,
         private_state=list(private_state),
         model=model,
+        model_fallback=model_fallback,
         source_path=path,
     )
 

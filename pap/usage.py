@@ -6,7 +6,7 @@ model policy (§35) but it does not call the provider itself: the OpenClaw turn
 does.  So PAP can only record what the runner says afterwards, and this module
 is the whole of how it asks.
 
-Two read-only surfaces are used, both *after* the turn, both attributable to
+Three read-only surfaces are used, all *after* the turn, all attributable to
 exactly one run because PAP chooses the session key:
 
 ``openclaw sessions --agent <id> --json``
@@ -20,6 +20,12 @@ the agent's trajectory store
     ``trajectory_runtime_events`` rows hold the run's completed model call
     including the provider-reported cost.  This is the runner's own state, read
     read-only and only for the run's own session.
+
+the agent's transcript store
+    the same SQLite file, whose ``session_nodes``/``transcript_events`` rows hold
+the turn's terminal message.  A provider that refused the generated text is
+named there and nowhere else, so PAP reads it to classify the failure rather
+than guessing from the CLI's rendered copy.
 
 Everything here is best effort, and deliberately so: usage that cannot be read
 is recorded as *absent*, never as zero.  A run whose usage is unobservable is
@@ -41,6 +47,10 @@ from typing import Any, Callable, Mapping
 #: Sessions are listed newest-first; a just-finished run is at the head, and the
 #: window only needs to be wide enough to survive concurrent runs.
 SESSION_SCAN_LIMIT = 50
+
+#: The terminal event is the last thing the runner wrote for the session, so a
+#: short window reaches it without reading a whole transcript.
+TRANSCRIPT_SCAN_LIMIT = 20
 
 _PROBE_TIMEOUT_SECONDS = 30
 
@@ -168,6 +178,53 @@ def trajectory_usage(agent_id: str, run_id: str, *, state_dir: Path | None = Non
             "cost": _amount(cost.get("total")) if isinstance(cost, Mapping) else None,
         }
     return result
+
+
+def session_failure(agent_id: str, run_id: str, *, state_dir: Path | None = None) -> str | None:
+    """Read the provider failure that ended this run's turn, or ``None``.
+
+    §34 only retries *transient* trouble, so a provider that refused the
+    generated text has to be named before the scheduler can tell it apart from
+    transport trouble.  The refusal is the runner's own record of the turn,
+    read read-only and only for this run's session.
+    """
+
+    path = (state_dir or _state_dir()) / "agents" / agent_id / "agent" / "openclaw-agent.sqlite"
+    if not path.is_file():
+        return None
+    wanted = session_key(agent_id, run_id)
+    try:
+        connection = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    except sqlite3.Error:
+        return None
+    try:
+        row = connection.execute(
+            "select current_session_id from session_nodes where session_key = ?",
+            (wanted,),
+        ).fetchone()
+        if not row or not isinstance(row[0], str):
+            return None
+        events = connection.execute(
+            "select event_json from transcript_events where session_id = ? order by seq desc limit ?",
+            (row[0], TRANSCRIPT_SCAN_LIMIT),
+        ).fetchall()
+    except sqlite3.Error:
+        return None
+    finally:
+        connection.close()
+
+    for (raw,) in events:
+        try:
+            event = json.loads(raw)
+        except (TypeError, ValueError):
+            continue
+        message = event.get("message") if isinstance(event, Mapping) else None
+        if not isinstance(message, Mapping) or message.get("stopReason") != "error":
+            continue
+        detail = message.get("errorMessage")
+        if isinstance(detail, str) and detail.strip():
+            return detail
+    return None
 
 
 def probe_model_usage(
