@@ -308,11 +308,12 @@ def test_a_provider_refusal_is_read_from_the_run_transcript(tmp_path):
             {"type": "message", "message": {
                 "role": "assistant", "stopReason": "error",
                 "errorMessage": "Output data may contain inappropriate content.",
+                "errorCode": "data_inspection_failed",
             }},
         ],
     )
     assert session_failure("world-historian", WH_RUN, state_dir=tmp_path) == (
-        "Output data may contain inappropriate content."
+        "data_inspection_failed: Output data may contain inappropriate content."
     )
 
 

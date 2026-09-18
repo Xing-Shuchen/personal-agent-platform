@@ -509,7 +509,24 @@ def test_a_provider_refusal_is_recorded_as_non_retryable(tmp_path):
     assert result.status == "failed"
     assert result.failure_kind == "provider_rejection"
     assert is_retryable(result.failure_kind) is False
-    assert runs(log)[0]["retryable"] is False
+    record = runs(log)[0]
+    assert record["error"] == "Output data may contain inappropriate content."
+    assert record["retryable"] is False
+
+
+def test_an_openclaw_failure_without_a_recorded_reason_keeps_an_empty_error(tmp_path):
+    spec = load_spec(make_agent(tmp_path))
+    log = tmp_path / "runs.jsonl"
+    result = invoke(
+        root=tmp_path, spec=spec, skill="sample-skill", run_log=log,
+        command_runner=lambda command, **kw: subprocess.CompletedProcess(
+            command, 1, stdout="", stderr=""
+        ),
+        failure_probe=lambda agent_id, run_id: None,
+    )
+    assert result.error == ""
+    assert result.failure_kind == "runner"
+    assert runs(log)[0]["error"] == ""
 
 
 def test_transport_trouble_stays_retryable(tmp_path):

@@ -223,7 +223,10 @@ def session_failure(agent_id: str, run_id: str, *, state_dir: Path | None = None
             continue
         detail = message.get("errorMessage")
         if isinstance(detail, str) and detail.strip():
-            return detail
+            code = message.get("errorCode")
+            if isinstance(code, str) and code.strip():
+                return f"{code.strip()}: {detail.strip()}"
+            return detail.strip()
     return None
 
 

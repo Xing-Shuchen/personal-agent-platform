@@ -428,7 +428,10 @@ def invoke(
             # is read before settling for the retryable default.
             failure_kind = "command" if runner_backend == "command" else "runner"
             if runner_backend == "openclaw" and read_failure is not None:
-                if provider_rejection(response, error, read_failure(spec.name, run_id)):
+                recorded_failure = read_failure(spec.name, run_id)
+                if not error and recorded_failure:
+                    error = recorded_failure
+                if provider_rejection(response, error, recorded_failure):
                     failure_kind = PROVIDER_REJECTION
             elif runner_backend == "opencode" and opencode_provider_failure(
                 response, error, completed.stdout
