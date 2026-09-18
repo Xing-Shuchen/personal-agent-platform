@@ -3,7 +3,8 @@
 Core contract: a file is written only when a committed bundle creates or
 modifies a thread; the file is a projection of the database; the reader's
 「手工批注」section survives re-sync; renames migrate the file and never
-delete a foreign file.
+delete a foreign file; a re-render that only moves ``updated:`` is a no-op
+(no mtime bump, no git diff).
 """
 
 import json
@@ -46,6 +47,17 @@ def sync(conn, tmp_path: Path, thread_ids: list[str]) -> tuple[Path, dict]:
     outcome = obsidian.sync_threads(
         snapshots, vault, tmp_path / "obsidian-index.json")
     return vault, outcome
+
+
+def quote_bundle() -> dict:
+    """capture_bundle plus a verbatim quote carrying its own 原文素材 slug."""
+    bundle = capture_bundle()
+    bundle["quotes"] = [{
+        "ref": "q1", "event_ref": "e1", "source_ref": "s1",
+        "speaker": "Example Spokesperson", "title": "Example statement",
+        "quote_text": "We changed it.", "slug": "example-statement",
+    }]
+    return bundle
 
 
 def only_file(vault: Path) -> Path:
@@ -184,6 +196,132 @@ def test_foreign_file_is_never_deleted_on_rename(tmp_path):
     names = {p.name for p in vault2.glob("*.md")}
     assert any(name.endswith(".md") and name != old_target.name for name in names)
     assert outcome["errors"] == []
+
+
+def test_resync_with_new_timestamp_leaves_file_untouched(tmp_path):
+    """A re-render that only moves ``updated:`` must not rewrite the file."""
+    conn = fresh(tmp_path)
+    result = db.store_bundle(conn, capture_bundle())
+    tid = result["refs"]["t1"]
+    vault = tmp_path / "vault" / "41 新闻及事件"
+    index = tmp_path / "obsidian-index.json"
+    snapshots = [db.thread_snapshot(conn, tid)]
+
+    first = obsidian.sync_threads(
+        snapshots, vault, index, synced_at="2026-09-15T09:00:00+08:00")
+    target = only_file(vault)
+    assert first["written"] == [str(target)]
+    assert first["unchanged"] == []
+    assert 'updated: "2026-09-15T09:00:00+08:00"' in target.read_text(encoding="utf-8")
+    before_bytes = target.read_bytes()
+    before_mtime = target.stat().st_mtime_ns
+
+    second = obsidian.sync_threads(
+        snapshots, vault, index, synced_at="2026-09-18T15:47:00+08:00")
+    assert second["written"] == []
+    assert second["unchanged"] == [str(target)]
+    assert second["errors"] == []
+    assert target.read_bytes() == before_bytes
+    assert target.stat().st_mtime_ns == before_mtime
+    # The file was skipped, so it still carries the earlier timestamp.
+    assert 'updated: "2026-09-18T15:47:00+08:00"' not in target.read_text(encoding="utf-8")
+
+
+def test_resync_skips_material_files_when_only_updated_differs(tmp_path):
+    """原文素材/<slug>.md obeys the same idempotence rule as thread notes."""
+    conn = fresh(tmp_path)
+    result = db.store_bundle(conn, quote_bundle())
+    tid = result["refs"]["t1"]
+    vault = tmp_path / "vault" / "41 新闻及事件"
+    index = tmp_path / "obsidian-index.json"
+    snapshots = [db.thread_snapshot(conn, tid)]
+
+    first = obsidian.sync_threads(
+        snapshots, vault, index, synced_at="2026-09-15T09:00:00+08:00")
+    material = vault / "原文素材" / "example-statement.md"
+    assert material.exists()
+    assert "We changed it." in material.read_text(encoding="utf-8")
+    before_bytes = material.read_bytes()
+    before_mtime = material.stat().st_mtime_ns
+
+    second = obsidian.sync_threads(
+        snapshots, vault, index, synced_at="2026-09-18T15:47:00+08:00")
+    assert str(material) in second["unchanged"]
+    assert material.read_bytes() == before_bytes
+    assert material.stat().st_mtime_ns == before_mtime
+    # Materials are reported as skipped, never as written (unchanged contract).
+    assert str(material) not in first["written"] + second["written"]
+
+
+def test_resync_writes_again_when_content_changes(tmp_path):
+    """Idempotence covers ``updated:`` only; real changes still land."""
+    conn = fresh(tmp_path)
+    result = db.store_bundle(conn, capture_bundle())
+    tid = result["refs"]["t1"]
+    vault = tmp_path / "vault" / "41 新闻及事件"
+    index = tmp_path / "obsidian-index.json"
+
+    obsidian.sync_threads([db.thread_snapshot(conn, tid)], vault, index,
+                          synced_at="2026-09-15T09:00:00+08:00")
+    target = only_file(vault)
+    before_text = target.read_text(encoding="utf-8")
+    before_mtime = target.stat().st_mtime_ns
+
+    # A new event changes the projected body.
+    db.store_bundle(conn, {
+        "events": [{"ref": "e2", "summary": "Example moved on",
+                    "reported_at": "2026-09-18T08:00:00+08:00",
+                    "observed_at": "2026-09-18T08:30:00+08:00",
+                    "thread_refs": [tid]}],
+    })
+    outcome = obsidian.sync_threads([db.thread_snapshot(conn, tid)], vault, index,
+                                    synced_at="2026-09-18T15:47:00+08:00")
+    assert outcome["written"] == [str(target)]
+    assert outcome["unchanged"] == []
+    after_text = target.read_text(encoding="utf-8")
+    assert after_text != before_text
+    assert "Example moved on" in after_text
+    assert 'updated: "2026-09-18T15:47:00+08:00"' in after_text
+    assert target.stat().st_mtime_ns >= before_mtime
+
+
+def test_manual_annotation_does_not_defeat_idempotence(tmp_path):
+    """Reader notes are carried through, and a no-op re-sync still skips."""
+    conn = fresh(tmp_path)
+    result = db.store_bundle(conn, capture_bundle())
+    tid = result["refs"]["t1"]
+    vault = tmp_path / "vault" / "41 新闻及事件"
+    index = tmp_path / "obsidian-index.json"
+    snapshots = [db.thread_snapshot(conn, tid)]
+
+    obsidian.sync_threads(snapshots, vault, index,
+                          synced_at="2026-09-15T09:00:00+08:00")
+    target = only_file(vault)
+    text = target.read_text(encoding="utf-8")
+    target.write_text(
+        text.replace("## 手工批注\n\n（无）", "## 手工批注\n\n我记得这条线。"),
+        encoding="utf-8")
+    annotated = target.read_bytes()
+    annotated_mtime = target.stat().st_mtime_ns
+
+    second = obsidian.sync_threads(snapshots, vault, index,
+                                   synced_at="2026-09-18T15:47:00+08:00")
+    assert second["written"] == []
+    assert second["unchanged"] == [str(target)]
+    assert target.read_bytes() == annotated
+    assert target.stat().st_mtime_ns == annotated_mtime
+    assert "我记得这条线。" in target.read_text(encoding="utf-8")
+
+
+def test_normalize_updated_touches_only_the_frontmatter_line():
+    """Body text that mentions ``updated`` must still be compared verbatim."""
+    front_a = "---\nupdated: \"2026-09-15T09:00:00+08:00\"\n---\n\nupdated: keep me\n"
+    front_b = "---\nupdated: \"2026-09-18T15:47:00+08:00\"\n---\n\nupdated: keep me\n"
+    assert obsidian._normalize_updated(front_a) == obsidian._normalize_updated(front_b)
+    assert "updated: keep me" in obsidian._normalize_updated(front_a)
+    body_a = "---\nupdated: x\n---\n\nupdated: keep me\n"
+    body_b = "---\nupdated: x\n---\n\nupdated: changed\n"
+    assert obsidian._normalize_updated(body_a) != obsidian._normalize_updated(body_b)
 
 
 def test_empty_vault_dir_env_disables_sync(tmp_path, monkeypatch):

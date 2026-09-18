@@ -10,6 +10,11 @@ Manual notes: readers may write personal annotations under the final
 「手工批注」section; that section is carried over on re-sync. Thread renames
 migrate the file (the old file is deleted only when its frontmatter
 ``thread_id`` matches, never a foreign file).
+
+Re-sync is idempotent: when the rendered text differs from the file on disk
+only in the ``updated:`` frontmatter line, the file is left alone (no mtime
+bump, no git diff) and the path is reported under ``unchanged`` instead of
+``written``. ``原文素材/<slug>.md`` follows the same rule.
 """
 
 from __future__ import annotations
@@ -396,6 +401,38 @@ def _atomic_write(path: Path, text: str) -> None:
     os.replace(tmp, path)
 
 
+_UPDATED_LINE = re.compile(r"^updated: .*$", re.MULTILINE)
+_UPDATED_PLACEHOLDER = "updated: <ignored>"
+
+
+def _normalize_updated(text: str) -> str:
+    """Blank the frontmatter ``updated:`` value so two renders can be compared.
+
+    Exactly the first ``updated:`` line is replaced (``count=1``); every other
+    byte, including body text that merely mentions the word, is kept verbatim.
+    """
+    return _UPDATED_LINE.sub(_UPDATED_PLACEHOLDER, text, count=1)
+
+
+def _write_if_changed(path: Path, text: str) -> bool:
+    """Write ``text`` unless the file already holds it, ignoring ``updated:``.
+
+    Returns ``True`` when the file was (re)written. An unchanged file is left
+    untouched so a re-render that only moves the ``updated:`` timestamp does
+    not bump the mtime or create a git diff.
+    """
+    if path.exists():
+        try:
+            existing = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            existing = None
+        if existing is not None and \
+                _normalize_updated(existing) == _normalize_updated(text):
+            return False
+    _atomic_write(path, text)
+    return True
+
+
 def _load_index(index_path: Path) -> dict[str, Any]:
     if not index_path.exists():
         return {"version": _INDEX_VERSION, "threads": {}}
@@ -422,7 +459,8 @@ def sync_threads(
 ) -> dict[str, list[str]]:
     """Write/refresh one Obsidian file per snapshot. Never raises."""
     synced_at = synced_at or _now()
-    outcome: dict[str, list[str]] = {"written": [], "removed": [], "errors": []}
+    outcome: dict[str, list[str]] = {
+        "written": [], "removed": [], "errors": [], "unchanged": []}
     if not snapshots:
         return outcome
     index = _load_index(index_path)
@@ -474,7 +512,8 @@ def sync_threads(
                     str(snapshot_quote.get("quote_text") or "").rstrip(),
                     "",
                 ]
-                _atomic_write(mat_path, "\n".join(mat_lines))
+                if not _write_if_changed(mat_path, "\n".join(mat_lines)):
+                    outcome["unchanged"].append(str(mat_path))
             previous = str(threads.get(tid) or "")
             prev_dir, prev_name = _split_rel(previous) if previous else ("", "")
             dir_key = (CLOSED_DIR
@@ -516,8 +555,10 @@ def sync_threads(
                         f"(possible remotely-save revert) — please verify"
                     )
             target.parent.mkdir(parents=True, exist_ok=True)
-            _atomic_write(target, render_snapshot(snapshot, synced_at, notes))
-            outcome["written"].append(str(target))
+            if _write_if_changed(target, render_snapshot(snapshot, synced_at, notes)):
+                outcome["written"].append(str(target))
+            else:
+                outcome["unchanged"].append(str(target))
 
             if previous and previous != rel:
                 old_path = vault / previous
