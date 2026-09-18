@@ -16,6 +16,7 @@ from . import gate as gate_mod
 from . import run as run_mod
 from . import artifact as artifact_mod
 from . import scheduler as scheduler_mod
+from . import cognition as cognition_mod
 from .state import load_json
 
 
@@ -64,6 +65,28 @@ def _cmd_validate(args: argparse.Namespace) -> int:
                   f"proactive={s.proactive_enabled} jobs=[{jobs}]")
         print(f"{len(specs)} agent spec(s) valid.")
     return 0
+
+
+def _cmd_cognition(args: argparse.Namespace) -> int:
+    argv: list[str] = []
+    if args.vault is not None:
+        argv += ["--vault", str(args.vault)]
+    if args.db is not None:
+        argv += ["--db", str(args.db)]
+    argv.append(args.cognition_command)
+    if args.cognition_command == "index":
+        if args.dry_run: argv.append("--dry-run")
+        if args.full: argv.append("--full")
+    if args.cognition_command == "evidence":
+        argv += [args.evidence_id, "--excerpt", str(args.excerpt)]
+    if args.cognition_command == "search":
+        argv += [args.query, "--limit", str(args.limit)]
+        if args.source_type: argv += ["--source-type", args.source_type]
+        if args.voice: argv += ["--voice", args.voice]
+    if args.cognition_command == "shadow":
+        argv += [args.kind]
+        if args.run_id: argv += ["--run-id", args.run_id]
+    return cognition_mod.main(argv)
 
 
 def _cmd_agents(args: argparse.Namespace) -> int:
@@ -340,6 +363,27 @@ def build_parser() -> argparse.ArgumentParser:
     p_status.add_argument("--root", default=".")
     p_status.add_argument("--state", type=Path, default=scheduler_mod.DEFAULT_SCHEDULER_STATE)
     p_status.set_defaults(func=_cmd_status)
+
+    p_cognition = sub.add_parser("cognition", help="local derived Vault evidence index")
+    p_cognition.add_argument("--vault", type=Path)
+    p_cognition.add_argument("--db", type=Path)
+    cognition_sub = p_cognition.add_subparsers(dest="cognition_command", required=True)
+    cognition_sub.add_parser("status")
+    p_cognition_index = cognition_sub.add_parser("index")
+    p_cognition_index.add_argument("--dry-run", action="store_true")
+    p_cognition_index.add_argument("--full", action="store_true")
+    p_cognition_evidence = cognition_sub.add_parser("evidence")
+    p_cognition_evidence.add_argument("evidence_id")
+    p_cognition_evidence.add_argument("--excerpt", type=int, default=1200)
+    p_cognition_search = cognition_sub.add_parser("search")
+    p_cognition_search.add_argument("query")
+    p_cognition_search.add_argument("--limit", type=int, default=10)
+    p_cognition_search.add_argument("--source-type")
+    p_cognition_search.add_argument("--voice")
+    p_cognition_shadow = cognition_sub.add_parser("shadow", help="build a non-production ContextPack")
+    p_cognition_shadow.add_argument("kind", choices=("serendipity", "intelligence"))
+    p_cognition_shadow.add_argument("--run-id")
+    p_cognition.set_defaults(func=_cmd_cognition)
 
     p_artifact = sub.add_parser("artifact", help="append-only cross-agent artifacts")
     artifact_sub = p_artifact.add_subparsers(dest="command", required=True)
