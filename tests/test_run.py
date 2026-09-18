@@ -480,6 +480,26 @@ def test_an_agent_on_the_configured_route_omits_the_model_override(tmp_path):
     assert record["model"] == "deepseek/deepseek-flash"
 
 
+def test_a_job_model_pins_an_agent_with_a_fallback_route(tmp_path):
+    """An explicit job selection takes precedence over the route's fallback chain."""
+
+    manifest = make_agent(tmp_path)
+    manifest.write_text(
+        manifest.read_text(encoding="utf-8") + "  model_fallback: true\n",
+        encoding="utf-8",
+    )
+    spec = load_spec(manifest)
+    captured = {}
+
+    def fake_runner(command, **kwargs):
+        captured["command"] = command
+        return subprocess.CompletedProcess(command, 0, stdout="ok\n", stderr="")
+
+    invoke(root=tmp_path, spec=spec, skill="sample-skill", run_log=tmp_path / "runs.jsonl",
+           command_runner=fake_runner, model="zai/glm-5.2")
+    assert captured["command"][-2:] == ["--model", "zai/glm-5.2"]
+
+
 def test_a_pinned_agent_still_receives_its_model(tmp_path):
     spec = load_spec(make_agent(tmp_path))
     assert spec.model_fallback is False

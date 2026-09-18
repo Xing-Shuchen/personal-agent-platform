@@ -391,11 +391,11 @@ def invoke(
                 "--thinking", os.environ.get("PAP_OPENCLAW_THINKING", "low"),
                 "--timeout", str(timeout),
             ]
-            # An agent whose model policy is the configured OpenClaw route must
-            # not be pinned with --model: that flag is a strict one-off
-            # selection, and pinning it skips the fallback chain the route was
-            # configured with (§35 keeps the primary in the spec).
-            if effective_model and not spec.model_fallback:
+            # A job-level model is an explicit strict selection and must be
+            # pinned. Otherwise, an agent configured to use its OpenClaw route
+            # fallback chain must not be pinned: --model would skip that chain
+            # (§35 keeps the primary in the spec).
+            if effective_model and (model is not None or not spec.model_fallback):
                 invocation += ["--model", effective_model]
         else:
             raise ValueError(f"unsupported runner backend: {runner_backend}")

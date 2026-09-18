@@ -50,6 +50,7 @@ spec:
       - name: world-follow-low
         schedule: "43 20 * * *"
         skill: news-follow
+        model: zai/glm-5.2
         args:
           priority: low
         attach_to_session: false

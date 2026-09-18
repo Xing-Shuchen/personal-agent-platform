@@ -116,8 +116,9 @@ def _cmd_jobs(args: argparse.Namespace) -> int:
             rendered_args = json.dumps(job.args, ensure_ascii=False, sort_keys=True)
             state = "enabled" if job.enabled else "disabled"
             runner = f"\trunner={job.runner}" if job.runner != "openclaw" else ""
+            model = f"\tmodel={job.model}" if job.model is not None else ""
             print(f"{spec.name}/{job.name}\t{job.schedule}\t{job.skill}\t"
-                  f"delivery={job.delivery}\t{state}\targs={rendered_args}{runner}")
+                  f"delivery={job.delivery}\t{state}\targs={rendered_args}{runner}{model}")
     return 0
 
 

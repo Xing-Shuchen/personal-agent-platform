@@ -43,6 +43,15 @@ def test_validate_invalid_spec_fails(tmp_path):
     assert "INVALID" in r.stderr
 
 
+def test_jobs_shows_job_model_overrides_only():
+    r = run(["jobs", "--root", str(REPO), "--agent", "world-historian"])
+    assert r.returncode == 0, r.stderr
+    lines = r.stdout.splitlines()
+    override = next(line for line in lines if line.startswith("world-historian/world-follow-low\t"))
+    assert override.endswith("\tmodel=zai/glm-5.2")
+    assert all("\tmodel=" not in line for line in lines if line != override)
+
+
 def test_gate_cli_allow_and_deny(tmp_path):
     db = tmp_path / "db.json"
     # priority 95 passes both daytime (>=70) and quiet-hours (>=90) bars.
