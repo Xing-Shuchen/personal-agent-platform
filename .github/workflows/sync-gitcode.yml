@@ -3,7 +3,7 @@ name: Sync Mirror from GitCode
 on:
   schedule:
     # 每 3 小时执行一次（UTC）
-    - cron: '0 */3 * * *'
+    - cron: '23 */3 * * *'
   workflow_dispatch:
 
 # GITHUB_TOKEN 需要写权限才能镜像推送（个人仓库下显式声明即生效）
