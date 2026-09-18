@@ -21,6 +21,7 @@ spec:
         enabled: true
         schedule: "10 1,7,13,19 * * *"
         skill: intelligence-brief
+        runtime: cognition
         attach_to_session: true
         delivery: user-home
   state:

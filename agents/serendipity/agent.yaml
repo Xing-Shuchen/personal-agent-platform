@@ -19,6 +19,7 @@ spec:
         enabled: true
         schedule: "15 2,8,14,20 * * *"
         skill: proactive-serendipity
+        runtime: cognition
         attach_to_session: true
         delivery: user-home
   state:
