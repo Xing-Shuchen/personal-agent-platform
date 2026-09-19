@@ -8,6 +8,7 @@ spec:
     name: wechat-archivist
     source: profile
   model: deepseek-wechat-archivist/deepseek-v4.1-flash
+  provider_rejection_fallback: deepseek/deepseek-flash
   capabilities:
     - local_state.write
   proactive:

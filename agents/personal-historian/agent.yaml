@@ -8,6 +8,7 @@ spec:
   # record an authoritative model/provider in artifact provenance (§21) and what
   # PAP reports in each RunRecord (§31), instead of both being unknown.
   model: qwen/deepseek-v4.1-flash
+  provider_rejection_fallback: deepseek/deepseek-flash
   profile:
     name: personal-historian
     source: profile

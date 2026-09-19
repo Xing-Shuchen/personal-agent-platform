@@ -57,6 +57,7 @@ class AgentSpec:
     #: strict one-off selection that skips that chain, so an agent that wants the
     #: configured chain opts in here and runs without the override.
     model_fallback: bool = False
+    provider_rejection_fallback: str | None = None
     source_path: Path | None = None
 
 
@@ -238,6 +239,14 @@ def load_spec(path: Path) -> AgentSpec:
     if not isinstance(model_fallback, bool):
         raise _err(path, "spec.model_fallback: must be a boolean")
 
+    provider_rejection_fallback = spec.get("provider_rejection_fallback")
+    if provider_rejection_fallback is not None and (
+        not isinstance(provider_rejection_fallback, str)
+        or provider_rejection_fallback.count("/") != 1
+        or any(not part.strip() for part in provider_rejection_fallback.split("/", 1))
+    ):
+        raise _err(path, "spec.provider_rejection_fallback: must be a non-empty string in 'provider/model' form")
+
     return AgentSpec(
         name=name,
         description=description,
@@ -249,6 +258,7 @@ def load_spec(path: Path) -> AgentSpec:
         private_state=list(private_state),
         model=model,
         model_fallback=model_fallback,
+        provider_rejection_fallback=provider_rejection_fallback,
         source_path=path,
     )
 

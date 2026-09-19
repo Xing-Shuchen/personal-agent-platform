@@ -268,6 +268,8 @@ def invoke(
     append_jsonl(run_log, started_record)
 
     usage: dict[str, Any] = {}
+    fallback_from: str | None = None
+    refusal_error = ""
     failure_kind = ""
     response = ""
     error = ""
@@ -433,10 +435,57 @@ def invoke(
                     error = recorded_failure
                 if provider_rejection(response, error, recorded_failure):
                     failure_kind = PROVIDER_REJECTION
+                    refusal_error = recorded_failure or error or response
             elif runner_backend == "opencode" and opencode_provider_failure(
                 response, error, completed.stdout
             ):
                 failure_kind = PROVIDER_REJECTION
+        if (
+            runner_backend == "openclaw"
+            and returncode
+            and failure_kind == PROVIDER_REJECTION
+            and spec.provider_rejection_fallback
+        ):
+            fallback_from = model_name
+            effective_model = spec.provider_rejection_fallback
+            append_jsonl(run_log, {
+                "event": "run.fallback",
+                "run_id": run_id,
+                "from": fallback_from,
+                "to": effective_model,
+                "failure_kind": PROVIDER_REJECTION,
+                "error": (refusal_error or error or response)[:1000],
+            })
+            # This retry is an explicit selection and must not enter another
+            # OpenClaw route fallback chain.
+            model_name, provider_name = _model_provider(effective_model)
+            env["PAP_AGENT_MODEL"] = effective_model
+            if provider_name:
+                env["PAP_AGENT_PROVIDER"] = provider_name
+            fallback_invocation = [
+                os.environ.get("PAP_OPENCLAW_BIN", "openclaw"), "agent",
+                "--agent", spec.name,
+                "--session-key", session_key(spec.name, run_id),
+                "--message-file", tmp_path,
+                "--thinking", os.environ.get("PAP_OPENCLAW_THINKING", "low"),
+                "--timeout", str(timeout),
+                "--model", effective_model,
+            ]
+            completed = runner(
+                fallback_invocation, cwd=profile_dir, env=env, capture_output=True,
+                text=True, input=None, timeout=timeout,
+            )
+            returncode = completed.returncode
+            response = completed.stdout.strip()
+            error = completed.stderr.strip() if returncode else ""
+            failure_kind = ""
+            if returncode:
+                failure_kind = "runner"
+                recorded_failure = read_failure(spec.name, run_id) if read_failure is not None else None
+                if not error and recorded_failure:
+                    error = recorded_failure
+                if provider_rejection(response, error, recorded_failure):
+                    failure_kind = PROVIDER_REJECTION
         if returncode == 0 and adapter is not None:
             completed_runtime = _runtime_call(adapter, "complete", {"run_id": run_id, "skill": skill, "args": args, "model_reply": response}, env)
             runtime_status = completed_runtime.get("status")
@@ -516,6 +565,8 @@ def invoke(
     }
     if runner_backend != "command":
         completed_record.update({"model": model_name, "provider": provider_name})
+    if fallback_from is not None:
+        completed_record["fallback_from"] = fallback_from
     append_jsonl(run_log, completed_record)
     return RunResult(
         run_id=run_id,

@@ -534,6 +534,109 @@ def test_a_provider_refusal_is_recorded_as_non_retryable(tmp_path):
     assert record["retryable"] is False
 
 
+def test_provider_rejection_uses_declared_fallback_once_and_records_provenance(tmp_path):
+    manifest = make_agent(tmp_path)
+    manifest.write_text(
+        manifest.read_text(encoding="utf-8").replace(
+            "deepseek/deepseek-flash", "qwen/deepseek-v4.1-flash"
+        )
+        + "  provider_rejection_fallback: deepseek/deepseek-flash\n",
+        encoding="utf-8",
+    )
+    spec = load_spec(manifest)
+    log = tmp_path / "runs.jsonl"
+    commands = []
+
+    def fake_runner(command, **kwargs):
+        commands.append(command)
+        if len(commands) == 1:
+            return subprocess.CompletedProcess(command, 1, "refused", "")
+        return subprocess.CompletedProcess(command, 0, "fallback reply\n", "")
+
+    result = invoke(
+        root=tmp_path, spec=spec, skill="sample-skill", run_log=log,
+        command_runner=fake_runner,
+        failure_probe=lambda agent_id, run_id: "Output data may contain inappropriate content.",
+    )
+    assert result.status == "success"
+    assert result.response == "fallback reply"
+    assert len(commands) == 2
+    assert commands[1][-2:] == ["--model", "deepseek/deepseek-flash"]
+    events = [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()]
+    assert [event["event"] for event in events] == ["run.started", "run.fallback", "run.completed"]
+    assert events[1]["from"] == "qwen/deepseek-v4.1-flash"
+    assert events[1]["to"] == "deepseek/deepseek-flash"
+    record = runs(log)[0]
+    assert record["model"] == "deepseek/deepseek-flash"
+    assert record["provider"] == "deepseek"
+    assert record["fallback_from"] == "qwen/deepseek-v4.1-flash"
+
+
+def test_provider_rejection_without_declared_fallback_is_single_attempt(tmp_path):
+    spec = load_spec(make_agent(tmp_path))
+    calls = []
+
+    def fake_runner(command, **kwargs):
+        calls.append(command)
+        return subprocess.CompletedProcess(command, 1, "", "")
+
+    result = invoke(
+        root=tmp_path, spec=spec, skill="sample-skill", run_log=tmp_path / "runs.jsonl",
+        command_runner=fake_runner,
+        failure_probe=lambda agent_id, run_id: "Output data may contain inappropriate content.",
+    )
+    assert result.failure_kind == "provider_rejection"
+    assert len(calls) == 1
+
+
+def test_declared_fallback_does_not_run_for_ordinary_runner_failure(tmp_path):
+    manifest = make_agent(tmp_path)
+    manifest.write_text(
+        manifest.read_text(encoding="utf-8").replace(
+            "deepseek/deepseek-flash", "qwen/deepseek-v4.1-flash"
+        )
+        + "  provider_rejection_fallback: deepseek/deepseek-flash\n",
+        encoding="utf-8",
+    )
+    calls = []
+    result = invoke(
+        root=tmp_path, spec=load_spec(manifest), skill="sample-skill",
+        run_log=tmp_path / "runs.jsonl",
+        command_runner=lambda command, **kwargs: calls.append(command) or subprocess.CompletedProcess(command, 1, "", "network trouble"),
+    )
+    assert result.failure_kind == "runner"
+    assert len(calls) == 1
+
+
+def test_failed_provider_rejection_fallback_records_final_failure(tmp_path):
+    manifest = make_agent(tmp_path)
+    manifest.write_text(
+        manifest.read_text(encoding="utf-8").replace(
+            "deepseek/deepseek-flash", "qwen/deepseek-v4.1-flash"
+        )
+        + "  provider_rejection_fallback: deepseek/deepseek-flash\n",
+        encoding="utf-8",
+    )
+    calls = []
+
+    def fake_runner(command, **kwargs):
+        calls.append(command)
+        return subprocess.CompletedProcess(command, 1, "", "fallback transport failure")
+
+    result = invoke(
+        root=tmp_path, spec=load_spec(manifest), skill="sample-skill", run_log=tmp_path / "runs.jsonl",
+        command_runner=fake_runner,
+        failure_probe=lambda agent_id, run_id: "Output data may contain inappropriate content." if len(calls) == 1 else None,
+    )
+    assert result.status == "failed"
+    assert result.failure_kind == "runner"
+    assert len(calls) == 2
+    record = runs(tmp_path / "runs.jsonl")[0]
+    assert record["model"] == "deepseek/deepseek-flash"
+    assert record["fallback_from"] == "qwen/deepseek-v4.1-flash"
+    assert record["retryable"] is True
+
+
 def test_an_openclaw_failure_without_a_recorded_reason_keeps_an_empty_error(tmp_path):
     spec = load_spec(make_agent(tmp_path))
     log = tmp_path / "runs.jsonl"

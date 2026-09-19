@@ -8,6 +8,7 @@ spec:
     name: world-historian
     source: profile
   model: deepseek-world-historian/deepseek-v4.1-flash
+  provider_rejection_fallback: deepseek/deepseek-flash
   # The route carries a fallback chain in OpenClaw; pinning the model on the
   # command line would skip it.
   model_fallback: true

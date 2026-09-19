@@ -8,6 +8,7 @@ spec:
     name: compiler-news
     source: profile
   model: deepseek-compiler-news/deepseek-v4.1-flash
+  provider_rejection_fallback: deepseek/deepseek-flash
   capabilities:
     - personal_context.read
     - web.search

@@ -57,6 +57,20 @@ def test_valid_spec(tmp_path: Path):
     assert spec.private_state == ["notes"]
 
 
+def test_provider_rejection_fallback_requires_a_provider_model(tmp_path: Path):
+    valid = VALID.replace(
+        "      capabilities:",
+        "      provider_rejection_fallback: deepseek/deepseek-flash\n      capabilities:",
+    )
+    path = write_agent(tmp_path / "valid", "test-agent", valid)
+    assert load_spec(path).provider_rejection_fallback == "deepseek/deepseek-flash"
+
+    invalid = valid.replace("deepseek/deepseek-flash", "deepseek")
+    path = write_agent(tmp_path / "invalid", "test-agent", invalid)
+    with pytest.raises(SpecError, match="provider_rejection_fallback"):
+        load_spec(path)
+
+
 def test_job_model_override(tmp_path: Path):
     body = VALID.replace(
         "            skill: test-skill",
