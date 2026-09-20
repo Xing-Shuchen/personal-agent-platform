@@ -7,6 +7,8 @@ import hashlib
 import os
 import secrets
 import subprocess
+import re
+import time
 from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -17,6 +19,8 @@ from .run import RunResult, invoke, is_retryable, normalize_terminal_response
 from .schedule import matches_schedule
 from .spec import AgentSpec, ProactiveJob, load_platform
 from .state import append_jsonl, load_json, save_json
+from paplog import observe as paplog
+from paplog.core import ulid
 
 DEFAULT_SCHEDULER_STATE = Path("var/state/scheduler-state.json")
 MAX_CATCHUP = timedelta(hours=24)
@@ -88,6 +92,14 @@ def _jitter_minutes(seed: str, job_key: str, slot: datetime) -> int:
     return value % (JITTER_MAX_MINUTES * 2 + 1) - JITTER_MAX_MINUTES
 
 
+def _target_interval_seconds(schedule: str) -> int | None:
+    """Expose declared cadence when the repository's schedule syntax states it."""
+    match = re.fullmatch(r"every\s+(\d+)\s*([mhd])", schedule.strip(), re.I)
+    if not match:
+        return None
+    return int(match.group(1)) * {"m": 60, "h": 3600, "d": 86400}[match.group(2).lower()]
+
+
 def _latest_jittered_due(
     job: ProactiveJob,
     *,
@@ -155,6 +167,8 @@ def due_jobs(
             for job in spec.jobs:
                 if not job.enabled:
                     # §40: declared, auditable, not yet scheduled.
+                    paplog.event("pap.schedule.skipped", job={"id": f"{spec.name}/{job.name}", "definition_version": "sha256:" + hashlib.sha256(spec.source_path.read_bytes()).hexdigest() if spec.source_path and spec.source_path.is_file() else None},
+                                 agent={"id": spec.name}, attributes={"reason": "disabled", "tracking_class": spec.proactive_class})
                     continue
                 key = f"{spec.name}/{job.name}"
                 entry = job_state.get(key, {})
@@ -212,6 +226,8 @@ def due_jobs(
                     slot=slot,
                     jitter_minutes=jitter_minutes,
                 ))
+                paplog.event("pap.schedule.due", job={"id": key, "definition_version": "sha256:" + hashlib.sha256(spec.source_path.read_bytes()).hexdigest() if spec.source_path and spec.source_path.is_file() else None},
+                             agent={"id": spec.name}, attributes={"scheduled_for": slot.isoformat(), "due_at": now.isoformat(), "schedule_lag_ms": max(0, (now-slot).total_seconds()*1000), "tracking_class": spec.proactive_class, "target_interval_s": _target_interval_seconds(job.schedule)})
                 if reserve:
                     job_state[key] = {
                         **entry,
@@ -286,6 +302,15 @@ def _deliver(
     channel = os.environ.get("PAP_OPENCLAW_CHANNEL", "feishu")
     account = os.environ.get("PAP_OPENCLAW_ACCOUNT", "feishu4")
     openclaw_bin = os.environ.get("PAP_OPENCLAW_BIN", "openclaw")
+    started = time.monotonic()
+    message_action_id = ulid()
+    message_execution = {"run_id": result.run_id, "operation_id": result.run_id, "action_id": message_action_id}
+    message_metadata = {"channel": channel, "account": account, "target": target,
+                        "content": {"sha256": hashlib.sha256(response.encode("utf-8")).hexdigest(), "bytes": len(response.encode("utf-8"))},
+                        "action.effect": "send", "action.scope": "external"}
+    paplog.event("pap.message.send", kind="action", phase="started",
+                 execution=message_execution,
+                 attributes=message_metadata)
     try:
         sent = command_runner(
             [
@@ -299,8 +324,16 @@ def _deliver(
             text=True,
             timeout=60,
         )
-    except (OSError, subprocess.TimeoutExpired):
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        paplog.event("pap.message.send", kind="action", phase="failed", severity="ERROR",
+                     execution=message_execution, outcome={"status": "error"},
+                     duration_ms=(time.monotonic() - started) * 1000,
+                     error={"type": type(exc).__name__, "message": str(exc)}, attributes=message_metadata)
         return "failed"
+    paplog.event("pap.message.send", kind="action", phase="completed" if sent.returncode == 0 else "failed",
+                 severity="INFO" if sent.returncode == 0 else "ERROR", execution=message_execution,
+                 outcome={"status": "ok" if sent.returncode == 0 else "error"}, duration_ms=(time.monotonic() - started) * 1000,
+                 attributes={**message_metadata, "exit_code": sent.returncode})
     return "sent" if sent.returncode == 0 else "failed"
 
 
@@ -330,6 +363,9 @@ def tick(
 
     results: list[TickResult] = []
     for due in jobs:
+        dispatched_at = _now()
+        paplog.event("pap.schedule.dispatched", job={"id": due.key}, agent={"id": due.spec.name},
+                     attributes={"scheduled_for": due.slot.isoformat(), "dispatched_at": dispatched_at.isoformat(), "jitter_minutes": due.jitter_minutes, "tracking_class": due.spec.proactive_class, "target_interval_s": _target_interval_seconds(due.job.schedule)})
         result = invoke(
             root=root,
             spec=due.spec,
@@ -337,8 +373,12 @@ def tick(
             args=due.job.args,
             trigger={
                 "type": "schedule",
-                "job_id": due.job.name,
-                "scheduled_for": due.slot.isoformat(timespec="minutes"),
+                # Use the same stable key emitted by due/dispatched events so
+                # one job filter follows the entire scheduler-to-run trace.
+                "job_id": due.key,
+                "job_name": due.job.name,
+                "scheduled_for": due.slot.isoformat(),
+                "dispatched_at": dispatched_at.isoformat(),
                 "jitter_minutes": due.jitter_minutes,
             },
             run_log=run_log,

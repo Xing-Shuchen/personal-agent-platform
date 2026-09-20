@@ -3,7 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from pap.cognition import Index, classify, parse_markdown, segments
+from pap.cognition import Index, classify, main, parse_markdown, segments
+from paplog import observe
 
 
 def write(vault: Path, relative: str, body: str) -> Path:
@@ -71,3 +72,47 @@ def test_typed_adapters_lineage_and_replayable_shadow_packs(tmp_path: Path):
     intel = index.shadow_pack("intelligence", "stable-intelligence")
     assert intel["schema"] == "intelligence.context-pack.v1" and len(intel["world_deltas"]) <= 10
     index.close()
+
+
+def test_shadow_pack_write_emits_content_free_artifact_event(tmp_path: Path, capsys):
+    vault = tmp_path / "vault"
+    write(vault, "Dairies/2026/day.md", "# Note\nshared mechanism\n")
+    index = Index(vault / ".index/cognition/cognition.sqlite3")
+    index.build(vault)
+    index.close()
+    observe.configure(tmp_path / "ledger")
+    assert main(["--vault", str(vault), "shadow", "serendipity", "--run-id", "shadow-test"]) == 0
+    capsys.readouterr()
+    event = observe.get_ledger().query(event="pap.context_pack.created")[0]
+    assert event["subject"]["id"] == "shadow-test"
+    assert event["attributes"]["pack_hash"].startswith("sha256:")
+    assert event["attributes"]["bytes"] > 0
+    assert "candidates" not in event["attributes"]
+
+
+def test_index_build_emits_operation_when_pap_runtime_is_explicit(tmp_path: Path, monkeypatch):
+    vault = tmp_path / "vault"
+    write(vault, "1Project/a.md", "# A\nalpha\n")
+    ledger = observe.configure(tmp_path / "ledger")
+    monkeypatch.setenv("PAP_RUN_ID", "run-index")
+    index = Index(vault / ".index/cognition/cognition.sqlite3")
+    index.build(vault)
+    index.close()
+    events = ledger.query(event="pap.cognition.index")
+    assert [event["phase"] for event in events] == ["started", "completed"]
+    assert all(event["execution"]["run_id"] == "run-index" for event in events)
+
+
+def test_index_reads_emit_database_read_actions_when_pap_runtime_is_explicit(tmp_path: Path, monkeypatch):
+    vault = tmp_path / "vault"
+    write(vault, "1Project/a.md", "# A\nalpha\n")
+    ledger = observe.configure(tmp_path / "ledger")
+    monkeypatch.setenv("PAP_OBSERVABILITY_DIR", str(tmp_path / "ledger"))
+    index = Index(vault / ".index/cognition/cognition.sqlite3")
+    index.build(vault)
+    index.search("alpha")
+    index.close()
+    events = ledger.query(event="pap.database.read")
+    assert events and {event["phase"] for event in events} == {"started", "completed"}
+    reads = ledger.query(event="pap.filesystem.read")
+    assert reads and {event["phase"] for event in reads} == {"started", "completed"}

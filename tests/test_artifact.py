@@ -5,6 +5,7 @@ import json
 import pytest
 
 from pap.artifact import ArtifactError, append, artifacts, new_artifact_id
+from paplog import observe
 
 
 def test_append_is_append_only_and_ids_stable(tmp_path):
@@ -55,4 +56,16 @@ def test_artifact_id_is_prefixed_and_unique():
     a = new_artifact_id("news.thread.created")
     b = new_artifact_id("news.thread.created")
     assert a.startswith("art_news_thread_created_")
+    assert len(a.rsplit("_", 1)[1]) == 26
     assert a != b
+
+
+def test_artifact_event_keeps_a_payload_fingerprint_without_payload_content(tmp_path):
+    observe.configure(tmp_path / "ledger")
+    append("news.thread.created", "world-historian", {"secret_body": "do not duplicate"},
+           log_path=tmp_path / "artifacts.jsonl")
+    event = observe.get_ledger().query(event="pap.artifact.created")[0]
+    assert event["attributes"]["payload_bytes"] > 0
+    assert len(event["attributes"]["payload_sha256"]) == 64
+    assert "secret_body" not in event["attributes"]
+    assert "do not duplicate" not in json.dumps(event, ensure_ascii=False)

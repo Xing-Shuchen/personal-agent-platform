@@ -23,6 +23,14 @@ import sys
 from typing import Any
 
 import yaml
+try:  # Direct Historian maintenance remains usable without PAP installed.
+    from paplog import observe as paplog
+except ImportError:  # pragma: no cover - exercised only outside PAP runtime
+    class _NoLedger:
+        @staticmethod
+        def event(*_args: Any, **_kwargs: Any) -> None:
+            return None
+    paplog = _NoLedger()
 
 
 def _historian_root() -> Path:
@@ -422,13 +430,17 @@ def _prepare_summary(payload: dict[str, Any]) -> dict[str, Any]:
     # immutable revisions, so the store allocates the revision: identical content
     # is a no-op and changed content becomes the next revision.
     store.commit(store.allocate(context))
+    paplog.event("historian.context_pack.created", subject={"type": "context_pack", "id": context["context_pack_id"]},
+                 execution={"run_id": payload["run_id"], "operation_id": payload["run_id"]},
+                 attributes={"input_item_count": len(candidates), "estimated_tokens": context.get("token_budget", {}).get("allocated"), "policy": context.get("policy", {})},
+                 links=[{"type": "derived_from", "target_type": "artifact", "target_id": ref["artifact_id"]} for ref in context["provenance"]["input_refs"] if isinstance(ref, dict) and ref.get("artifact_id")])
     summary_id = f"summary:{kind}:{period.label}"
     existing = store.latest(summary_id)
     if existing and existing.get("provenance", {}).get("input_manifest_hash") == context["provenance"]["input_manifest_hash"] and not store.is_stale(summary_id):
         return {"status": "not_ready", "reason": "identical summary input is already committed"}
     prepared = {"kind": "summary", "summary_id": summary_id, "revision": (existing["revision"] + 1) if existing else 1}
     _prepared_path(payload["run_id"]).write_text(json.dumps(prepared, ensure_ascii=False), encoding="utf-8")
-    return {"status": "ready", "input_text": "Create exactly one PeriodSummary JSON object for this sealed ContextPack. Do not add prose or use evidence outside it. summary_id and revision are fixed below.\n\n" + json.dumps({"context_pack": context, **prepared}, ensure_ascii=False), "metadata": {"context_pack_id": context["context_pack_id"], "period": period.label, "idempotency_key": f"{kind}:{period.label}:{context['provenance']['input_manifest_hash']}"}}
+    return {"status": "ready", "input_text": "Create exactly one PeriodSummary JSON object for this sealed ContextPack. Do not add prose or use evidence outside it. summary_id and revision are fixed below.\n\n" + json.dumps({"context_pack": context, **prepared}, ensure_ascii=False), "metadata": {"context_pack_id": context["context_pack_id"], "period": period.label, "policy_id": context["policy"]["name"], "policy_version": context["policy"]["version"], "idempotency_key": f"{kind}:{period.label}:{context['provenance']['input_manifest_hash']}"}}
 
 
 def _prepare_literary(payload: dict[str, Any]) -> dict[str, Any]:
@@ -589,6 +601,11 @@ def complete(payload: dict[str, Any]) -> dict[str, Any]:
         rendered = _state_dir() / "rendered"
         rendered.mkdir(parents=True, exist_ok=True)
         (rendered / f"{summary['summary_id'].replace(':', '_')}.md").write_text(render_markdown(summary), encoding="utf-8")
+        refs = summary.get("provenance", {}).get("input_refs", [])
+        paplog.event("historian.period_summary.generated", subject={"type": "period_summary", "id": summary["summary_id"]},
+                     execution={"run_id": payload["run_id"], "operation_id": payload["run_id"]},
+                     attributes={"revision": summary["revision"], "model": summary.get("provenance", {}).get("model"), "provider": summary.get("provenance", {}).get("provider")},
+                     links=[{"type": "derived_from", "target_type": "artifact", "target_id": ref["artifact_id"]} for ref in refs if isinstance(ref, dict) and ref.get("artifact_id")])
         return {"status": "success", "response": "NO_REPLY", "warnings": list(result.warnings), "metadata": {"result_summary_id": summary["summary_id"], "summary_revision": summary["revision"]}}
     if result.status is SummaryRunStatus.NOT_READY:
         return {"status": "not_ready", "reason": "ContextPack became not ready"}

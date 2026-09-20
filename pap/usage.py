@@ -41,8 +41,11 @@ import json
 import os
 import sqlite3
 import subprocess
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Mapping
+
+from paplog.core import content_metadata
 
 #: Sessions are listed newest-first; a just-finished run is at the head, and the
 #: window only needs to be wide enough to survive concurrent runs.
@@ -175,8 +178,101 @@ def trajectory_usage(agent_id: str, run_id: str, *, state_dir: Path | None = Non
         result = {
             "input_tokens": _token_count(usage.get("input")),
             "output_tokens": _token_count(usage.get("output")),
+            "cache_read_tokens": _token_count(usage.get("cacheRead")),
+            "cache_write_tokens": _token_count(usage.get("cacheWrite")),
+            "reasoning_tokens": _token_count(usage.get("reasoningTokens")),
             "cost": _amount(cost.get("total")) if isinstance(cost, Mapping) else None,
         }
+    return result
+
+
+def _event_timestamp(value: Any) -> str | None:
+    """Return an RFC3339 timestamp only when the runner supplied a valid one."""
+
+    if not isinstance(value, str):
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00")).isoformat()
+    except ValueError:
+        return None
+
+
+def trajectory_tools(agent_id: str, run_id: str, *, state_dir: Path | None = None) -> list[dict[str, Any]]:
+    """Read OpenClaw's recorded tool lifecycle for precisely one PAP run.
+
+    OpenClaw is the tool executor for an OpenClaw-backed PAP turn; its
+    trajectory database is therefore the authoritative integration boundary.
+    This intentionally keeps tool arguments and results as hash/size metadata,
+    never as tool content.  An unknown trajectory schema is best-effort no
+    data, matching :func:`trajectory_usage`.
+    """
+
+    path = (state_dir or _state_dir()) / "agents" / agent_id / "agent" / "openclaw-agent.sqlite"
+    if not path.is_file():
+        return []
+    wanted = session_key(agent_id, run_id)
+    try:
+        connection = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    except sqlite3.Error:
+        return []
+    try:
+        rows = connection.execute(
+            "select event_json from trajectory_runtime_events where event_json like ? order by seq",
+            (f"%{wanted}%",),
+        ).fetchall()
+    except sqlite3.Error:
+        return []
+    finally:
+        connection.close()
+
+    calls: dict[str, dict[str, Any]] = {}
+    result: list[dict[str, Any]] = []
+    for (raw,) in rows:
+        try:
+            event = json.loads(raw)
+        except (TypeError, ValueError):
+            continue
+        if not isinstance(event, Mapping) or event.get("sessionKey") != wanted:
+            continue
+        data = event.get("data")
+        if not isinstance(data, Mapping):
+            continue
+        call_id = data.get("toolCallId")
+        if not isinstance(call_id, str) or not call_id:
+            continue
+        name = data.get("name")
+        name = name if isinstance(name, str) and name else "unknown"
+        if event.get("type") == "tool.call":
+            calls[call_id] = {
+                "tool_call_id": call_id,
+                "name": name,
+                "arguments": content_metadata(data.get("args")),
+                "started_at": _event_timestamp(event.get("ts")),
+            }
+            continue
+        if event.get("type") != "tool.result":
+            continue
+        call = calls.pop(call_id, {"tool_call_id": call_id, "name": name})
+        completed_at = _event_timestamp(event.get("ts"))
+        duration_ms: float | None = None
+        if call.get("started_at") and completed_at:
+            try:
+                duration_ms = max(
+                    0.0,
+                    (datetime.fromisoformat(completed_at) - datetime.fromisoformat(str(call["started_at"]))).total_seconds() * 1000,
+                )
+            except ValueError:
+                pass
+        result.append({
+            **call,
+            "completed_at": completed_at,
+            "duration_ms": duration_ms,
+            "success": data.get("success") is True,
+            "result": content_metadata(data.get("result")),
+        })
+    # Preserve incomplete tool calls: their started lifecycle is valuable for
+    # diagnosing a session that dies during tool execution.
+    result.extend(calls.values())
     return result
 
 
@@ -259,7 +355,7 @@ def probe_model_usage(
     trajectory = trajectory_usage(agent_id, run_id, state_dir=state_dir)
     if trajectory:
         sources.append("openclaw.trajectory")
-        for field in ("input_tokens", "output_tokens"):
+        for field in ("input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens", "reasoning_tokens"):
             if merged.get(field) is None:
                 merged[field] = trajectory[field]
         merged["cost"] = trajectory["cost"]

@@ -5,11 +5,11 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-import secrets
 import shutil
 import subprocess
 import tempfile
 import sys
+import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -17,7 +17,9 @@ from typing import Any, Callable
 
 from .spec import AgentSpec
 from .state import append_jsonl, read_jsonl
-from .usage import probe_model_usage, session_failure, session_key
+from .usage import probe_model_usage, session_failure, session_key, trajectory_tools
+from paplog import observe as paplog
+from paplog.core import git_provenance, node_id, span_id, trace_id, ulid
 
 DEFAULT_RUN_LOG = Path("var/state/runs.jsonl")
 
@@ -47,8 +49,32 @@ def _now() -> datetime:
 
 
 def new_run_id(now: datetime | None = None) -> str:
-    stamp = (now or _now()).astimezone(timezone.utc).strftime("%Y%m%d_%H%M%S")
-    return f"run_{stamp}_{secrets.token_hex(3)}"
+    """Allocate the canonical v2 run identity.
+
+    The legacy JSONL field remains named ``run_id`` and downstream session keys
+    still include it verbatim; only its value now obeys the ledger's sortable
+    ULID identity contract.
+    """
+    return ulid(now or _now())
+
+
+def _queue_timing(trigger: dict[str, Any] | None, started: datetime) -> dict[str, Any]:
+    """Return scheduler timing facts without guessing a missing dispatch time."""
+    if not isinstance(trigger, dict) or trigger.get("type") != "schedule":
+        return {}
+    timing = {key: trigger[key] for key in ("scheduled_for", "dispatched_at")
+              if isinstance(trigger.get(key), str)}
+    dispatched_at = timing.get("dispatched_at")
+    if dispatched_at:
+        try:
+            dispatched = datetime.fromisoformat(dispatched_at.replace("Z", "+00:00"))
+            if dispatched.tzinfo is None:
+                dispatched = dispatched.replace(tzinfo=timezone.utc)
+            timing["queue_delay_ms"] = max(0.0, (started - dispatched).total_seconds() * 1000)
+        except ValueError:
+            # Keep the source value for diagnosis; do not fabricate a delay.
+            pass
+    return timing
 
 
 @dataclass
@@ -197,8 +223,15 @@ def _runtime_call(runtime: Path, action: str, payload: dict[str, Any], env: dict
     # Deployments can pin its interpreter; otherwise use the system python3
     # rather than PAP's deliberately minimal virtual environment.
     executable = os.environ.get("PAP_RUNTIME_PYTHON") or shutil.which("python3") or sys.executable
-    completed = subprocess.run(
-        [executable, str(runtime), action],
+    invocation = [executable, str(runtime), action]
+    traceparent = env.get("TRACEPARENT", "").split("-")
+    trace = {"trace_id": traceparent[1], "span_id": traceparent[2]} if len(traceparent) == 4 else {}
+    completed = _run_process(
+        subprocess.run, invocation, trace=trace,
+        execution={"run_id": env.get("PAP_RUN_ID"), "operation_id": env.get("PAP_PARENT_OPERATION_ID")},
+        agent={"id": env.get("PAP_AGENT_ID"), "definition_version": env.get("PAP_AGENT_DEFINITION_VERSION")}
+        if env.get("PAP_AGENT_ID") else {},
+        attributes={"runtime_action": action},
         input=json.dumps(payload, ensure_ascii=False), text=True, capture_output=True,
         env=env, timeout=int(os.environ.get("PAP_RUNTIME_TIMEOUT_SECONDS", "120")),
     )
@@ -211,6 +244,47 @@ def _runtime_call(runtime: Path, action: str, payload: dict[str, Any], env: dict
     if not isinstance(result, dict):
         raise RuntimeError(f"runtime {action} returned a non-object")
     return result
+
+
+def _run_process(
+    runner: Callable[..., subprocess.CompletedProcess[str]], invocation: list[str], *,
+    execution: dict[str, Any] | None = None, job: dict[str, Any] | None = None,
+    agent: dict[str, Any] | None = None, skill: dict[str, Any] | None = None,
+    trace: dict[str, Any] | None = None, attributes: dict[str, Any] | None = None, **kwargs: Any,
+) -> subprocess.CompletedProcess[str]:
+    """One central subprocess action boundary for every configured backend."""
+    started = time.monotonic()
+    parent_trace = dict(trace or {})
+    action_trace = dict(parent_trace)
+    if parent_trace.get("span_id"):
+        action_trace["parent_span_id"] = parent_trace["span_id"]
+    action_trace["span_id"] = span_id()
+    if not action_trace.get("trace_id"):
+        action_trace["trace_id"] = trace_id()
+    action_execution = dict(execution or {})
+    action_execution["action_id"] = ulid()
+    paplog.event("pap.process.exec", kind="action", phase="started",
+                 trace=action_trace, execution=action_execution, job=job or {}, agent=agent or {}, skill=skill or {},
+                 attributes={"program": invocation[0] if invocation else None, "argv_count": len(invocation), **(attributes or {}),
+                             "action.effect": "execute", "action.scope": "local"})
+    try:
+        completed = runner(invocation, **kwargs)
+    except BaseException as exc:
+        paplog.event("pap.process.exec", kind="action", phase="failed", severity="ERROR",
+                     trace=action_trace, execution=action_execution, job=job or {}, agent=agent or {}, skill=skill or {},
+                     outcome={"status": "error"}, duration_ms=(time.monotonic() - started) * 1000,
+                     error={"type": type(exc).__name__, "message": str(exc)},
+                     attributes={"program": invocation[0] if invocation else None, "action.effect": "execute", "action.scope": "local", **(attributes or {})})
+        raise
+    paplog.event("pap.process.exec", kind="action", phase="completed" if completed.returncode == 0 else "failed",
+                 trace=action_trace, execution=action_execution, job=job or {}, agent=agent or {}, skill=skill or {},
+                 severity="INFO" if completed.returncode == 0 else "ERROR",
+                 outcome={"status": "ok" if completed.returncode == 0 else "error"},
+                 duration_ms=(time.monotonic() - started) * 1000,
+                 attributes={"program": invocation[0] if invocation else None, "exit_code": completed.returncode,
+                             "termination_signal": -completed.returncode if completed.returncode < 0 else None, **(attributes or {}),
+                             "action.effect": "execute", "action.scope": "local"})
+    return completed
 
 
 def invoke(
@@ -243,14 +317,19 @@ def invoke(
     args = dict(args or {})
     started = _now()
     run_id = new_run_id(started)
+    run_trace = {"trace_id": trace_id(), "span_id": span_id()}
+    code_provenance = git_provenance(root)
     run_log = Path(run_log)
     effective_model = None if runner_backend == "command" else (model if model is not None else spec.model)
     model_name, provider_name = _model_provider(effective_model)
     if runner_backend == "codex" and model_name and provider_name is None:
         provider_name = "openai"
     job_id = None
+    job_name = None
     if isinstance(trigger, dict) and isinstance(trigger.get("job_id"), str):
         job_id = trigger["job_id"]
+    if isinstance(trigger, dict) and isinstance(trigger.get("job_name"), str):
+        job_name = trigger["job_name"]
     started_record = {
         "event": "run.started",
         "run_id": run_id,
@@ -266,6 +345,47 @@ def invoke(
     if runner_backend != "command":
         started_record.update({"model": model_name, "provider": provider_name})
     append_jsonl(run_log, started_record)
+    skill_version = "sha256:" + hashlib.sha256(skill_file.read_bytes()).hexdigest()
+    agent_metadata = {"id": spec.name}
+    if spec.source_path and spec.source_path.is_file():
+        agent_metadata["definition_version"] = "sha256:" + hashlib.sha256(spec.source_path.read_bytes()).hexdigest()
+    scheduler_timing = _queue_timing(trigger, started)
+    paplog.event("pap.run.started", kind="operation", trace=run_trace, phase="started", subject={"type": "run", "id": run_id},
+                 attributes={"trigger": trigger or {"type": "manual"}, "started_at": started.isoformat(),
+                             **scheduler_timing},
+                 job={"id": job_id} if job_id else {}, agent=agent_metadata,
+                 skill={"id": skill, "definition_version": skill_version},
+                 execution={"run_id": run_id, "operation_id": run_id,
+                            "runtime": {"backend": runner_backend, "mode": (trigger or {}).get("type", "manual")}},
+                 **code_provenance)
+    agent_trace = {"trace_id": run_trace["trace_id"], "parent_span_id": run_trace["span_id"], "span_id": span_id()}
+    agent_operation_id = ulid()
+    skill_trace = {"trace_id": run_trace["trace_id"], "parent_span_id": agent_trace["span_id"], "span_id": span_id()}
+    skill_operation_id = ulid()
+    common_scope = {"job": {"id": job_id} if job_id else {}, "agent": agent_metadata,
+                    "skill": {"id": skill, "definition_version": skill_version}}
+    paplog.event("pap.agent.invoke", kind="operation", phase="started", trace=agent_trace,
+                 subject={"type": "agent", "id": spec.name}, execution={"run_id": run_id, "operation_id": agent_operation_id},
+                 attributes={"runner_backend": runner_backend}, **common_scope, **code_provenance)
+    paplog.event("pap.skill.invoke", kind="operation", phase="started", trace=skill_trace,
+                 subject={"type": "skill", "id": skill}, execution={"run_id": run_id, "operation_id": skill_operation_id},
+                 attributes={"runner_backend": runner_backend}, **common_scope, **code_provenance)
+
+    def close_invocation_scopes(completed_at: datetime, status: str, failure: str = "") -> None:
+        """Close nested Agent/skill operations before the enclosing run."""
+        phase = "failed" if status == "failed" else "completed"
+        severity = "ERROR" if status == "failed" else "INFO"
+        outcome = {"status": "error" if status == "failed" else status}
+        duration_ms = (completed_at - started).total_seconds() * 1000
+        for event_name, subject, trace, operation_id in (
+            ("pap.skill.invoke", {"type": "skill", "id": skill}, skill_trace, skill_operation_id),
+            ("pap.agent.invoke", {"type": "agent", "id": spec.name}, agent_trace, agent_operation_id),
+        ):
+            paplog.event(event_name, kind="operation", phase=phase, severity=severity, trace=trace,
+                         subject=subject, outcome=outcome, duration_ms=duration_ms,
+                         attributes={"failure_kind": failure} if failure else {},
+                         execution={"run_id": run_id, "operation_id": operation_id}, **common_scope,
+                         **code_provenance)
 
     usage: dict[str, Any] = {}
     fallback_from: str | None = None
@@ -276,6 +396,7 @@ def invoke(
     returncode = 1
     invoked = False
     model_usage: dict[str, Any] | None = None
+    tool_events: list[dict[str, Any]] = []
     # Usage is read from the runner PAP actually invoked.  A caller that
     # substitutes its own runner is off the production path (tests do this), and
     # reaching for a real OpenClaw behind the stub's back would be neither
@@ -306,10 +427,28 @@ def invoke(
                 + reference_file.read_text(encoding="utf-8")
             )
     env = os.environ.copy()
+    model_route = {
+        "routing_profile": env.get("PAP_ROUTING_PROFILE"),
+        "credential_profile": env.get("PAP_CREDENTIAL_PROFILE"),
+        "workload_class": env.get("PAP_WORKLOAD_CLASS"),
+    }
+    # Runtime adapters are launched as standalone scripts.  Keep the shared
+    # ledger importable without coupling them to an installed gateway package.
+    env["PYTHONPATH"] = str(root) + (os.pathsep + env["PYTHONPATH"] if env.get("PYTHONPATH") else "")
     env.update({
         "PAP_ROOT": str(root),
+        "PAP_OBSERVABILITY_DIR": str(paplog.get_ledger().directory),
         "PAP_AGENT_ID": spec.name,
+        "PAP_AGENT": spec.name,
+        "PAP_AGENT_DEFINITION_VERSION": agent_metadata.get("definition_version", ""),
         "PAP_RUN_ID": run_id,
+        "PAP_PARENT_OPERATION_ID": skill_operation_id,
+        "PAP_SKILL": skill,
+        "PAP_JOB_ID": job_id or "",
+        "PAP_NODE_ID": node_id(),
+        "TRACEPARENT": f"00-{skill_trace['trace_id']}-{skill_trace['span_id']}-01",
+        "PAP_RUNTIME_BACKEND": runner_backend,
+        "PAP_RUNTIME_MODE": (trigger or {}).get("type", "manual"),
         "PAP_AGENT_STATE_DIR": str(root / "var" / spec.name),
     })
     if runner_backend == "command":
@@ -343,6 +482,12 @@ def invoke(
                 response = "NOT_READY"
                 error = str(prepared.get("reason", "upstream readiness is unmet"))
                 append_jsonl(run_log, {"event": "run.completed", "run_id": run_id, "agent_id": spec.name, "job_id": job_id, "skill": skill, "args": args, "runner": runner_backend, "model": model_name, "provider": provider_name, "completed_at": completed_at.isoformat(timespec="seconds"), "status": status, "returncode": 0, "response": _input_fingerprint(response), "error": error[:1000], "usage": usage})
+                close_invocation_scopes(completed_at, status)
+                paplog.event("pap.run.completed", kind="operation", trace=run_trace, phase="completed", subject={"type": "run", "id": run_id},
+                             outcome={"status": "not_ready"}, attributes={"returncode": 0, "not_ready_reason": error},
+                             duration_ms=(completed_at - started).total_seconds() * 1000,
+                             execution={"run_id": run_id, "operation_id": run_id}, agent=agent_metadata,
+                             skill={"id": skill, "definition_version": skill_version}, job={"id": job_id} if job_id else {}, **code_provenance)
                 return RunResult(run_id, spec.name, skill, status, 0, response, error, started.isoformat(timespec="seconds"), completed_at.isoformat(timespec="seconds"), usage)
             if prepared.get("status") != "ready" or not isinstance(prepared.get("input_text"), str):
                 error = str(prepared.get("error", "runtime did not prepare an invocation"))
@@ -380,7 +525,7 @@ def invoke(
                 raise ValueError("opencode runner requires a model")
             invocation = [
                 os.environ.get("PAP_OPENCODE_BIN", "opencode"), "run", "--pure",
-                "--format", "json", "--title", f"{spec.name}/{job_id or skill}",
+                "--format", "json", "--title", f"{spec.name}/{job_name or job_id or skill}",
                 "--model", effective_model,
             ]
         elif runner_backend == "openclaw":
@@ -402,8 +547,10 @@ def invoke(
         else:
             raise ValueError(f"unsupported runner backend: {runner_backend}")
         invoked = True
-        completed = runner(
-            invocation,
+        completed = _run_process(runner, invocation,
+            trace=skill_trace,
+            execution={"run_id": run_id, "operation_id": skill_operation_id}, job={"id": job_id} if job_id else {},
+            agent=agent_metadata, skill={"id": skill, "definition_version": skill_version},
             cwd=root if runner_backend in ("command", "opencode") else profile_dir,
             env=env,
             capture_output=True,
@@ -428,7 +575,7 @@ def invoke(
             # the usual cause, and §34 names those as retryable.  A provider that
             # refused the text is not transport trouble, so the run's own record
             # is read before settling for the retryable default.
-            failure_kind = "command" if runner_backend == "command" else "runner"
+            failure_kind = f"signal:{-returncode}" if returncode < 0 else ("command" if runner_backend == "command" else "runner")
             if runner_backend == "openclaw" and read_failure is not None:
                 recorded_failure = read_failure(spec.name, run_id)
                 if not error and recorded_failure:
@@ -456,6 +603,13 @@ def invoke(
                 "failure_kind": PROVIDER_REJECTION,
                 "error": (refusal_error or error or response)[:1000],
             })
+            paplog.event("pap.model.fallback", trace=skill_trace, severity="WARN",
+                         execution={"run_id": run_id, "operation_id": skill_operation_id},
+                         job={"id": job_id} if job_id else {}, agent=agent_metadata,
+                         skill={"id": skill, "definition_version": skill_version},
+                         attributes={"previous_model": fallback_from, "selected_model": effective_model,
+                                     "fallback_reason": PROVIDER_REJECTION, "retry_count": 1,
+                                     "error": refusal_error or error or response, **model_route})
             # This retry is an explicit selection and must not enter another
             # OpenClaw route fallback chain.
             model_name, provider_name = _model_provider(effective_model)
@@ -471,8 +625,11 @@ def invoke(
                 "--timeout", str(timeout),
                 "--model", effective_model,
             ]
-            completed = runner(
-                fallback_invocation, cwd=profile_dir, env=env, capture_output=True,
+            completed = _run_process(runner, fallback_invocation,
+                trace=skill_trace,
+                execution={"run_id": run_id, "operation_id": skill_operation_id}, job={"id": job_id} if job_id else {},
+                agent=agent_metadata, skill={"id": skill, "definition_version": skill_version},
+                cwd=profile_dir, env=env, capture_output=True,
                 text=True, input=None, timeout=timeout,
             )
             returncode = completed.returncode
@@ -528,6 +685,50 @@ def invoke(
         model_usage = probe(spec.name, run_id)
         if model_usage is not None:
             usage["model"] = model_usage
+        # The runner stores the actual tool lifecycle in its trajectory DB.
+        # Reading it after the turn avoids inventing tool calls from rendered
+        # stdout while retaining the exact run attribution via its session key.
+        tool_events = trajectory_tools(spec.name, run_id)
+    if usage.get("model"):
+        measured = usage["model"]
+        model_trace = {"trace_id": skill_trace["trace_id"], "parent_span_id": skill_trace["span_id"], "span_id": span_id()}
+        paplog.event("pap.model.call", kind="action", phase="completed" if returncode == 0 else "failed",
+                     trace=model_trace, severity="INFO" if returncode == 0 else "ERROR",
+                     attributes={"provider": measured.get("provider") or provider_name,
+                                 "requested_model": effective_model, "returned_model": measured.get("model") or model_name,
+                                 "input_tokens": measured.get("input_tokens"), "output_tokens": measured.get("output_tokens"),
+                                 "cache_read_tokens": measured.get("cache_read_tokens"), "cache_write_tokens": measured.get("cache_write_tokens"),
+                                 "reasoning_tokens": measured.get("reasoning_tokens"), "pricing_version": measured.get("pricing_version"),
+                                 "latency_ms": measured.get("latency_ms"),
+                                 "retry_count": 1 if fallback_from else 0,
+                                 "fallback_count": 1 if fallback_from else 0, "cost.amount": measured.get("cost"),
+                                 "cost.currency": measured.get("currency", "CNY"), "cost.source": measured.get("source", "unknown"),
+                                 **model_route},
+                     outcome={"status": "ok" if returncode == 0 else "error"},
+                     execution={"run_id": run_id, "operation_id": skill_operation_id, "action_id": ulid()}, agent=agent_metadata, skill={"id": skill, "definition_version": skill_version}, job={"id": job_id} if job_id else {}, **code_provenance)
+    for tool_event in tool_events:
+        tool_trace = {"trace_id": skill_trace["trace_id"], "parent_span_id": skill_trace["span_id"], "span_id": span_id()}
+        tool_execution = {"run_id": run_id, "operation_id": skill_operation_id, "action_id": ulid()}
+        tool_attributes = {
+            "tool.name": tool_event["name"],
+            "tool.call_id": tool_event["tool_call_id"],
+            "tool.arguments": tool_event.get("arguments"),
+            "action.effect": "execute",
+            "action.scope": "external",
+        }
+        if tool_event.get("started_at"):
+            paplog.event("pap.tool.call", kind="action", phase="started", trace=tool_trace,
+                         execution=tool_execution, agent=agent_metadata,
+                         skill={"id": skill, "definition_version": skill_version}, job={"id": job_id} if job_id else {},
+                         attributes=tool_attributes, **code_provenance)
+        if tool_event.get("completed_at"):
+            success = tool_event.get("success") is True
+            paplog.event("pap.tool.call", kind="action", phase="completed" if success else "failed",
+                         severity="INFO" if success else "ERROR", trace=tool_trace, execution=tool_execution,
+                         agent=agent_metadata, skill={"id": skill, "definition_version": skill_version},
+                         job={"id": job_id} if job_id else {}, outcome={"status": "ok" if success else "error"},
+                         duration_ms=tool_event.get("duration_ms"),
+                         attributes={**tool_attributes, "tool.result": tool_event.get("result")}, **code_provenance)
     raw_response = response
     response_normalization: str | None = None
     if returncode == 0:
@@ -568,6 +769,23 @@ def invoke(
     if fallback_from is not None:
         completed_record["fallback_from"] = fallback_from
     append_jsonl(run_log, completed_record)
+    close_invocation_scopes(completed_at, status, failure_kind)
+    context_metadata: dict[str, Any] = {}
+    runtime_metadata = usage.get("runtime", {})
+    if runtime_metadata.get("context_pack_id"):
+        context_metadata["pack_refs"] = [f"artifact:{runtime_metadata['context_pack_id']}"]
+    for key in ("policy_id", "policy_version"):
+        if isinstance(runtime_metadata.get(key), str):
+            context_metadata[key] = runtime_metadata[key]
+    paplog.event("pap.run.completed" if status != "failed" else "pap.run.failed", kind="operation", trace=run_trace, phase="completed" if status != "failed" else "failed",
+                 severity="INFO" if status != "failed" else "ERROR", subject={"type": "run", "id": run_id},
+                 outcome={"status": "ok" if status != "failed" else "error"},
+                 duration_ms=(completed_at - started).total_seconds() * 1000,
+                 attributes={"returncode": returncode, "failure_kind": failure_kind,
+                             "response": _input_fingerprint(response)},
+                 context=context_metadata,
+                 execution={"run_id": run_id, "operation_id": run_id}, agent=agent_metadata,
+                 skill={"id": skill, "definition_version": skill_version}, job={"id": job_id} if job_id else {}, **code_provenance)
     return RunResult(
         run_id=run_id,
         agent_id=spec.name,

@@ -13,9 +13,13 @@ dependencies = ["PyYAML>=6.0"]
 
 [project.scripts]
 pap = "pap.cli:main"
+paplog = "paplog.cli:main"
 
 [tool.setuptools.packages.find]
-include = ["pap*"]
+include = ["pap*", "paplog*"]
+
+[tool.setuptools.package-data]
+paplog = ["*.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

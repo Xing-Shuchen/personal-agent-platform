@@ -14,6 +14,7 @@ from pap.usage import (
     probe_model_usage,
     session_failure,
     session_key,
+    trajectory_tools,
     session_usage,
     trajectory_usage,
 )
@@ -184,6 +185,9 @@ def test_the_trajectory_store_reports_the_runs_cost(tmp_path):
     assert trajectory_usage("personal-historian", RUN, state_dir=tmp_path) == {
         "input_tokens": 106795,
         "output_tokens": 28800,
+        "cache_read_tokens": 2223232,
+        "cache_write_tokens": None,
+        "reasoning_tokens": None,
         "cost": 0.085265796,
     }
 
@@ -199,6 +203,35 @@ def test_another_sessions_completed_call_is_ignored(tmp_path):
 def test_a_store_without_this_run_reports_nothing(tmp_path):
     write_trajectory(tmp_path, [{"type": "session.started", "sessionKey": SESSION}])
     assert trajectory_usage("personal-historian", RUN, state_dir=tmp_path) is None
+
+
+def test_trajectory_tools_keep_only_metadata_and_one_runs_lifecycle(tmp_path):
+    write_trajectory(tmp_path, [
+        {"type": "tool.call", "sessionKey": SESSION, "ts": "2026-09-20T10:00:00Z", "data": {
+            "toolCallId": "call_good", "name": "web_search", "args": {"query": "private input"},
+        }},
+        {"type": "tool.result", "sessionKey": SESSION, "ts": "2026-09-20T10:00:01Z", "data": {
+            "toolCallId": "call_good", "name": "web_search", "success": True,
+            "result": {"content": [{"text": "private result"}]},
+        }},
+        {"type": "tool.call", "sessionKey": "agent:personal-historian:pap-other", "data": {
+            "toolCallId": "call_other", "name": "exec", "args": {"command": "do not include"},
+        }},
+        {"type": "tool.call", "sessionKey": SESSION, "ts": "2026-09-20T10:01:00Z", "data": {
+            "toolCallId": "call_incomplete", "name": "exec", "args": {"command": "still running"},
+        }},
+    ])
+
+    tools = trajectory_tools("personal-historian", RUN, state_dir=tmp_path)
+    assert [item["tool_call_id"] for item in tools] == ["call_good", "call_incomplete"]
+    assert tools[0]["name"] == "web_search"
+    assert tools[0]["success"] is True
+    assert tools[0]["duration_ms"] == 1000
+    assert tools[0]["arguments"]["bytes"] > 0
+    assert "private input" not in json.dumps(tools)
+    assert "private result" not in json.dumps(tools)
+    assert tools[1]["started_at"] == "2026-09-20T10:01:00+00:00"
+    assert "completed_at" not in tools[1]
 
 
 def test_a_missing_store_is_not_an_error(tmp_path):

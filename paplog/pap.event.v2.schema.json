@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://pap.local/schema/pap.event.v2.json",
+  "title": "pap.event.v2",
+  "type": "object",
+  "required": ["schema", "event_id", "timestamp", "observed_timestamp", "event_name", "kind", "trace", "execution", "attributes", "links", "privacy"],
+  "properties": {
+    "schema": {"const": "pap.event.v2"},
+    "event_id": {"type": "string", "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"},
+    "timestamp": {"type": "string", "format": "date-time"},
+    "observed_timestamp": {"type": "string", "format": "date-time"},
+    "event_name": {"type": "string", "pattern": "^[a-z][a-z0-9_.-]+$"},
+    "kind": {"enum": ["operation", "action", "event"]},
+    "phase": {"enum": ["started", "completed", "failed", "abandoned", null]},
+    "trace": {"type": "object", "properties": {"trace_id": {"type": "string", "pattern": "^[0-9a-f]{32}$"}, "span_id": {"type": "string", "pattern": "^[0-9a-f]{16}$"}, "parent_span_id": {"type": ["string", "null"], "pattern": "^[0-9a-f]{16}$"}}, "additionalProperties": true},
+    "execution": {"type": "object", "properties": {"run_id": {"type": ["string", "null"]}, "operation_id": {"type": ["string", "null"]}, "action_id": {"type": ["string", "null"]}, "node_id": {"type": "string"}, "runtime": {"type": "object", "additionalProperties": true}}, "additionalProperties": true},
+    "attributes": {"type": "object", "additionalProperties": true},
+    "links": {"type": "array", "items": {"type": "object", "required": ["type", "target_type", "target_id"], "properties": {"type": {"type": "string"}, "target_type": {"type": "string"}, "target_id": {"type": "string"}}}},
+    "privacy": {"type": "object", "required": ["classification", "content_mode"], "properties": {"classification": {"type": "string"}, "content_mode": {"enum": ["metadata", "redacted", "full"]}}}
+  },
+  "additionalProperties": true
+}

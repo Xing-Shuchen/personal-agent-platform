@@ -15,9 +15,12 @@ from __future__ import annotations
 import email.utils
 import hashlib
 import json
+import os
 import sqlite3
 import sys
 import urllib.request
+import urllib.parse
+from contextlib import nullcontext
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
@@ -25,6 +28,21 @@ from xml.etree import ElementTree
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from db import _now, repo_root, stable_id
+
+try:
+    from paplog import observe as paplog
+except ImportError:  # Standalone maintenance use remains dependency-free.
+    class _NoopPaplog:
+        @staticmethod
+        def http(*_args: Any, **_kwargs: Any): return nullcontext()
+        @staticmethod
+        def database(*_args: Any, **_kwargs: Any): return nullcontext()
+    paplog = _NoopPaplog()
+
+
+def _observed() -> bool:
+    """Avoid creating a default ledger for standalone/library use."""
+    return bool(os.environ.get("PAP_RUN_ID") or os.environ.get("PAP_OBSERVABILITY_DIR"))
 
 DEFAULT_USER_AGENT = "world-historian-feed-fetcher/0.1 (+pap personal-agent-platform)"
 DEFAULT_TIMEOUT = 20
@@ -117,8 +135,14 @@ def parse_feed(xml_text: str) -> list[dict[str, Any]]:
 def fetch_feed(url: str, *, timeout: int = DEFAULT_TIMEOUT) -> str:
     """Fetch a feed URL as UTF-8 text. Raises on network/HTTP errors."""
     request = urllib.request.Request(url, headers={"User-Agent": DEFAULT_USER_AGENT})
-    with urllib.request.urlopen(request, timeout=timeout) as response:
-        raw = response.read()
+    # A configured feed is a real network boundary.  Deliberately omit query
+    # parameters from the resource identity so a feed URL cannot leak a token.
+    parsed = urllib.parse.urlsplit(url)
+    safe_endpoint = urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, parsed.path, "", ""))
+    with (paplog.http(safe_endpoint, effect="execute", attributes={"http.method": "GET", "feed.fetch": True})
+          if _observed() else nullcontext()):
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            raw = response.read()
     return raw.decode("utf-8", errors="replace")
 
 
@@ -144,30 +168,33 @@ def ingest_feed(
 
     now = _now()
     added = 0
-    for entry in entries[:max_entries]:
-        url = entry["link"]
-        title = entry["title"]
-        published = entry["published"]
-        content_hash = _content_hash(title, url, published)
-        identifier = stable_id("src", url, published, content_hash)
-        row = conn.execute(
-            "SELECT 1 FROM sources WHERE id = ?", (identifier,)
-        ).fetchone()
-        if row is not None:
-            continue
-        conn.execute(
-            """INSERT INTO sources
-               (id, canonical_url, title, publisher, source_kind, published_at,
-                updated_at, fetched_at, content_hash, metadata_json, created_at)
-               VALUES (?, ?, ?, ?, 'rss', ?, ?, ?, ?, ?, ?)""",
-            (identifier, url, title, feed_name, published, published, now,
-             content_hash, json.dumps({
-                 "feed": feed_name, "feed_url": feed_url,
-                 "summary": entry["summary"][:2000],
-             }, ensure_ascii=False), now),
-        )
-        added += 1
-    conn.commit()
+    with (paplog.database("world-historian.sources", effect="write",
+                          attributes={"feed.name": feed_name, "candidate_count": min(len(entries), max_entries)})
+          if _observed() else nullcontext()):
+        for entry in entries[:max_entries]:
+            url = entry["link"]
+            title = entry["title"]
+            published = entry["published"]
+            content_hash = _content_hash(title, url, published)
+            identifier = stable_id("src", url, published, content_hash)
+            row = conn.execute(
+                "SELECT 1 FROM sources WHERE id = ?", (identifier,)
+            ).fetchone()
+            if row is not None:
+                continue
+            conn.execute(
+                """INSERT INTO sources
+                   (id, canonical_url, title, publisher, source_kind, published_at,
+                    updated_at, fetched_at, content_hash, metadata_json, created_at)
+                   VALUES (?, ?, ?, ?, 'rss', ?, ?, ?, ?, ?, ?)""",
+                (identifier, url, title, feed_name, published, published, now,
+                 content_hash, json.dumps({
+                     "feed": feed_name, "feed_url": feed_url,
+                     "summary": entry["summary"][:2000],
+                 }, ensure_ascii=False), now),
+            )
+            added += 1
+        conn.commit()
     return {"source": feed_name, "fetched": len(entries), "added": added,
             "error": None}
 

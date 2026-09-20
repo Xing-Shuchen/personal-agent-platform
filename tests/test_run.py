@@ -1,10 +1,11 @@
 """Tests for OpenClaw invocation and append-only run records."""
 
 import json
+import signal
 import subprocess
 from pathlib import Path
 
-from pap.run import OPENCLAW_EMPTY_FINALIZATION_FALLBACK, _opencode_output, _prompt, invoke, is_retryable, runs
+from pap.run import OPENCLAW_EMPTY_FINALIZATION_FALLBACK, _opencode_output, _prompt, invoke, is_retryable, new_run_id, runs
 from pap.spec import load_spec
 
 
@@ -55,6 +56,12 @@ def test_invoke_records_start_and_completion(tmp_path):
     assert result.response == "完成"
     assert captured["cwd"] == tmp_path / "agents/sample/profile"
     assert captured["env"]["PAP_AGENT_STATE_DIR"] == str(tmp_path / "var/sample")
+    assert captured["env"]["PAP_AGENT_DEFINITION_VERSION"].startswith("sha256:")
+    assert captured["env"]["PAP_RUN_ID"] == result.run_id
+    assert captured["env"]["PAP_PARENT_OPERATION_ID"] != result.run_id
+    assert len(captured["env"]["PAP_PARENT_OPERATION_ID"]) == 26
+    assert captured["env"]["PAP_NODE_ID"]
+    assert captured["env"]["TRACEPARENT"].startswith("00-")
     assert captured["command"][:5] == ["openclaw", "agent", "--agent", "sample", "--session-key"]
     assert "--message-file" in captured["command"]
     assert str(captured["message_file"]) != "-"
@@ -73,6 +80,13 @@ def test_invoke_records_start_and_completion(tmp_path):
     merged = runs(log)
     assert merged[0]["run_id"] == result.run_id
     assert merged[0]["usage"] == {}
+
+
+def test_new_run_id_is_a_sortable_ulid():
+    earlier = new_run_id(__import__("datetime").datetime.fromisoformat("2026-01-01T00:00:00+00:00"))
+    later = new_run_id(__import__("datetime").datetime.fromisoformat("2026-01-01T00:00:01+00:00"))
+    assert len(earlier) == len(later) == 26
+    assert earlier < later
 
 
 def test_invoke_job_model_overrides_agent_model(tmp_path):
@@ -131,6 +145,47 @@ def test_opencode_invocation_uses_stdin_json_and_runner_usage(tmp_path, monkeypa
     assert record["usage"]["model"]["source"] == "opencode.run"
 
 
+def test_model_call_records_non_secret_route_profiles(tmp_path, monkeypatch):
+    spec = load_spec(make_agent(tmp_path))
+    from paplog import observe
+    observe.configure(tmp_path / "ledger")
+    monkeypatch.setenv("PAP_ROUTING_PROFILE", "low-cost")
+    monkeypatch.setenv("PAP_CREDENTIAL_PROFILE", "shared-research")
+    monkeypatch.setenv("PAP_WORKLOAD_CLASS", "scheduled-brief")
+    invoke(root=tmp_path, spec=spec, skill="sample-skill", run_log=tmp_path / "runs.jsonl",
+           runner_backend="opencode", model="opencode/test", command_runner=lambda command, **_: subprocess.CompletedProcess(
+               command, 0, '{"type":"step_finish","part":{"tokens":{"input":2,"output":1},"cost":0}}', ""))
+    event = observe.get_ledger().query(event="pap.model.call")[0]
+    assert {key: event["attributes"][key] for key in ("routing_profile", "credential_profile", "workload_class")} == {
+        "routing_profile": "low-cost", "credential_profile": "shared-research", "workload_class": "scheduled-brief"}
+
+
+def test_openclaw_trajectory_tool_actions_are_linked_to_the_skill(tmp_path, monkeypatch):
+    spec = load_spec(make_agent(tmp_path))
+    from paplog import observe
+    observe.configure(tmp_path / "ledger")
+    monkeypatch.setattr("pap.run.trajectory_tools", lambda *_args: [{
+        "tool_call_id": "call_1", "name": "web_search",
+        "arguments": {"sha256": "sha256:args", "bytes": 5},
+        "result": {"sha256": "sha256:result", "bytes": 7},
+        "started_at": "2026-09-20T10:00:00+00:00",
+        "completed_at": "2026-09-20T10:00:01+00:00", "duration_ms": 1000, "success": True,
+    }])
+    invoke(root=tmp_path, spec=spec, skill="sample-skill", run_log=tmp_path / "runs.jsonl",
+           runner_backend="openclaw", usage_probe=lambda *_: {"input_tokens": 2, "output_tokens": 1},
+           command_runner=lambda command, **_: subprocess.CompletedProcess(command, 0, "done", ""))
+
+    events = observe.get_ledger().query(event="pap.tool.call")
+    assert [event["phase"] for event in events] == ["started", "completed"]
+    assert {event["execution"]["action_id"] for event in events}.__len__() == 1
+    assert all(event["execution"]["operation_id"] for event in events)
+    assert events[-1]["attributes"]["tool.result"] == {"sha256": "sha256:result", "bytes": 7}
+    model = observe.get_ledger().query(event="pap.model.call")[0]
+    assert model["kind"] == "action"
+    assert model["phase"] == "completed"
+    assert model["execution"]["action_id"]
+
+
 def test_opencode_json_event_parser_accepts_cli_event_shape():
     response, usage = _opencode_output(
         '{"type":"text","part":{"text":"PICKLE"}}\n'
@@ -155,6 +210,19 @@ def test_invoke_removes_message_file_when_runner_fails(tmp_path):
 
     assert result.status == "failed"
     assert not captured["message_file"].exists()
+
+
+def test_sigterm_is_preserved_as_a_distinct_run_failure(tmp_path):
+    spec = load_spec(make_agent(tmp_path))
+    from paplog import observe
+    observe.configure(tmp_path / "ledger")
+    result = invoke(root=tmp_path, spec=spec, skill="sample-skill", run_log=tmp_path / "runs.jsonl",
+                    command_runner=lambda command, **_: subprocess.CompletedProcess(command, -signal.SIGTERM, "", ""))
+    assert result.status == "failed"
+    assert result.failure_kind == f"signal:{signal.SIGTERM}"
+    process = observe.get_ledger().query(event="pap.process.exec")[-1]
+    assert process["phase"] == "failed"
+    assert process["attributes"]["exit_code"] == -signal.SIGTERM
 
 
 def test_invoke_normalizes_openclaw_empty_finalization_to_no_reply(tmp_path):
@@ -197,6 +265,24 @@ def test_declared_runtime_can_finish_not_ready_without_model_turn(tmp_path, monk
     )
     assert result.status == "not_ready"
     assert result.response == "NOT_READY"
+
+
+def test_runtime_context_policy_identity_reaches_terminal_run_event(tmp_path, monkeypatch):
+    spec = load_spec(make_agent(tmp_path))
+    runtime_dir = tmp_path / "agents/sample/runtime"
+    runtime_dir.mkdir()
+    (runtime_dir / "test.py").write_text("# invoked through mocked adapter\n", encoding="utf-8")
+    from paplog import observe
+    observe.configure(tmp_path / "ledger")
+    def fake_runtime(_path, action, _payload, _env):
+        if action == "prepare":
+            return {"status": "ready", "input_text": "", "metadata": {"context_pack_id": "context-pack:week:2026-W01", "policy_id": "week", "policy_version": "v1"}}
+        return {"status": "success", "response": "NO_REPLY", "metadata": {}}
+    monkeypatch.setattr("pap.run._runtime_call", fake_runtime)
+    result = invoke(root=tmp_path, spec=spec, skill="sample-skill", runtime="test", run_log=tmp_path / "runs.jsonl",
+                    command_runner=lambda command, **_: subprocess.CompletedProcess(command, 0, "NO_REPLY", ""))
+    terminal = observe.get_ledger().query(run=result.run_id, event="pap.run.completed")[0]
+    assert terminal["context"] == {"pack_refs": ["artifact:context-pack:week:2026-W01"], "policy_id": "week", "policy_version": "v1"}
 
 
 def test_run_record_names_the_job_period_and_model(tmp_path):

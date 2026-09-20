@@ -7,6 +7,7 @@ from pathlib import Path
 
 from pap.run import RunResult
 from pap.scheduler import _deliver, tick
+from paplog import observe
 
 CST = timezone(timedelta(hours=8))
 
@@ -55,6 +56,17 @@ def test_tick_claims_slot_once(tmp_path):
     assert first[0].delivery == "silent"
     assert second == []
     assert len(calls) == 1
+
+
+def test_scheduled_lifecycle_uses_one_canonical_job_id(tmp_path):
+    make_platform(tmp_path)
+    observe.configure(tmp_path / "ledger")
+    now = datetime(2026, 8, 31, 18, 17, tzinfo=CST)
+    tick(tmp_path, now=now, command_runner=lambda argv, **_: subprocess.CompletedProcess(argv, 0, "NO_REPLY", ""))
+    lifecycle = observe.get_ledger().query(event="pap.*")
+    names = {"pap.schedule.due", "pap.schedule.dispatched", "pap.run.started", "pap.run.completed"}
+    matching = [item for item in lifecycle if item["event_name"] in names]
+    assert {item["job"]["id"] for item in matching} == {"sample/sample-job"}
 
 
 def test_tick_command_job_does_not_invoke_a_model_runner(tmp_path):

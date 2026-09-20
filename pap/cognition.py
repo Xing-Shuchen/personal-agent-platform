@@ -7,6 +7,7 @@ when a new run fails.
 from __future__ import annotations
 
 import argparse
+from functools import wraps
 import hashlib
 import json
 import os
@@ -17,6 +18,8 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
+
+from paplog import observe as paplog
 
 import yaml
 
@@ -222,6 +225,17 @@ class Index:
         row = self.db.execute("SELECT generation_id FROM index_generations WHERE status='COMPLETE' ORDER BY generation_id DESC LIMIT 1").fetchone()
         return row[0] if row else None
 
+    @staticmethod
+    def _observed_read(function):
+        @wraps(function)
+        def wrapped(self, *args, **kwargs):
+            if not (os.environ.get("PAP_RUN_ID") or os.environ.get("PAP_OBSERVABILITY_DIR")):
+                return function(self, *args, **kwargs)
+            with paplog.database(str(self.path), effect="read"):
+                return function(self, *args, **kwargs)
+        return wrapped
+
+    @_observed_read.__func__
     def status(self) -> dict[str, Any]:
         generation = self.complete_generation()
         return {"index_path": str(self.path), "generation": generation, "documents": self.db.execute("SELECT count(*) FROM documents WHERE deleted=0").fetchone()[0], "evidence_units": self.db.execute("SELECT count(*) FROM evidence_units WHERE active=1").fetchone()[0], "fts": self.db.execute("SELECT count(*) FROM evidence_fts").fetchone()[0], "failed_generations": self.db.execute("SELECT count(*) FROM index_generations WHERE status='FAILED'").fetchone()[0], "versions": {"schema": SCHEMA_VERSION, "scanner": SCANNER_VERSION, "segmenter": SEGMENTER_VERSION, "provenance_rules": PROVENANCE_RULES_VERSION}}
@@ -240,6 +254,23 @@ class Index:
             return row["document_id"]
         return "doc_" + digest(path + content_hash)[:24]
 
+    @staticmethod
+    def _observed_build(function):
+        """Add explicit PAP telemetry without changing standalone cognition."""
+        @wraps(function)
+        def wrapped(self, *args, **kwargs):
+            if not (os.environ.get("PAP_RUN_ID") or os.environ.get("PAP_OBSERVABILITY_DIR")):
+                return function(self, *args, **kwargs)
+            with paplog.operation(
+                "pap.cognition.index",
+                runtime={"backend": "pap", "mode": "deterministic"},
+                attributes={"index_path": str(self.path)},
+            ):
+                with paplog.database(str(self.path), effect="write"):
+                    return function(self, *args, **kwargs)
+        return wrapped
+
+    @_observed_build.__func__
     def build(self, vault: Path, *, dry_run: bool = False) -> dict[str, Any]:
         files = sorted(p for p in vault.rglob("*.md") if not any(x in SKIP for x in p.relative_to(vault).parts))
         if dry_run: return {"candidates": len(files), "dry_run": True}
@@ -248,7 +279,13 @@ class Index:
         seen: set[str] = set(); skipped = failed = 0
         try:
             for file in files:
-                before = file.stat(); raw = file.read_text("utf-8", errors="replace"); after = file.stat()
+                before = file.stat()
+                if os.environ.get("PAP_RUN_ID") or os.environ.get("PAP_OBSERVABILITY_DIR"):
+                    with paplog.filesystem(file, effect="read"):
+                        raw = file.read_text("utf-8", errors="replace")
+                else:
+                    raw = file.read_text("utf-8", errors="replace")
+                after = file.stat()
                 if (before.st_mtime_ns, before.st_size) != (after.st_mtime_ns, after.st_size): failed += 1; continue
                 path = file.relative_to(vault).as_posix(); content_hash = digest(raw); normalized_hash = digest(normalize(raw))
                 meta, body, base = parse_markdown(raw)
@@ -286,11 +323,13 @@ class Index:
         except Exception as exc:
             self.db.rollback(); self.db.execute("INSERT INTO index_generations(started_at,completed_at,status,scanner_version,schema_version,errors_json) VALUES(?,?,?,?,?,?)", (now(),now(),"FAILED",SCANNER_VERSION,SCHEMA_VERSION,json.dumps([str(exc)[:1000]]))); self.db.commit(); raise
 
+    @_observed_read.__func__
     def get(self, evidence_id: str, excerpt: int = DEFAULT_EXCERPT) -> dict[str, Any] | None:
         excerpt = max(1, min(excerpt, ABSOLUTE_EXCERPT)); row = self.db.execute("SELECT * FROM evidence_units WHERE evidence_id=? AND active=1", (evidence_id,)).fetchone()
         if not row: return None
         data=dict(row); data["text"] = data.pop("text")[:excerpt]; data["field_provenance"] = json.loads(data.pop("field_provenance_json")); data["timestamps"] = json.loads(data.pop("timestamps_json")); return data
 
+    @_observed_read.__func__
     def search(self, query: str, *, limit: int = 10, source_type: str | None = None, voice: str | None = None) -> list[dict[str, Any]]:
         limit=max(1,min(limit,MAX_RESULT_LIMIT)); filters=["u.active=1", "evidence_fts MATCH ?"]; values=[query]
         if source_type: filters.append("u.source_type=?"); values.append(source_type)
@@ -390,7 +429,23 @@ def main(argv: list[str] | None = None) -> int:
         else:
             result=index.shadow_pack(args.kind,args.run_id)
             pack_dir=db.parent / "context-packs"; pack_dir.mkdir(exist_ok=True)
-            (pack_dir / f"{result['run_id']}.json").write_text(json.dumps(result,ensure_ascii=False,indent=2)+"\n",encoding="utf-8")
+            pack_path = pack_dir / f"{result['run_id']}.json"
+            serialized = json.dumps(result, ensure_ascii=False, indent=2) + "\n"
+            if os.environ.get("PAP_RUN_ID") or os.environ.get("PAP_OBSERVABILITY_DIR"):
+                with paplog.filesystem(pack_path, effect="write",
+                                       attributes={"bytes": len(serialized.encode("utf-8"))}):
+                    pack_path.write_text(serialized, encoding="utf-8")
+            else:
+                pack_path.write_text(serialized, encoding="utf-8")
+            evidence_ids = sorted(set(result.get("seeds", [])) | set(result.get("world_deltas", [])) |
+                                  set(result.get("personal_match_targets", [])))
+            paplog.event("pap.context_pack.created", subject={"type": result["schema"], "id": result["run_id"]},
+                         execution={"run_id": os.environ.get("PAP_RUN_ID")},
+                         attributes={"uri": str(pack_path), "pack_hash": result.get("pack_hash"),
+                                     "bytes": len(serialized.encode("utf-8")), "kind": args.kind,
+                                     "index_generation": result.get("index_generation")},
+                         links=[{"type": "derived_from", "target_type": "evidence", "target_id": item}
+                                for item in evidence_ids])
         print(json.dumps(result,ensure_ascii=False,indent=2,default=str)); return 0 if not (isinstance(result,dict) and result.get("error")) else 2
     finally: index.close()
 
