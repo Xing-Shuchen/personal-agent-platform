@@ -113,6 +113,26 @@ def _confidence(value: object, where: str, default: float = 0.5) -> float:
     return float(result)
 
 
+def _event_title(item: dict[str, Any]) -> str | None:
+    """Validate an optional, deliberately short event heading.
+
+    ``summary`` remains the evidence-bearing event body.  Older bundles did
+    not carry a title, so absence is supported for backwards compatibility;
+    the Obsidian renderer supplies a compact date-based fallback for them.
+    """
+    value = item.get("title")
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise ChronicleError("event.title must be a string")
+    value = " ".join(value.split())
+    if not value:
+        raise ChronicleError("event.title must not be empty")
+    if len(value) > 60:
+        raise ChronicleError("event.title must be at most 60 characters")
+    return value
+
+
 def store_bundle(conn: sqlite3.Connection, bundle: dict[str, Any]) -> dict[str, Any]:
     """Validate and atomically upsert one cross-referenced Chronicle bundle.
 
@@ -265,21 +285,23 @@ def store_bundle(conn: sqlite3.Connection, bundle: dict[str, Any]) -> dict[str, 
 
         for item in _items(bundle, "events"):
             summary = str(_required(item, "summary", "event"))
+            title = _event_title(item)
             identifier = str(item.get("id") or _stable(
                 "evt", summary, item.get("occurred_at"), item.get("reported_at")
             ))
             remember(item, identifier)
             conn.execute(
                 """INSERT INTO events
-                   (id, summary, occurred_at, occurred_at_precision, reported_at,
+                   (id, title, summary, occurred_at, occurred_at_precision, reported_at,
                     observed_at, confidence, status, created_at, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                    ON CONFLICT(id) DO UPDATE SET
+                     title=COALESCE(excluded.title, events.title),
                      summary=excluded.summary, occurred_at=excluded.occurred_at,
                      occurred_at_precision=excluded.occurred_at_precision,
                      reported_at=excluded.reported_at, confidence=excluded.confidence,
                      status=excluded.status, updated_at=excluded.updated_at""",
-                (identifier, summary, item.get("occurred_at"),
+                (identifier, title, summary, item.get("occurred_at"),
                  item.get("occurred_at_precision", "unknown"), item.get("reported_at"),
                  item.get("observed_at", now), _confidence(item.get("confidence"), "event.confidence"),
                  item.get("status", "active"), now, now),

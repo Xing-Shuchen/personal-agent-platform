@@ -19,6 +19,9 @@ Treat the input as a seed for an ongoing thread, not as an article title.
 4. Separate source observations, claims, event facts, and open questions.
    Preserve `occurred_at`, `reported_at`, and `observed_at` separately; use
    `null` and an explicit precision when the occurrence time is unknown.
+   Give every event a short `title` (maximum 60 characters) for its timeline
+   heading, and put the complete account in `summary` as Markdown body text.
+   The title is an identifying phrase, never a compressed evidence dump.
 5. Create a small initial source set, the event, its claims, thread entities,
    open questions, and watch queries. Do not assert motivations as facts.
    For every named person whose statement is referenced, also retrieve and

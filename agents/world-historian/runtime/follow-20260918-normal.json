@@ -1,0 +1,266 @@
+{
+ "sources": [
+  {
+   "ref": "src_tmtpost_hodge",
+   "canonical_url": "https://www.tmtpost.com/nictation/8144091.html",
+   "title": "OpenAI据报接近解决又一“千禧年大奖难题”，或将攻克霍奇猜想",
+   "publisher": "钛媒体",
+   "source_kind": "site",
+   "published_at": "2026-09-17T22:17:00+08:00"
+  },
+  {
+   "ref": "src_sina_hodge",
+   "canonical_url": "https://finance.sina.com.cn/stock/usstock/c/2026-09-18/doc-inisfpqz3382590.shtml",
+   "title": "OpenAI据悉接近破解又一个千禧年大奖难题——霍奇猜想",
+   "publisher": "新浪财经（环球市场播报）",
+   "source_kind": "site",
+   "published_at": "2026-09-18T14:07:51+08:00"
+  },
+  {
+   "ref": "src_gizmodo_hodge",
+   "canonical_url": "https://gizmodo.com/openai-reportedly-trying-to-solve-hodge-conjecture-amid-feud-with-math-community-2000813658",
+   "title": "OpenAI Reportedly Trying to Solve Hodge Conjecture Amid Feud With Math Community",
+   "publisher": "Gizmodo",
+   "source_kind": "site",
+   "published_at": "2026-09-18T08:10:47+08:00"
+  },
+  {
+   "ref": "src_cnmo_hodge",
+   "canonical_url": "https://m.cnmo.com/news/818791.html",
+   "title": "OpenAI据称正在攻关霍奇猜想 数学界质疑声仍未平息",
+   "publisher": "CNMO",
+   "source_kind": "site",
+   "published_at": "2026-09-18T10:11:00+08:00"
+  },
+  {
+   "ref": "src_novcog_evals",
+   "canonical_url": "https://jev.novcog.us.com/the-evals",
+   "title": "The Evals: Measured Against Two Models, Not Against Truth",
+   "publisher": "Novel Cognition（jev.novcog.us.com）",
+   "source_kind": "site",
+   "published_at": "2026-09-16T08:00:00+08:00"
+  },
+  {
+   "ref": "src_orcarouter_jev",
+   "canonical_url": "https://www.orcarouter.ai/blog/jev-typesafe-system-one-what-we-know",
+   "title": "Jev: TypeSafe's Decision Model, Speed and Cost Explained",
+   "publisher": "orcarouter.ai",
+   "source_kind": "site",
+   "published_at": "2026-09-16T16:49:38+08:00"
+  },
+  {
+   "ref": "src_progrobot_jev",
+   "canonical_url": "https://www.progressiverobot.com/2026/09/16/jev-model-typesafe-programmatic-logic/",
+   "title": "Jev Model: Proven Speed, Smart Logic Without a Chatbot",
+   "publisher": "Progressive Robot",
+   "source_kind": "site",
+   "published_at": "2026-09-16T17:14:57+08:00"
+  }
+ ],
+ "events": [
+  {
+   "ref": "evt_next_millennium_20260917",
+   "id": "evt_next_millennium_20260917",
+   "summary": "OpenAI『下一道千禧年难题』线索在 2026-09-17 具体化：《The Information》报道（钛媒体 09-17 22:17、新浪财经／环球市场播报 09-18 14:07、Gizmodo 09-18、CNMO 09-18 转述）称，有 OpenAI 员工预计霍奇猜想（Hodge Conjecture）『不久后』可获得证明，公司或推迟公布，因其正设法与数学界协调、避免重演 N-S 发布引发的公关危机。OpenAI 本身只向《纽约时报》确认在另一道千禧年难题上取得『重大进展』，未说明是哪一道——霍奇猜想仍未获官方确认（与 2026-09-10 记录的『传闻下一目标为霍奇猜想、内部代号或为 Aeon，均未获证实』相比，本条为新的具名媒体报道）。报道另称：N-S 求解使用的是下一代预训练模型的一个变体、其代号传为『道格』（与先前传闻代号『Aeon』不同，两者均未获 OpenAI 证实）；N-S 求解成本或达数百万美元；部分研究人员认为数学是继软件工程之后模型理应进军的下一领域，并预期该领域的自动化变革可能在 6–9 个月内重演，这一步被视为通往『递归自我改进（RSI）』的一环。",
+   "occurred_at": "2026-09-17",
+   "occurred_at_precision": "day",
+   "reported_at": "2026-09-17T22:17:00+08:00",
+   "confidence": 0.6,
+   "status": "active",
+   "thread_refs": [
+    "thr_ns_regularity_ai_claim"
+   ],
+   "entity_names": [
+    {
+     "name": "OpenAI",
+     "kind": "organization"
+    },
+    {
+     "name": "霍奇猜想",
+     "kind": "concept"
+    },
+    {
+     "name": "The Information",
+     "kind": "organization"
+    },
+    {
+     "name": "Clay Mathematics Institute",
+     "kind": "organization"
+    }
+   ]
+  },
+  {
+   "ref": "evt_jev_independent_evals",
+   "id": "evt_jev_independent_evals",
+   "summary": "TypeSafe AI 的 Jev 首次出现第三方独立测评（2026-09-15 起）：Every 的评测负责人 Mike Taylor 与 CEO Dan Shipper 公开实测——对 37 份文档（27 篇已发表文章 + 10 篇 AI 风格仿作）一次提问 21 个问题，返回 777 个判断、耗时不足 0.7 秒、成本约 0.25 美分；另一组 11 项实验共 1,709 个判断、总成本不足 1 美分。决定性的精度测试用 12 段合成文本（6 段干净、6 段植入缺陷）对比 Claude Fable 5.1 高推理档：Jev 中位每段 0.35 秒对 8.83 秒（约快 25 倍）、成本约为其 1/580，但只识别出 7 处植入缺陷中的 6 处（Fable 5.1 全部命中）；Every 的结论是『好但不完美』，投入生产前需更充分的准确性检查。多家独立分析（Novel Cognition《The Jev File》、orcarouter、Progressive Robot、rywalker）指出：官方首页 193.6x/444.6x 只在『对比昂贵前沿推理模型、且在其自评 workflow 上』成立，独立实测约为 Mistral Small 4 的 5 倍速度与 8.6 倍成本优势、较 DeepSeek V4.1 Flash 便宜约 1.6 倍；厂商自评面板上 Jev 为 67.8%，低于最佳对照 74.1%，未见任何数字显示其准确性超过同级前沿模型；校准（RLCD）仍无公开的可靠性曲线或消融实验。可核对结论：速度与成本主张获第三方初步支持，精度与校准主张仍待更大样本与真实工作负载验证。",
+   "occurred_at": "2026-09-15",
+   "occurred_at_precision": "day",
+   "reported_at": "2026-09-16T00:00:00+08:00",
+   "confidence": 0.7,
+   "status": "active",
+   "thread_refs": [
+    "thr_typesafe_jev_system_one"
+   ],
+   "entity_names": [
+    {
+     "name": "Jev",
+     "kind": "product"
+    },
+    {
+     "name": "TypeSafe AI",
+     "kind": "organization"
+    },
+    {
+     "name": "Claude Fable 5.1",
+     "kind": "product"
+    }
+   ]
+  }
+ ],
+ "claims": [
+  {
+   "ref": "clm_hodge_expect",
+   "event_ref": "evt_next_millennium_20260917",
+   "source_ref": "src_sina_hodge",
+   "statement": "《The Information》报道（新浪财经／环球市场播报 2026-09-18 转述）：OpenAI 员工预计霍奇猜想（Hodge Conjecture）有望不久后获证明；OpenAI 只向《纽约时报》确认在另一道千禧年难题上取得『重大进展』，未说明是哪一道。",
+   "status": "active",
+   "confidence": 0.6,
+   "asserted_at": "2026-09-18T14:07:51+08:00"
+  },
+  {
+   "ref": "clm_hodge_codename",
+   "event_ref": "evt_next_millennium_20260917",
+   "source_ref": "src_sina_hodge",
+   "statement": "报道称 N-S 求解使用的是下一代预训练模型的一个变体、代号传为『道格』（Doug）；此前提及的外部传闻代号为『Aeon』（2026-09-10 记录）。两个代号均未获 OpenAI 证实，构成未决的命名冲突而非相互取代。",
+   "status": "active",
+   "confidence": 0.5,
+   "asserted_at": "2026-09-18T14:07:51+08:00"
+  },
+  {
+   "ref": "clm_hodge_prrsi",
+   "event_ref": "evt_next_millennium_20260917",
+   "source_ref": "src_gizmodo_hodge",
+   "statement": "报道称 OpenAI 可能推迟公布霍奇猜想结果，因其正考虑如何与数学界合作、避免重演 N-S 发布引发的公关危机；并称 N-S 求解成本或达数百万美元、把高难数学视为通往递归自我改进（RSI）的路径之一。",
+   "status": "active",
+   "confidence": 0.6,
+   "asserted_at": "2026-09-18T08:10:47+08:00"
+  },
+  {
+   "ref": "clm_jev_every_test",
+   "event_ref": "evt_jev_independent_evals",
+   "source_ref": "src_orcarouter_jev",
+   "statement": "第三方独立测评（Every，2026-09-15）：37 份文档 777 个判断、耗时不足 0.7 秒、成本约 0.25 美分；12 段合成文本对比 Claude Fable 5.1 高推理档约快 25 倍、成本约 1/580，但只识别出 7 处植入缺陷中的 6 处（Fable 5.1 为 7/7）。",
+   "status": "active",
+   "confidence": 0.7,
+   "asserted_at": "2026-09-16T16:49:38+08:00"
+  },
+  {
+   "ref": "clm_jev_multiple_gap",
+   "event_ref": "evt_jev_independent_evals",
+   "source_ref": "src_novcog_evals",
+   "statement": "独立分析（Novel Cognition《The Jev File》）指：官方首页 193.6x/444.6x 仅在对比昂贵前沿推理模型的自评 workflow 上成立；独立实测约比 Mistral Small 4 快 5 倍、便宜 8.6 倍，比 DeepSeek V4.1 Flash 便宜约 1.6 倍；厂商自评面板 Jev 67.8% 对最佳对照 74.1%，无任何数字显示其准确性优于同级前沿模型。",
+   "status": "active",
+   "confidence": 0.65,
+   "asserted_at": "2026-09-16T08:00:00+08:00"
+  },
+  {
+   "ref": "clm_jev_calibration_unverified",
+   "event_ref": "evt_jev_independent_evals",
+   "source_ref": "src_novcog_evals",
+   "statement": "校准（RLCD）主张仍无法第三方验证：无公开论文、无校准曲线、无消融实验；截至 2026-09-16 未见基于公开数据集与真实标注的可靠性图（reliability diagram）。",
+   "status": "active",
+   "confidence": 0.6,
+   "asserted_at": "2026-09-16T08:00:00+08:00"
+  },
+  {
+   "ref": "clm_jev_speed_cost_supported",
+   "event_ref": "evt_jev_independent_evals",
+   "source_ref": "src_progrobot_jev",
+   "statement": "独立测评支持的核心主张为速度与成本：在真实事件审核任务上 Jev 准确率 96%（对照廉价 LLM 为 84% 与 86%）且快 5 倍、便宜 8 倍；其宣称的『Pareto 最优』（没有既更便宜又更准的方案）窄于发布时的宣传口径。",
+   "status": "active",
+   "confidence": 0.6,
+   "asserted_at": "2026-09-16T17:14:57+08:00"
+  }
+ ],
+ "threads": [
+  {
+   "id": "thr_ns_regularity_ai_claim",
+   "title": "N-S 方程正则性被 AI 声称解决（OpenAI vs Buckmaster–Alpöge）",
+   "status": "active",
+   "priority": "normal",
+   "seed_type": "user_instruction",
+   "quiet_count": 0,
+   "last_checked_at": "2026-09-18T21:46:41+08:00"
+  },
+  {
+   "id": "thr_typesafe_jev_system_one",
+   "title": "TypeSafe AI 的 Jev：非生成式 System One 决策模型（架构·定价·RLCD·Agent 编排定位）",
+   "status": "active",
+   "priority": "normal",
+   "seed_type": "user_instruction",
+   "quiet_count": 0,
+   "last_checked_at": "2026-09-18T21:46:41+08:00"
+  },
+  {
+   "id": "thr_987e2aaa8f3961166eab",
+   "title": "AI 数学成果密集爆发：S⁶ 复结构、Lean 形式化与素数长空白区间（Erdős #4）下界改进",
+   "status": "active",
+   "priority": "normal",
+   "seed_type": "user_instruction",
+   "quiet_count": 0,
+   "last_checked_at": "2026-09-18T21:46:41+08:00"
+  },
+  {
+   "id": "thr_ebecd54d798b4f7ffe43",
+   "title": "陈天奇 CAKE Agent & CAKE IR（编译器-Agent 协同设计生成 GPU 内核）",
+   "status": "active",
+   "priority": "normal",
+   "seed_type": "user_instruction",
+   "quiet_count": 14,
+   "last_checked_at": "2026-09-18T21:46:41+08:00"
+  },
+  {
+   "id": "thr_new_slave_labor_theory",
+   "title": "「新奴工理论」（新木桶效应）——知乎民间概念的起源、机制与案例追踪",
+   "status": "active",
+   "priority": "normal",
+   "seed_type": "user_instruction",
+   "quiet_count": 2,
+   "last_checked_at": "2026-09-18T21:46:41+08:00"
+  },
+  {
+   "id": "thr_english_major_cancel",
+   "title": "「取消英语主科地位」之争（义务教育+高中阶段 · 汤家凤呼吁取消主科 · 胡锡进反驳 · 周思成回应）",
+   "status": "active",
+   "priority": "normal",
+   "seed_type": "user_instruction",
+   "quiet_count": 2,
+   "last_checked_at": "2026-09-18T21:46:41+08:00"
+  },
+  {
+   "id": "thr_local_gov_hidden_debt",
+   "title": "防范和化解地方债务风险：政策方向追踪（中央化债部署·化债工具·问责机制）",
+   "status": "active",
+   "priority": "normal",
+   "seed_type": "user_instruction",
+   "quiet_count": 1,
+   "last_checked_at": "2026-09-18T21:46:41+08:00"
+  }
+ ],
+ "discovery_candidates": [
+  {
+   "candidate_type": "thread",
+   "title": "OpenAI 攻关霍奇猜想（第二道千禧年难题）追踪",
+   "relation_score": 0.6,
+   "payload": {
+    "relation": "N-S 争议的下游；与『AI 数学成果密集爆发』线程相关",
+    "note": "2026-09-17 The Information 报道 OpenAI 员工预计霍奇猜想不久获证明；仅向 NYT 确认『重大进展』。等待官方公布、arXiv/Lean 产物与独立验证后再考虑升格为活动线程。",
+    "anchors": [
+     "thr_ns_regularity_ai_claim",
+     "thr_987e2aaa8f3961166eab"
+    ]
+   },
+   "status": "candidate"
+  }
+ ]
+}

@@ -153,6 +153,21 @@ def _load_evidence(raw: Any) -> list[Any]:
     return loaded if isinstance(loaded, list) else []
 
 
+def _event_heading(event: dict[str, Any]) -> str:
+    """Return a short event heading, never the full event body.
+
+    Events written before ``events.title`` was introduced receive a stable,
+    compact fallback.  This makes legacy projections readable without
+    pretending a substring of their summary is a real editorial title.
+    """
+    title = _one_line(event.get("title"))
+    if title:
+        return _escape_tags(title)
+    timestamp = event.get("occurred_at") or event.get("reported_at") or event.get("observed_at")
+    date = str(timestamp)[:10] if timestamp else "日期未知"
+    return f"{date} · 事件记录"
+
+
 def _endpoint_label(endpoint_type: str, endpoint_id: str,
                     snapshot: dict[str, Any]) -> str:
     if endpoint_type == "thread":
@@ -161,7 +176,7 @@ def _endpoint_label(endpoint_type: str, endpoint_id: str,
         return f"thread `{endpoint_id}`"
     for event in snapshot.get("events", []):
         if event["id"] == endpoint_id:
-            return _one_line(event.get("summary")) or f"event `{endpoint_id}`"
+            return _event_heading(event)
     return f"event `{endpoint_id}`"
 
 
@@ -171,7 +186,6 @@ def render_snapshot(snapshot: dict[str, Any], synced_at: str,
     tid = snapshot["id"]
     lines: list[str] = [_frontmatter(snapshot, synced_at), ""]
 
-    lines.append(f"# {_escape_tags(_one_line(snapshot.get('title'))) or tid}\n")
     lines.append(
         f"> [!info] 本文件由 World Historian 从 Chronicle 数据库自动生成并覆盖同步"
         f"（thread_id: `{tid}`）。机器生成部分请勿手工编辑；个人批注写在文末"
@@ -201,15 +215,21 @@ def render_snapshot(snapshot: dict[str, Any], synced_at: str,
     lines.append("")
 
     events = snapshot.get("events", [])
-    labels = {e["id"]: _escape_tags(_one_line(e.get("summary"))) or e["id"] for e in events}
-    lines.append("## 时间线\n")
+    labels = {e["id"]: _event_heading(e) for e in events}
+    lines.append("# 时间线\n")
     if not events:
         lines.append("_（尚无事件）_\n")
     # Newest first (user decision 2026-09-14): the most recent event must be
     # the first thing visible when the note is opened. The Chronicle keeps its
     # canonical ascending order; only this projection reverses it.
     for event in reversed(events):
-        lines.append(f"### {labels[event['id']]}")
+        lines.append(f"## {labels[event['id']]}")
+        summary = str(event.get("summary") or "").strip()
+        if summary:
+            lines.append(_escape_tags(summary))
+            lines.append("")
+        lines.append("---")
+        lines.append("")
         occurred = event.get("occurred_at")
         occurred_text = (
             f"未知（精度：{event.get('occurred_at_precision', 'unknown')}）"
@@ -284,7 +304,7 @@ def render_snapshot(snapshot: dict[str, Any], synced_at: str,
         lines.append("")
 
     questions = snapshot.get("questions", [])
-    lines.append("## 开放问题\n")
+    lines.append("# 开放问题\n")
     if not questions:
         lines.append("_（无）_\n")
     for question in questions:
@@ -304,7 +324,7 @@ def render_snapshot(snapshot: dict[str, Any], synced_at: str,
     lines.append("")
 
     queries = [q for q in snapshot.get("watch_queries", []) if q.get("active")]
-    lines.append("## 监视查询\n")
+    lines.append("# 监视查询\n")
     if not queries:
         lines.append("_（无）_\n")
     for query in queries:
@@ -312,7 +332,7 @@ def render_snapshot(snapshot: dict[str, Any], synced_at: str,
     lines.append("")
 
     relations = snapshot.get("relations", [])
-    lines.append("## 关联\n")
+    lines.append("# 关联\n")
     if not relations:
         lines.append("_（无）_\n")
     for relation in relations:
@@ -330,7 +350,7 @@ def render_snapshot(snapshot: dict[str, Any], synced_at: str,
     lines.append("")
 
     interpretations = snapshot.get("interpretations", [])
-    lines.append("## 后见解释（Interpretation）\n")
+    lines.append("# 后见解释（Interpretation）\n")
     if not interpretations:
         lines.append("_（无）_\n")
     for item in interpretations:
@@ -343,7 +363,7 @@ def render_snapshot(snapshot: dict[str, Any], synced_at: str,
         )
     lines.append("")
 
-    lines.append(f"## {MANUAL_SECTION}\n")
+    lines.append(f"# {MANUAL_SECTION}\n")
     lines.append((manual_notes or "（无）").rstrip())
     lines.append("")
     return "\n".join(lines)
@@ -351,11 +371,11 @@ def render_snapshot(snapshot: dict[str, Any], synced_at: str,
 
 def extract_manual_notes(text: str) -> str | None:
     """Return the reader's「手工批注」body, or ``None`` when absent."""
-    match = re.search(rf"^## {re.escape(MANUAL_SECTION)}\s*$", text, flags=re.M)
+    match = re.search(rf"^# {re.escape(MANUAL_SECTION)}\s*$", text, flags=re.M)
     if match is None:
         return None
     rest = text[match.end():]
-    following = re.search(r"^## ", rest, flags=re.M)
+    following = re.search(r"^# ", rest, flags=re.M)
     body = rest[:following.start()] if following else rest
     body = body.strip()
     return body or None

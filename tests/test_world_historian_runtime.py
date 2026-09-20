@@ -94,7 +94,7 @@ def test_store_bundle_syncs_to_configured_vault(tmp_path):
     files = sorted(p.name for p in vault.glob("*.md"))
     assert payload["obsidian"]["written"] == [str(vault / files[0])]
     text = (vault / files[0]).read_text(encoding="utf-8")
-    assert "thread_id:" in text and "## 手工批注" in text
+    assert "thread_id:" in text and "# 手工批注" in text
     assert (tmp_path / "obsidian-index.json").exists()  # index lives next to the DB
 
 

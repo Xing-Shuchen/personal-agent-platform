@@ -30,7 +30,7 @@ def capture_bundle() -> dict:
                      "questions": ["Why now?"],
                      "watch_queries": ["Example follow-up"],
                      "entity_names": [{"name": "Example", "kind": "organization"}]}],
-        "events": [{"ref": "e1", "summary": "Example changed",
+        "events": [{"ref": "e1", "title": "Example changed", "summary": "Example changed",
                     "occurred_at": "2026-08-30", "occurred_at_precision": "day",
                     "reported_at": "2026-08-30T09:00:00+08:00",
                     "observed_at": "2026-08-31T12:00:00+08:00",
@@ -76,13 +76,16 @@ def test_capture_creates_one_file_with_projection(tmp_path):
     text = target.read_text(encoding="utf-8")
     assert f"thread_id: \"{result['refs']['t1']}\"" in text
     assert "type: note" in text and "area: world-historian" in text
-    assert "## 时间线" in text
+    assert "# 时间线" in text
+    assert "## Example changed" in text
+    assert "## Example changed\nExample changed\n\n---\n\n- 发生时间：" in text
+    assert not text.startswith("# Example transition")
     assert "发生时间：未知（精度：day）" not in text  # occurred_at is set here
     assert "报道时间：2026-08-30T09:00:00+08:00" in text
     assert "「Example changed.」—— Report A（primary）" in text
     assert "- [ ] Why now?" in text
     assert "`Example follow-up`（exact）" in text
-    assert "## 手工批注" in text
+    assert "# 手工批注" in text
 
 
 def test_timeline_is_rendered_newest_first(tmp_path):
@@ -91,7 +94,7 @@ def test_timeline_is_rendered_newest_first(tmp_path):
     result = db.store_bundle(conn, capture_bundle())
     tid = result["refs"]["t1"]
     db.store_bundle(conn, {
-        "events": [{"ref": "e2", "summary": "Later development",
+        "events": [{"ref": "e2", "title": "Later development", "summary": "Later development",
                     "occurred_at": "2026-09-10", "occurred_at_precision": "day",
                     "reported_at": "2026-09-10T09:00:00+08:00",
                     "observed_at": "2026-09-10T10:00:00+08:00",
@@ -100,8 +103,19 @@ def test_timeline_is_rendered_newest_first(tmp_path):
     vault, outcome = sync(conn, tmp_path, [tid])
     assert outcome["written"] and not outcome["errors"]
     text = only_file(vault).read_text(encoding="utf-8")
-    timeline = text.split("## 时间线", 1)[1]
+    timeline = text.split("# 时间线", 1)[1]
     assert timeline.index("Later development") < timeline.index("Example changed")
+
+
+def test_legacy_event_uses_a_short_date_heading_and_keeps_summary_in_body(tmp_path):
+    conn = fresh(tmp_path)
+    result = db.store_bundle(conn, capture_bundle())
+    conn.execute("UPDATE events SET title = NULL")
+    conn.commit()
+    vault, outcome = sync(conn, tmp_path, result["touched_threads"])
+    assert outcome["written"] and not outcome["errors"]
+    text = only_file(vault).read_text(encoding="utf-8")
+    assert "## 2026-08-30 · 事件记录\nExample changed" in text
 
 
 def test_bundle_without_thread_touch_writes_nothing(tmp_path):
@@ -131,7 +145,7 @@ def test_follow_up_sync_overwrites_and_preserves_manual_notes(tmp_path):
 
     # Reader adds a manual annotation.
     text = target.read_text(encoding="utf-8")
-    text = text.replace("## 手工批注\n\n（无）", "## 手工批注\n\n我看过这部片子。")
+    text = text.replace("# 手工批注\n\n（无）", "# 手工批注\n\n我看过这部片子。")
     target.write_text(text, encoding="utf-8")
 
     # A follow-up modifies the thread (new event + claim). Note: refs are
@@ -154,7 +168,7 @@ def test_follow_up_sync_overwrites_and_preserves_manual_notes(tmp_path):
     assert "Example corrected" in text2           # new content projected
     assert "我看过这部片子。" in text2              # manual notes preserved
     assert "（answered）" in text2                  # question state updated
-    assert text2.count("## 时间线") == 1           # single regenerated body
+    assert text2.count("# 时间线") == 1            # single regenerated body
 
 
 def test_rename_migrates_file_and_keeps_id_marker(tmp_path):
@@ -299,7 +313,7 @@ def test_manual_annotation_does_not_defeat_idempotence(tmp_path):
     target = only_file(vault)
     text = target.read_text(encoding="utf-8")
     target.write_text(
-        text.replace("## 手工批注\n\n（无）", "## 手工批注\n\n我记得这条线。"),
+        text.replace("# 手工批注\n\n（无）", "# 手工批注\n\n我记得这条线。"),
         encoding="utf-8")
     annotated = target.read_bytes()
     annotated_mtime = target.stat().st_mtime_ns

@@ -26,7 +26,7 @@ def base_bundle() -> dict:
         "sources": [{"ref": "s1", "canonical_url": "https://example.test/a",
                      "title": "Report A", "source_kind": "primary"}],
         "threads": [{"ref": "t1", "title": "Example transition"}],
-        "events": [{"ref": "e1", "summary": "Example changed",
+        "events": [{"ref": "e1", "title": "Example changed", "summary": "Example changed",
                     "occurred_at": "2026-08-30", "occurred_at_precision": "day",
                     "reported_at": "2026-08-30T09:00:00+08:00",
                     "observed_at": "2026-08-31T12:00:00+08:00",
@@ -64,8 +64,9 @@ def test_three_timestamps_stay_distinct(tmp_path):
     conn, db = fresh_conn(tmp_path)
     db.store_bundle(conn, base_bundle())
     row = conn.execute(
-        "SELECT occurred_at, occurred_at_precision, reported_at, observed_at"
+        "SELECT title, occurred_at, occurred_at_precision, reported_at, observed_at"
         " FROM events").fetchone()
+    assert row["title"] == "Example changed"
     assert row["occurred_at"] == "2026-08-30"
     assert row["occurred_at_precision"] == "day"
     assert row["reported_at"] == "2026-08-30T09:00:00+08:00"
@@ -81,6 +82,19 @@ def test_event_without_occurrence_time_keeps_null(tmp_path):
     row = conn.execute("SELECT occurred_at, observed_at FROM events").fetchone()
     assert row["occurred_at"] is None
     assert row["observed_at"] is not None
+
+
+def test_event_title_must_stay_short(tmp_path):
+    conn, db = fresh_conn(tmp_path)
+    bundle = base_bundle()
+    bundle["events"][0]["title"] = "过" * 61
+    try:
+        db.store_bundle(conn, bundle)
+    except db.ChronicleError as exc:
+        assert "event.title must be at most 60 characters" in str(exc)
+    else:
+        raise AssertionError("an event title must not become a prose summary")
+    assert conn.execute("SELECT COUNT(*) FROM events").fetchone()[0] == 0
 
 
 def test_thread_title_dedupes_to_stable_id(tmp_path):

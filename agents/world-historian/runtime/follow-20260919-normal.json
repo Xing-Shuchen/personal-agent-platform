@@ -1,0 +1,194 @@
+{
+ "sources": [
+  {
+   "ref": "src_arxiv_2609_15893",
+   "canonical_url": "https://arxiv.org/abs/2609.15893",
+   "title": "A short proof of the Erdős--Sós Conjecture",
+   "publisher": "arXiv (math.CO)",
+   "source_kind": "site",
+   "published_at": "2026-09-14T17:15:43+00:00"
+  },
+  {
+   "ref": "src_arxiv_2609_17877",
+   "canonical_url": "https://arxiv.org/abs/2609.17877",
+   "title": "The Erdős--Sós Theorem",
+   "publisher": "arXiv (math.HO)",
+   "source_kind": "site",
+   "published_at": "2026-09-15T22:06:06+00:00"
+  },
+  {
+   "ref": "src_bitauto_jia_ke",
+   "canonical_url": "https://www.bitauto.com/article/1003113180500/",
+   "title": "贾可：星宇事件背后，中国汽车业的风险正向下转移",
+   "publisher": "易车/BitAuto（来源：汽车商业评论）",
+   "source_kind": "site",
+   "published_at": "2026-09-18T00:00:00+08:00"
+  },
+  {
+   "ref": "src_caixin_xingyu_weekly",
+   "canonical_url": "https://database.caixin.com/2026-09-19/102486430.html",
+   "title": "【周刊提前读】星宇股份裁掉应届生引爆舆论 沉默的大多数失去的不止是工作",
+   "publisher": "财新网",
+   "source_kind": "rss",
+   "published_at": "2026-09-19T09:56:51+08:00"
+  }
+ ],
+ "events": [
+  {
+   "ref": "evt_erdos_sos_astra_20260915",
+   "id": "evt_erdos_sos_astra_20260915",
+   "title": "GPT-6 Astra 证明 Erdős–Sós 猜想，人类给出简化证明与极图刻画",
+   "summary": "AI 证明形成『模型给出关键论证—人类简化与推广』的新一轮个人署名后续（两篇均为 arXiv 预印本，未附模型署名文档或官方发布）：\n\n- arXiv:2609.15893（Oliver Riordan、Alex Scott，v1 2026-09-14、v2 2026-09-16，math.CO）《A short proof of the Erdős--Sós Conjecture》：明确写出该猜想『近期由 GPT-6 Astra 用一个非常巧妙且出人意料的论证证明』，本文给出更简化、也更自然的版本；并进一步确定该猜想的极图（extremal graphs），同时证明 Addario-Berry、Havet、Linhares Sales、Reed、Thomassé 的一个相关猜想，同样给出极图刻画。\n- arXiv:2609.17877（David Wood，2026-09-15，math.HO）《The Erdős--Sós Theorem》：给出 GPT-6 Astra 所发现证明的 exposition。猜想内容为：每个平均度大于 $t-2$ 的图都包含任意 $t\\geq 2$ 个顶点的树。\n\n要点：这是本线程『AI 证明—人类整理与推广』链条的又一例（与 Erdős 问题 #96 的 Lean 构造、Erdős–Graham–Ivić–Pomerance 改进并列）。Riordan–Scott 的表述显示分工形态——模型贡献出人意料的论证，人类贡献可读化与更强结论（极图刻画、相关猜想）。目前尚无对该结果的独立复核记录，也未见 GPT-6 Astra 侧的论文或博客说明。",
+   "occurred_at": "2026-09-14",
+   "occurred_at_precision": "day",
+   "reported_at": "2026-09-15T22:06:06+08:00",
+   "confidence": 0.75,
+   "status": "active",
+   "thread_refs": [
+    "thr_987e2aaa8f3961166eab"
+   ],
+   "entity_names": [
+    {"name": "GPT-6 Astra", "kind": "product"},
+    {"name": "Erdős--Sós Conjecture", "kind": "concept"},
+    {"name": "Oliver Riordan", "kind": "person"},
+    {"name": "Alex Scott", "kind": "person"},
+    {"name": "David Wood", "kind": "person"},
+    {"name": "arXiv", "kind": "organization"}
+   ]
+  },
+  {
+   "ref": "evt_xingyu_industry_risk_20260918",
+   "id": "evt_xingyu_industry_risk_20260918",
+   "title": "贾可：星宇事件折射汽车业风险向下转移（含账期与兼并重组政策背景）",
+   "summary": "2026-09-18，易车/BitAuto 刊发《贾可：星宇事件背后，中国汽车业的风险正向下转移》（贾可为《汽车商业评论》总编辑），把星宇股份解约 107 名应届生重新框定为行业结构性问题的表征，属针对本线程机制的行业评论增量：\n\n- **核心判断**：其实质是一家龙头供应商在订单与项目预期剧变后试图经生产系统消化人员，因方案模糊、沟通生硬与风险分担失衡，把经营问题变成劳动关系与企业信誉危机；文章并提出产业治理需同时调整主机厂—供应商—政府三组关系（主机厂对重大项目取消时供应商已发生的合理前期投入承担责任、供应商承担自身招聘与资源配置的过渡成本、政府以短时工作/转岗培训/跨企业借调缓冲岗位空档）。\n- **对既有指控的复核**：认为『为骗取政府补贴而大规模招聘』『为赴港上市虚增研发人员』两条坊间解释均不成立——江苏 2026 年一次性扩岗补助每人 1000 元，107 人对应 10.7 万元；港股主板/18C 章考察利润、收入、研发开支而非员工学历或研发人数；招股书数据截至 2026-03-31，涉事学生 7 月才入职。同时认为在 140 人协商范围中保留 33 人原岗、与 107 人协商解除并非毫无依据，问题在于最初沟通生硬、转岗方案模糊且补偿只按法定最低标准。\n- **关联政策背景（2026 年 9 月）**：工信部与市场监管总局发布通知，要求推动中小企业供应商原则上 60 天内付款，并对验收、对账、票据使用与价格协商期间的付款作出具体规定（不得以模糊验收标准变相延长账期、不得强迫供应商接受商业承兑汇票或供应链票据、不得以缩短账期为名进一步压价）；工信部另表示将以市场化、法治化方式推进汽车企业兼并重组、支持骨干企业整合研发与生产资源。文章把两项政策与本事件并置，指出过渡期的整合会带来车型项目取消、研发团队合并与岗位变化。\n\n注：该文为行业评论（含解释与推断），其政策描述本轮未由通知原文逐条核对。同期财新《周刊提前读》（2026-09-19 09:56）刊发《星宇股份裁掉应届生引爆舆论 沉默的大多数失去的不止是工作》，为该事件提供新的媒体专题（正文需订阅，本轮仅记标题级）。",
+   "occurred_at": "2026-09-18",
+   "occurred_at_precision": "day",
+   "reported_at": "2026-09-18T00:00:00+08:00",
+   "confidence": 0.6,
+   "status": "active",
+   "thread_refs": [
+    "thr_new_slave_labor_theory"
+   ],
+   "entity_names": [
+    {"name": "星宇股份", "kind": "organization"},
+    {"name": "贾可", "kind": "person"},
+    {"name": "汽车商业评论", "kind": "organization"},
+    {"name": "工信部", "kind": "organization"},
+    {"name": "市场监管总局", "kind": "organization"},
+    {"name": "财新网", "kind": "organization"}
+   ]
+  }
+ ],
+ "claims": [
+  {
+   "ref": "clm_erdos_sos_astra_proof",
+   "event_ref": "evt_erdos_sos_astra_20260915",
+   "source_ref": "src_arxiv_2609_15893",
+   "statement": "Riordan 与 Scott 在 arXiv:2609.15893 中记载：Erdős--Sós 猜想『近期由 GPT-6 Astra 用一个非常巧妙且出人意料的论证证明』；他们给出更简化的证明版本，并确定该猜想的极图，同时证明 Addario-Berry 等的一个相关猜想并给出其极图刻画。",
+   "status": "active",
+   "confidence": 0.75,
+   "asserted_at": "2026-09-14T17:15:43+00:00"
+  },
+  {
+   "ref": "clm_erdos_sos_statement",
+   "event_ref": "evt_erdos_sos_astra_20260915",
+   "source_ref": "src_arxiv_2609_17877",
+   "statement": "David Wood 在 arXiv:2609.17877 中以 exposition 形式复述该结果：猜想断言每个平均度大于 $t-2$ 的图都包含任意 $t\\geq 2$ 个顶点的树；证明最初由 GPT-6 Astra 发现。",
+   "status": "active",
+   "confidence": 0.75,
+   "asserted_at": "2026-09-15T22:06:06+00:00"
+  },
+  {
+   "ref": "clm_xingyu_industry_risk_frame",
+   "event_ref": "evt_xingyu_industry_risk_20260918",
+   "source_ref": "src_bitauto_jia_ke",
+   "statement": "贾可（《汽车商业评论》总编辑，2026-09-18）主张：星宇事件是龙头供应商在市场与项目预期变化后试图经生产系统消化人员、因方案模糊与风险分担失衡而把经营问题变成劳动关系与信誉危机的表征；产业治理需同时调整主机厂、供应商与政府三组关系，而不能仅归咎于个别企业的野蛮清退。",
+   "status": "active",
+   "confidence": 0.6,
+   "asserted_at": "2026-09-18T00:00:00+08:00"
+  },
+  {
+   "ref": "clm_xingyu_payment_policy",
+   "event_ref": "evt_xingyu_industry_risk_20260918",
+   "source_ref": "src_bitauto_jia_ke",
+   "statement": "该文另称：2026 年 9 月工信部与市场监管总局发布通知，要求推动中小企业供应商原则上 60 天内付款并规范验收、对账与票据使用，不得以模糊验收变相延长账期或强迫接受商票；工信部表示将以市场化、法治化方式推进汽车企业兼并重组。上述政策描述为评论转述，未经通知原文核对。",
+   "status": "active",
+   "confidence": 0.5,
+   "asserted_at": "2026-09-18T00:00:00+08:00"
+  },
+  {
+   "ref": "clm_xingyu_caixin_weekly",
+   "event_ref": "evt_xingyu_industry_risk_20260918",
+   "source_ref": "src_caixin_xingyu_weekly",
+   "statement": "财新网 2026-09-19 09:56 发布《【周刊提前读】星宇股份裁掉应届生引爆舆论 沉默的大多数失去的不止是工作》，为该事件新增媒体专题（仅标题级记录，正文需订阅）。",
+   "status": "active",
+   "confidence": 0.7,
+   "asserted_at": "2026-09-19T09:56:51+08:00"
+  }
+ ],
+ "threads": [
+  {
+   "id": "thr_987e2aaa8f3961166eab",
+   "title": "AI 数学成果密集爆发：S⁶ 复结构、Lean 形式化与素数长空白区间（Erdős #4）下界改进",
+   "status": "active",
+   "priority": "normal",
+   "seed_type": "user_instruction",
+   "quiet_count": 0,
+   "last_checked_at": "2026-09-19T13:42:30+08:00"
+  },
+  {
+   "id": "thr_new_slave_labor_theory",
+   "title": "「新奴工理论」（新木桶效应）——知乎民间概念的起源、机制与案例追踪",
+   "status": "active",
+   "priority": "normal",
+   "seed_type": "user_instruction",
+   "quiet_count": 0,
+   "last_checked_at": "2026-09-19T13:42:30+08:00"
+  },
+  {
+   "id": "thr_ns_regularity_ai_claim",
+   "title": "N-S 方程正则性被 AI 声称解决（OpenAI vs Buckmaster–Alpöge）",
+   "status": "active",
+   "priority": "normal",
+   "seed_type": "user_instruction",
+   "quiet_count": 2,
+   "last_checked_at": "2026-09-19T13:42:30+08:00"
+  },
+  {
+   "id": "thr_ebecd54d798b4f7ffe43",
+   "title": "陈天奇 CAKE Agent & CAKE IR（编译器-Agent 协同设计生成 GPU 内核）",
+   "status": "active",
+   "priority": "normal",
+   "seed_type": "user_instruction",
+   "quiet_count": 16,
+   "last_checked_at": "2026-09-19T13:42:30+08:00"
+  },
+  {
+   "id": "thr_typesafe_jev_system_one",
+   "title": "TypeSafe AI 的 Jev：非生成式 System One 决策模型（架构·定价·RLCD·Agent 编排定位）",
+   "status": "active",
+   "priority": "normal",
+   "seed_type": "user_instruction",
+   "quiet_count": 1,
+   "last_checked_at": "2026-09-19T13:42:30+08:00"
+  },
+  {
+   "id": "thr_english_major_cancel",
+   "title": "「取消英语主科地位」之争（义务教育+高中阶段 · 汤家凤呼吁取消主科 · 胡锡进反驳 · 周思成回应）",
+   "status": "active",
+   "priority": "normal",
+   "seed_type": "user_instruction",
+   "quiet_count": 4,
+   "last_checked_at": "2026-09-19T13:42:30+08:00"
+  },
+  {
+   "id": "thr_local_gov_hidden_debt",
+   "title": "防范和化解地方债务风险：政策方向追踪（中央化债部署·化债工具·问责机制）",
+   "status": "active",
+   "priority": "normal",
+   "seed_type": "user_instruction",
+   "quiet_count": 3,
+   "last_checked_at": "2026-09-19T13:42:30+08:00"
+  }
+ ]
+}

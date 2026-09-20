@@ -78,6 +78,11 @@ only genuine deltas through `/home/xingzeng/personal-agent-platform/agents/world
 dispute claims explicitly; never overwrite their historical state. Update each
 thread's last-check state even when no event is added.
 
+Every new event must include a concise `title` (maximum 60 characters) for
+the timeline heading. Put the full account in `summary` as Markdown body text:
+separate distinct developments into paragraphs or bullets, and never use the
+summary itself as a heading.
+
 ## Math in stored text
 
 Stored text is projected verbatim into Obsidian, which renders `$...$` (inline)

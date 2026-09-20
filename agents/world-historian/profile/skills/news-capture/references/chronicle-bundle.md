@@ -56,6 +56,7 @@ Minimum capture example:
   "events": [
     {
       "ref": "event",
+      "title": "Example 宣布转型",
       "summary": "Example announced the transition",
       "occurred_at": "2026-08-30",
       "occurred_at_precision": "day",
@@ -80,6 +81,16 @@ Minimum capture example:
 ```
 
 Important fields:
+
+- An event's `title` is a required-in-practice short heading (at most 60
+  characters) for the timeline. It identifies the event in a compact noun or
+  verb phrase; it must not restate evidence, caveats, source lists, or the
+  full event description.
+- `summary` is the event body rendered beneath that heading. Write it as
+  readable Markdown prose: use paragraphs for distinct developments and a
+  list when several independently checkable findings need separation.
+- Older stored events may not have `title`; the runtime renders those with a
+  date-based fallback rather than turning their full summary into a heading.
 
 - Events distinguish `occurred_at`, `reported_at`, and `observed_at`.
   `occurred_at_precision` is one of `instant`, `day`, `month`, `year`,
