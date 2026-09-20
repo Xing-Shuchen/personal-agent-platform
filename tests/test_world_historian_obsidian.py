@@ -8,6 +8,7 @@ delete a foreign file; a re-render that only moves ``updated:`` is a no-op
 """
 
 import json
+import subprocess
 from pathlib import Path
 
 from conftest import load_runtime_module
@@ -137,7 +138,7 @@ def test_bundle_without_thread_touch_writes_nothing(tmp_path):
     assert only_file(vault2).read_text(encoding="utf-8") == before
 
 
-def test_follow_up_sync_overwrites_and_preserves_manual_notes(tmp_path):
+def test_follow_up_sync_preserves_legacy_manual_notes_heading(tmp_path):
     conn = fresh(tmp_path)
     result = db.store_bundle(conn, capture_bundle())
     vault, _ = sync(conn, tmp_path, result["touched_threads"])
@@ -145,7 +146,10 @@ def test_follow_up_sync_overwrites_and_preserves_manual_notes(tmp_path):
 
     # Reader adds a manual annotation.
     text = target.read_text(encoding="utf-8")
-    text = text.replace("# 手工批注\n\n（无）", "# 手工批注\n\n我看过这部片子。")
+    text = text.replace(
+        "# 手工批注\n\n（无）",
+        "## 手工批注\n\n我看过这部片子。\n\n### 旁注\n这条也要保留。",
+    )
     target.write_text(text, encoding="utf-8")
 
     # A follow-up modifies the thread (new event + claim). Note: refs are
@@ -167,8 +171,62 @@ def test_follow_up_sync_overwrites_and_preserves_manual_notes(tmp_path):
     assert outcome["written"] == [str(target)]
     assert "Example corrected" in text2           # new content projected
     assert "我看过这部片子。" in text2              # manual notes preserved
+    assert "### 旁注\n这条也要保留。" in text2       # nested notes preserved
+    assert "# 手工批注" in text2                     # current heading is emitted
     assert "（answered）" in text2                  # question state updated
     assert text2.count("# 时间线") == 1            # single regenerated body
+
+
+def test_extract_manual_notes_accepts_all_heading_levels_and_empty_markers():
+    for level in range(1, 7):
+        heading = "#" * level
+        assert obsidian.extract_manual_notes(
+            f"{heading} 手工批注\n\n保留内容\n\n# 下一节\n"
+        ) == "保留内容"
+    assert obsidian.extract_manual_notes(
+        "## 手工批注\n\n保留内容\n\n### 子标题\n仍是批注\n\n## 下一节\n"
+    ) == "保留内容\n\n### 子标题\n仍是批注"
+    for empty in ("", "（无）", "_（无）_"):
+        assert obsidian.extract_manual_notes(f"## 手工批注\n\n{empty}\n") is None
+
+
+def test_follow_up_sync_recovers_legacy_manual_notes_from_git(tmp_path, monkeypatch):
+    conn = fresh(tmp_path)
+    result = db.store_bundle(conn, capture_bundle())
+    tid = result["refs"]["t1"]
+    vault, _ = sync(conn, tmp_path, [tid])
+    target = only_file(vault)
+    marker = obsidian._thread_id_marker(tid)
+
+    # Simulate a working-tree copy whose notes were lost, while the most
+    # recent historical version still has the legacy level-2 heading.
+    current = target.read_text(encoding="utf-8")
+    annotated = current.replace("# 手工批注\n\n（无）", "# 手工批注\n\n磁盘上的旧批注。")
+    target.write_text(
+        annotated.replace("磁盘上的旧批注。", "（无）"),
+        encoding="utf-8",
+    )
+    legacy = f"---\n{marker}\n---\n\n## 手工批注\n\n从历史恢复的批注。\n"
+    calls: list[list[str]] = []
+
+    def fake_git_run(command, **_kwargs):
+        calls.append(command)
+        if "log" in command:
+            return subprocess.CompletedProcess(command, 0, stdout="abc123\n", stderr="")
+        if "show" in command:
+            return subprocess.CompletedProcess(command, 0, stdout=legacy, stderr="")
+        raise AssertionError(command)
+
+    monkeypatch.setattr(obsidian.subprocess, "run", fake_git_run)
+    outcome = obsidian.sync_threads(
+        [db.thread_snapshot(conn, tid)], vault, tmp_path / "obsidian-index.json")
+
+    rendered = target.read_text(encoding="utf-8")
+    assert "从历史恢复的批注。" in rendered
+    assert "# 手工批注" in rendered
+    assert any("recovered from git" in error for error in outcome["errors"])
+    assert any("log" in call for call in calls)
+    assert any("show" in call for call in calls)
 
 
 def test_rename_migrates_file_and_keeps_id_marker(tmp_path):

@@ -370,15 +370,29 @@ def render_snapshot(snapshot: dict[str, Any], synced_at: str,
 
 
 def extract_manual_notes(text: str) -> str | None:
-    """Return the reader's「手工批注」body, or ``None`` when absent."""
-    match = re.search(rf"^# {re.escape(MANUAL_SECTION)}\s*$", text, flags=re.M)
+    """Return the reader's「手工批注」body, or ``None`` when absent.
+
+    Old projections used a level-2 section heading while current ones use
+    level 1.  A reader can also use deeper headings inside the annotation, so
+    the section ends only at a heading at the same or a higher level.
+    """
+    match = re.search(
+        rf"^(?P<level>#{{1,6}})[ \t]+{re.escape(MANUAL_SECTION)}[ \t]*$",
+        text,
+        flags=re.M,
+    )
     if match is None:
         return None
     rest = text[match.end():]
-    following = re.search(r"^# ", rest, flags=re.M)
-    body = rest[:following.start()] if following else rest
+    level = len(match.group("level"))
+    following = next(
+        (heading for heading in re.finditer(r"^(#{1,6})(?:[ \t]+|$)", rest, re.M)
+         if len(heading.group(1)) <= level),
+        None,
+    )
+    body = rest[:following.start()] if following is not None else rest
     body = body.strip()
-    return body or None
+    return None if body in {"", "（无）", "_（无）_"} else body
 
 
 def _git_committed_manual_notes(path: Path, marker: str) -> str | None:
@@ -390,9 +404,13 @@ def _git_committed_manual_notes(path: Path, marker: str) -> str | None:
     """
     vault_root = path.parents[2]  # vault/<area-dir>/file -> vault root
     try:
+        relative_path = path.relative_to(vault_root)
+    except ValueError:
+        return None
+    try:
         log = subprocess.run(
             ["git", "-C", str(vault_root), "log", "--all",
-             "--format=%h", "--", path.name],
+             "--format=%h", "--", str(relative_path)],
             capture_output=True, text=True, timeout=10,
         )
     except (OSError, subprocess.SubprocessError):
@@ -402,7 +420,8 @@ def _git_committed_manual_notes(path: Path, marker: str) -> str | None:
     for commit in log.stdout.split():
         try:
             show = subprocess.run(
-                ["git", "-C", str(vault_root), "show", f"{commit}:{path.name}"],
+                ["git", "-C", str(vault_root), "show",
+                 f"{commit}:{relative_path}"],
                 capture_output=True, text=True, timeout=10,
             )
         except (OSError, subprocess.SubprocessError):
