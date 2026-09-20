@@ -63,9 +63,14 @@ def session_key(agent_id: str, run_id: str) -> str:
 
     The invocation and the usage lookup must agree on this, or usage silently
     detaches from the run that produced it, so both derive it here.
+
+    The key is canonical lower case because the runner stores it that way: a
+    run id in upper case (the ULID scheme) would otherwise be passed verbatim
+    to ``--session-key`` and never match the stored row, so usage and the
+    provider-failure reading would both come back empty.
     """
 
-    return f"agent:{agent_id}:pap-{run_id}"
+    return f"agent:{agent_id}:pap-{run_id}".lower()
 
 
 def _runner_binary() -> str:
@@ -120,7 +125,10 @@ def session_usage(
         return None
     wanted = session_key(agent_id, run_id)
     for session in sessions:
-        if not isinstance(session, Mapping) or session.get("key") != wanted:
+        if not isinstance(session, Mapping):
+            continue
+        listed_key = session.get("key")
+        if not isinstance(listed_key, str) or listed_key.lower() != wanted:
             continue
         session_id = session.get("sessionId")
         return {
@@ -150,7 +158,7 @@ def trajectory_usage(agent_id: str, run_id: str, *, state_dir: Path | None = Non
         return None
     try:
         rows = connection.execute(
-            "select event_json from trajectory_runtime_events where event_json like ? order by seq",
+            "select event_json from trajectory_runtime_events where lower(event_json) like ? order by seq",
             (f"%{wanted}%",),
         ).fetchall()
     except sqlite3.Error:
@@ -166,7 +174,7 @@ def trajectory_usage(agent_id: str, run_id: str, *, state_dir: Path | None = Non
             continue
         if not isinstance(event, Mapping):
             continue
-        if event.get("type") != "model.completed" or event.get("sessionKey") != wanted:
+        if event.get("type") != "model.completed" or str(event.get("sessionKey") or "").lower() != wanted:
             continue
         usage = event.get("data")
         usage = usage.get("usage") if isinstance(usage, Mapping) else None
@@ -217,7 +225,7 @@ def trajectory_tools(agent_id: str, run_id: str, *, state_dir: Path | None = Non
         return []
     try:
         rows = connection.execute(
-            "select event_json from trajectory_runtime_events where event_json like ? order by seq",
+            "select event_json from trajectory_runtime_events where lower(event_json) like ? order by seq",
             (f"%{wanted}%",),
         ).fetchall()
     except sqlite3.Error:
@@ -232,7 +240,7 @@ def trajectory_tools(agent_id: str, run_id: str, *, state_dir: Path | None = Non
             event = json.loads(raw)
         except (TypeError, ValueError):
             continue
-        if not isinstance(event, Mapping) or event.get("sessionKey") != wanted:
+        if not isinstance(event, Mapping) or str(event.get("sessionKey") or "").lower() != wanted:
             continue
         data = event.get("data")
         if not isinstance(data, Mapping):
@@ -295,7 +303,7 @@ def session_failure(agent_id: str, run_id: str, *, state_dir: Path | None = None
         return None
     try:
         row = connection.execute(
-            "select current_session_id from session_nodes where session_key = ?",
+            "select current_session_id from session_nodes where lower(session_key) = ?",
             (wanted,),
         ).fetchone()
         if not row or not isinstance(row[0], str):

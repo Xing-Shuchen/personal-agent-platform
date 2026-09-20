@@ -367,3 +367,51 @@ def test_another_runs_session_key_is_not_this_runs_failure(tmp_path):
 
 def test_an_unreadable_store_is_no_failure_reading_at_all(tmp_path):
     assert session_failure("world-historian", WH_RUN, state_dir=tmp_path / "absent") is None
+
+
+# --- a ULID run id keeps one canonical key, the one the runner stores ----------
+
+ULID_RUN = "01M2Y5GVCJM7722SW9X5Q2Z830"
+ULID_SESSION = "agent:world-historian:pap-01m2y5gvcjm7722sw9x5q2z830"
+
+
+def test_the_session_key_is_canonical_lower_case():
+    """An upper-case ULID run id must not split PAP from the runner's record."""
+
+    assert session_key("world-historian", ULID_RUN) == ULID_SESSION
+    # The legacy lower-case scheme is unchanged by the canonicalisation.
+    assert session_key("personal-historian", RUN) == SESSION
+
+
+def test_a_ulid_run_reads_its_session_listed_under_the_lower_case_key():
+    payload = json.dumps({"count": 1, "sessions": [
+        {"key": ULID_SESSION, "sessionId": "3854982b", "inputTokens": 10, "outputTokens": 20},
+    ]})
+    usage = session_usage(
+        "world-historian", ULID_RUN,
+        command_runner=lambda command, **kw: completed(command, 0, payload),
+    )
+    assert usage["input_tokens"] == 10
+    assert usage["output_tokens"] == 20
+
+
+def test_a_ulid_run_reads_its_cost_from_the_store(tmp_path):
+    write_trajectory(tmp_path, [model_completed(ULID_SESSION)], agent="world-historian")
+    assert trajectory_usage("world-historian", ULID_RUN, state_dir=tmp_path)["cost"] == 0.085265796
+
+
+def test_a_ulid_run_reads_its_provider_refusal(tmp_path):
+    """The refusal must reach PAP so the run is not filed as plain transport trouble."""
+
+    write_transcript(
+        tmp_path,
+        [{"type": "message", "message": {
+            "role": "assistant", "stopReason": "error",
+            "errorMessage": "Output data may contain inappropriate content.",
+            "errorCode": "data_inspection_failed",
+        }}],
+        session=ULID_SESSION,
+    )
+    assert session_failure("world-historian", ULID_RUN, state_dir=tmp_path) == (
+        "data_inspection_failed: Output data may contain inappropriate content."
+    )
