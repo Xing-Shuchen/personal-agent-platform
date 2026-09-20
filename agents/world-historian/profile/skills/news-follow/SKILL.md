@@ -94,9 +94,9 @@ formulas/expressions get `$` delimiters.
 ## Thread roster (read-only, delivery set)
 
 To list the threads a follow update delivers, run this read-only command
-(do not probe any other Chronicle path). The delivered set is `high` and
-`normal` only; `low` and `background` threads stay tracked in the Chronicle but
-must never appear in a follow update.
+(do not probe any other Chronicle path). The delivered set is `high`, `normal`,
+and `low`; `background` threads stay tracked in the Chronicle but never appear
+in a follow update.
 
 ```bash
 "/home/xingzeng/personal-agent-platform/.venv/bin/python" \
@@ -131,16 +131,18 @@ correction for a tracked thread.
 
 ## Delivery contract
 
-This is a collection job. Only `high` and `normal` priority threads are ever
-delivered. `low` and `background` threads stay tracked in the Chronicle: record
-their events/claims as usual, but keep them out of the message entirely.
+This is a collection job. Only `high` and `normal` priority material changes
+trigger a delivery. `low` and `background` threads stay tracked in the
+Chronicle: record their events/claims as usual. `low` threads appear in the
+roster, while `background` threads never appear in the message.
 
 - No `high`/`normal` thread gained a material event or claim correction — the
 ENTIRE final response must be exactly the single marker `NO_REPLY`. This
 includes runs whose only changes touch `low`/`background` threads: they are
-persisted but never delivered. No work summary, no rejection notes, no
-Chinese「无变化」prose, nothing before or after. Any surrounding text makes it a
-normal delivery and spams the user (observed 2026-09-01: a work-summary +
+persisted but a `low`-only change still returns exactly `NO_REPLY`. No work
+summary, no rejection notes, no Chinese「无变化」prose, nothing before or after.
+Any surrounding text makes it a normal delivery and spams the user (observed
+2026-09-01: a work-summary +
 `[SILENT]` response leaked to Feishu; OpenClaw only suppresses the exact token
 `NO_REPLY` — any other marker, including the legacy Hermes `[SILENT]`, is
 delivered as literal text, observed 2026-09-08 13:05).
@@ -160,5 +162,5 @@ channel renders it), with exactly this shape and nothing else:
 
 Formatting rules:
 1. 进展 — 每个有新进展的 `high`/`normal` thread 一条：加粗线程标题、一句话说明新增或修正的事件、有来源就附行内链接。不写检索过程、不写被排除的候选；`low`/`background` 绝不出现。
-2. 追踪中 — 将上面 `roster` command 的 stdout 原样粘贴：不得由模型选择 emoji、不得重新加粗、不得重排、不得添加或删除行。
+2. 追踪中 — 将上面 `roster` command 的 stdout 原样粘贴：不得由模型选择 emoji、不得重新加粗、不得重排、不得添加或删除行。三档 emoji 映射为 `🟥` high / `🟦` normal / `⬜` low。
 3. 保持紧凑：每个 thread 一行。Feishu 卡片渲染加粗、列表、链接、表情和空行——不要用表格，分节标签用加粗（`**进展**`）而不是 `#` 标题。

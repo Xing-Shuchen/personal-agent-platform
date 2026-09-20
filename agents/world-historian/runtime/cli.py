@@ -254,11 +254,11 @@ def main(argv: list[str] | None = None) -> int:
             with _readonly_connection(db_path) as conn:
                 rows = conn.execute(
                     "SELECT title, priority FROM threads "
-                    "WHERE status = 'active' AND priority IN ('high', 'normal') "
-                    "ORDER BY CASE priority WHEN 'high' THEN 0 ELSE 1 END, title"
+                    "WHERE status = 'active' AND priority IN ('high', 'normal', 'low') "
+                    "ORDER BY CASE priority WHEN 'high' THEN 0 WHEN 'normal' THEN 1 ELSE 2 END, title"
                 )
                 for title, priority in rows:
-                    emoji = "🟥" if priority == "high" else "🟦"
+                    emoji = {"high": "🟥", "normal": "🟦", "low": "⬜"}[priority]
                     print(f"- {emoji} **{title}**（{priority}）")
             return 0
 

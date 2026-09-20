@@ -107,7 +107,7 @@ def test_roster_formats_orders_and_filters_delivery_threads(tmp_path):
             {"title": "Bravo high", "priority": "high"},
             {"title": "Alpha normal", "priority": "normal"},
             {"title": "Zulu normal", "priority": "normal"},
-            {"title": "Excluded low", "priority": "low"},
+            {"title": "Alpha low", "priority": "low"},
             {"title": "Excluded background", "priority": "background"},
             {"title": "Excluded closed", "priority": "high", "status": "closed"},
         ],
@@ -122,6 +122,7 @@ def test_roster_formats_orders_and_filters_delivery_threads(tmp_path):
         "- 🟥 **Zulu high**（high）\n"
         "- 🟦 **Alpha normal**（normal）\n"
         "- 🟦 **Zulu normal**（normal）\n"
+        "- ⬜ **Alpha low**（low）\n"
     )
     assert first.returncode == 0, first.stderr
     assert first.stdout == expected
