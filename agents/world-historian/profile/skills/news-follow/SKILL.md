@@ -149,7 +149,7 @@ correction — return one Chinese update, written as Feishu Markdown (the Feishu
 channel renders it), with exactly this shape and nothing else:
 
 ```markdown
-**🛰️ 世界线追踪 · M月D日** ｜ world-follow-<priority> ｜ <N> 条进展
+**🛰️ 世界线追踪 · M月D日** ｜ Level: <High|Normal|Low|Background> ｜ <N> 条进展
 
 **进展**
 - **<线程标题>** — <新增/修正了什么事件，一句话>（[来源](<url>)）
@@ -162,4 +162,4 @@ Formatting rules:
 1. 进展 — 每个有新进展的 `high`/`normal` thread 一条：加粗线程标题、一句话说明新增或修正的事件、有来源就附行内链接。不写检索过程、不写被排除的候选；`low`/`background` 绝不出现。
 2. 追踪中 — 将上面 `roster` command 的 stdout 原样粘贴：不得由模型选择 emoji、不得重新加粗、不得重排、不得添加或删除行。
 3. 保持紧凑：每个 thread 一行。Feishu 卡片渲染加粗、列表、链接、表情和空行——不要用表格，分节标签用加粗（`**进展**`）而不是 `#` 标题。
-4. 标题必须标出这条更新由哪一档追踪任务发出：写 `world-follow-<priority>`，`<priority>` 取 invocation 结构化参数 `priority` 的原值（`high` / `normal` / `low` / `background`），与 job 名同名，不译成中文、不省略。用户据此判断消息来源。
+4. 来源档位只写 `Level: <优先级>`：优先级取 invocation 结构化参数 `priority`，首字母大写（`Level: High` / `Level: Normal`；`low`/`background` 不会投递，若出现写 `Level: Low` / `Level: Background`）。不写 job 名、不译成中文、不加其他词。
