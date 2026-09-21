@@ -24,7 +24,7 @@ from paplog.core import ulid
 
 DEFAULT_SCHEDULER_STATE = Path("var/state/scheduler-state.json")
 MAX_CATCHUP = timedelta(hours=24)
-RESERVATION_TTL = timedelta(minutes=90)  # 必须大于最长单次运行时长（PAP_RUN_TIMEOUT_SECONDS 上限 3600s），否则超长运行会被后续 tick 重复认领
+RESERVATION_TTL = timedelta(hours=6)  # 必须大于最长单次运行时长（PAP_RUN_TIMEOUT_SECONDS=14400s，2026-09-21 由 3600s 上调），否则超长运行会被后续 tick 重复认领
 RETRY_DELAY = timedelta(minutes=5)
 MAX_ATTEMPTS_PER_SLOT = 3
 JITTER_MAX_MINUTES = 5
