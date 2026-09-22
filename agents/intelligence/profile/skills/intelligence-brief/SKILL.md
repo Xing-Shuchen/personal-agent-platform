@@ -20,6 +20,8 @@ This job has a fixed local evidence boundary. Use only:
 
 - Gate state: `/home/xingzeng/personal-agent-platform/var/state/gate-state.json`
 - Gate log: `/home/xingzeng/personal-agent-platform/var/state/gate-log.jsonl`
+- Dismissed topics: `/home/xingzeng/personal-agent-platform/var/state/gate-dismissed.json`
+- Dismissal projection: `/home/xingzeng/personal-agent-platform/.venv/bin/pap dismissed --agent intelligence`
 - Recent user context: up to three `session_search` calls, restricted to the current scan window.
 - External developments: `web_search`/`web_fetch` only for a concrete watchlist or
   open-question candidate, using authoritative sources.
@@ -31,7 +33,8 @@ stop once one evidence-backed candidate is ready or no candidate remains.
 
 Scheduled procedure:
 
-1. Inspect ContextPack world deltas, personal targets, prior alert history and
+1. Run `/home/xingzeng/personal-agent-platform/.venv/bin/pap dismissed --agent intelligence`
+   once, then inspect ContextPack world deltas, personal targets, prior alert history and
    public watchlists. Turn them into
    concrete monitoring hypotheses (`if X changes, belief/decision Y may change`),
    not keyword lists. A personal link must cite a specific remembered question,
@@ -48,6 +51,9 @@ Scheduled procedure:
    - affect an active project?
    - create a new high-value opportunity/risk?
 5. Reject generic relevance based only on keyword overlap. Also reject:
+   - any candidate whose development subject or entities case-insensitively
+     contains a listed dismissed-topic match term; a dismissed topic is never
+     re-litigated or re-opened for a new angle unless the user asks;
    - commentary with no independently verifiable new fact;
    - an old fact resurfaced in a newly published article;
    - routine releases whose implications do not cross a concrete threshold;
@@ -88,6 +94,11 @@ Scheduled procedure:
     adjectives, or a canned offer to do more work.
 
 Do not produce a ten-item news list unless explicitly asked.
+
+When the user says they do not care about a topic, record it immediately with
+`/home/xingzeng/personal-agent-platform/.venv/bin/pap dismiss --agent intelligence
+--topic '<short-slug>' --term '<two-to-four-terms>' --reason '<the user\'s own words>'`
+and do not surface that topic again.
 
 ## Output language
 

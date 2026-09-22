@@ -13,6 +13,7 @@ from typing import Mapping
 
 from . import spec as spec_mod
 from . import gate as gate_mod
+from . import dismiss as dismiss_mod
 from . import run as run_mod
 from . import artifact as artifact_mod
 from . import scheduler as scheduler_mod
@@ -305,6 +306,31 @@ def _cmd_gate(args: argparse.Namespace) -> int:
     return 0 if decision.allowed else 1
 
 
+def _cmd_dismiss(args: argparse.Namespace) -> int:
+    try:
+        dismiss_mod.dismiss(
+            args.agent, args.topic, args.term.split(","), args.reason,
+            dismissed_at=args.date, db_path=args.db,
+        )
+    except ValueError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+    return 0
+
+
+def _cmd_dismissed(args: argparse.Namespace) -> int:
+    try:
+        entries = dismiss_mod.dismissed(args.agent, db_path=args.db)
+    except ValueError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+    for entry in entries:
+        dismissed_at = str(entry.get("dismissed_at", ""))
+        print(f"- {entry.get('topic', '')} — 匹配词: {', '.join(entry.get('terms', []))} "
+              f"— {entry.get('reason', '')} — {dismissed_at[:10]}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="pap", description="Personal Agent Platform tooling")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -415,6 +441,22 @@ def build_parser() -> argparse.ArgumentParser:
     p_gate.add_argument("--db", type=Path, default=gate_mod.DEFAULT_DB,
                         help="gate state file (log is written next to it)")
     p_gate.set_defaults(func=_cmd_gate)
+
+    p_dismiss = sub.add_parser("dismiss", help="record a topic the user does not want surfaced")
+    p_dismiss.add_argument("--agent", required=True, help="agent name")
+    p_dismiss.add_argument("--topic", required=True, help="stable topic slug")
+    p_dismiss.add_argument("--term", required=True, help="comma-separated match terms")
+    p_dismiss.add_argument("--reason", required=True, help="user's reason for dismissing the topic")
+    p_dismiss.add_argument("--date", help="ISO-8601 dismissal timestamp override")
+    p_dismiss.add_argument("--db", type=Path, default=dismiss_mod.DEFAULT_DB,
+                           help="dismissed-topic state file")
+    p_dismiss.set_defaults(func=_cmd_dismiss)
+
+    p_dismissed = sub.add_parser("dismissed", help="list an agent's dismissed topics")
+    p_dismissed.add_argument("--agent", required=True, help="agent name")
+    p_dismissed.add_argument("--db", type=Path, default=dismiss_mod.DEFAULT_DB,
+                             help="dismissed-topic state file")
+    p_dismissed.set_defaults(func=_cmd_dismissed)
 
     return parser
 
