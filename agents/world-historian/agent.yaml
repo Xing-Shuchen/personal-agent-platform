@@ -86,14 +86,14 @@ spec:
       - name: world-daily-report
         schedule: "0 0 * * *"
         skill: news-daily-stats
-        model: qwen/deepseek-v4-pro
+        model: qwen/qwen3.8-max
         args: {}
         attach_to_session: true
         delivery: user-home
       - name: world-weekly-report
         schedule: "0 20 * * 0"
         skill: news-synthesize
-        model: qwen/deepseek-v4-pro
+        model: qwen/qwen3.8-max
         args:
           mode: weekly
         attach_to_session: true

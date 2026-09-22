@@ -18,7 +18,7 @@ spec:
       - name: wechat-daily-incremental
         schedule: "15 3 * * *"
         skill: wechat-daily-incremental
-        model: qwen/deepseek-v4-pro
+        model: qwen/qwen3.8-max
         args: {}
         attach_to_session: false
         delivery: local

@@ -49,8 +49,8 @@ def test_jobs_shows_job_model_overrides_only():
     lines = r.stdout.splitlines()
     expected_overrides = {
         "world-historian/world-follow-low": "zai/glm-5.2",
-        "world-historian/world-daily-report": "qwen/deepseek-v4-pro",
-        "world-historian/world-weekly-report": "qwen/deepseek-v4-pro",
+        "world-historian/world-daily-report": "qwen/qwen3.8-max",
+        "world-historian/world-weekly-report": "qwen/qwen3.8-max",
     }
     actual_overrides = {
         fields[0]: next(field.removeprefix("model=") for field in fields if field.startswith("model="))
