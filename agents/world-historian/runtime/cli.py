@@ -97,7 +97,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_lifecycle = sub.add_parser(
         "lifecycle-candidates", help="list stale active threads to demote or close")
-    p_lifecycle.add_argument("--demote-after-days", type=int, default=14)
+    p_lifecycle.add_argument("--high-to-normal-days", type=int, default=3)
+    p_lifecycle.add_argument("--normal-to-low-days", type=int, default=7)
+    p_lifecycle.add_argument("--low-to-background-days", type=int, default=14)
     p_lifecycle.add_argument("--close-after-days", type=int, default=60)
     p_lifecycle.add_argument("--now", help="ISO-8601 local time (defaults to now)")
 
@@ -201,7 +203,12 @@ def _lifecycle_timestamp(value: str | None) -> datetime | None:
 
 
 def _print_lifecycle_candidates(conn: sqlite3.Connection, args: argparse.Namespace) -> None:
-    if args.demote_after_days < 0 or args.close_after_days < 0:
+    thresholds = {
+        "high": (args.high_to_normal_days, "normal"),
+        "normal": (args.normal_to_low_days, "low"),
+        "low": (args.low_to_background_days, "background"),
+    }
+    if any(days < 0 for days, _ in thresholds.values()) or args.close_after_days < 0:
         raise ValueError("lifecycle thresholds must be non-negative")
     if args.now:
         now = _lifecycle_timestamp(args.now)
@@ -209,7 +216,6 @@ def _print_lifecycle_candidates(conn: sqlite3.Connection, args: argparse.Namespa
             raise ValueError("--now must be ISO-8601")
     else:
         now = datetime.now()
-    demote_cutoff = now - timedelta(days=args.demote_after_days)
     close_cutoff = now - timedelta(days=args.close_after_days)
     rows = conn.execute(
         "SELECT t.id, t.title, t.priority, e.occurred_at, e.observed_at, e.reported_at "
@@ -234,8 +240,10 @@ def _print_lifecycle_candidates(conn: sqlite3.Connection, args: argparse.Namespa
         latest = candidate["last"]
         if latest is None or latest < close_cutoff:
             print(f"CLOSE\t{thread_id}\t{candidate['title']}")
-        elif candidate["priority"] != "background" and latest < demote_cutoff:
-            print(f"DEMOTE\t{thread_id}\t{candidate['title']}")
+        elif candidate["priority"] in thresholds:
+            days, new_priority = thresholds[candidate["priority"]]
+            if latest < now - timedelta(days=days):
+                print(f"DEMOTE\t{thread_id}\t{candidate['title']}\t{new_priority}")
 
 
 def main(argv: list[str] | None = None) -> int:

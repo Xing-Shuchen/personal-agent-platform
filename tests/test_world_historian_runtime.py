@@ -232,21 +232,38 @@ def test_lifecycle_candidates_apply_stale_thresholds_and_priority_rules(tmp_path
     bundle.write_text(json.dumps({
         "threads": [
             {"id": "no-event", "title": "No event", "status": "active"},
-            {"id": "idle-active", "title": "Idle active", "status": "active"},
+            {"id": "high-stale", "title": "High stale", "status": "active",
+             "priority": "high"},
+            {"id": "normal-stale", "title": "Normal stale", "status": "active",
+             "priority": "normal"},
+            {"id": "low-stale", "title": "Low stale", "status": "active",
+             "priority": "low"},
             {"id": "idle-background", "title": "Idle background", "status": "active",
              "priority": "background"},
-            {"id": "recent", "title": "Recent", "status": "active"},
+            {"id": "normal-recent", "title": "Normal recent", "status": "active",
+             "priority": "normal"},
+            {"id": "high-very-stale", "title": "High very stale", "status": "active",
+             "priority": "high"},
         ],
         "events": [
-            {"id": "idle-event", "summary": "Idle", "occurred_at": "2026-08-20",
-             "occurred_at_precision": "day", "observed_at": "2026-08-20T00:00:00",
-             "thread_refs": ["idle-active"]},
+            {"id": "high-event", "summary": "High", "occurred_at": "2026-09-13",
+             "occurred_at_precision": "day", "observed_at": "2026-09-13T00:00:00",
+             "thread_refs": ["high-stale"]},
+            {"id": "normal-event", "summary": "Normal", "occurred_at": "2026-09-09",
+             "occurred_at_precision": "day", "observed_at": "2026-09-09T00:00:00",
+             "thread_refs": ["normal-stale"]},
+            {"id": "low-event", "summary": "Low", "occurred_at": "2026-09-02",
+             "occurred_at_precision": "day", "observed_at": "2026-09-02T00:00:00",
+             "thread_refs": ["low-stale"]},
             {"id": "background-event", "summary": "Background", "occurred_at": "2026-08-20",
              "occurred_at_precision": "day", "observed_at": "2026-08-20T00:00:00",
              "thread_refs": ["idle-background"]},
-            {"id": "recent-event", "summary": "Recent", "occurred_at": "2026-09-10",
-             "occurred_at_precision": "day", "observed_at": "2026-09-10T00:00:00",
-             "thread_refs": ["recent"]},
+            {"id": "recent-event", "summary": "Recent", "occurred_at": "2026-09-16",
+             "occurred_at_precision": "day", "observed_at": "2026-09-16T00:00:00",
+             "thread_refs": ["normal-recent"]},
+            {"id": "very-stale-event", "summary": "Very stale", "occurred_at": "2026-08-18",
+             "occurred_at_precision": "day", "observed_at": "2026-08-18T00:00:00",
+             "thread_refs": ["high-very-stale"]},
         ],
     }), encoding="utf-8")
     stored = run_runtime(db, "store-bundle", "--json", str(bundle))
@@ -255,6 +272,9 @@ def test_lifecycle_candidates_apply_stale_thresholds_and_priority_rules(tmp_path
     result = run_runtime(db, "lifecycle-candidates", "--now", "2026-09-17T00:00:00")
     assert result.returncode == 0, result.stderr
     assert result.stdout == (
-        "DEMOTE\tidle-active\tIdle active\n"
+        "DEMOTE\thigh-stale\tHigh stale\tnormal\n"
+        "DEMOTE\thigh-very-stale\tHigh very stale\tnormal\n"
+        "DEMOTE\tlow-stale\tLow stale\tbackground\n"
         "CLOSE\tno-event\tNo event\n"
+        "DEMOTE\tnormal-stale\tNormal stale\tlow\n"
     )
