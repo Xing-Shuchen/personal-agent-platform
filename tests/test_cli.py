@@ -47,9 +47,17 @@ def test_jobs_shows_job_model_overrides_only():
     r = run(["jobs", "--root", str(REPO), "--agent", "world-historian"])
     assert r.returncode == 0, r.stderr
     lines = r.stdout.splitlines()
-    override = next(line for line in lines if line.startswith("world-historian/world-follow-low\t"))
-    assert override.endswith("\tmodel=zai/glm-5.2")
-    assert all("\tmodel=" not in line for line in lines if line != override)
+    expected_overrides = {
+        "world-historian/world-follow-low": "zai/glm-5.2",
+        "world-historian/world-daily-report": "qwen/qwen3.8-max",
+        "world-historian/world-weekly-report": "qwen/qwen3.8-max",
+    }
+    actual_overrides = {
+        fields[0]: next(field.removeprefix("model=") for field in fields if field.startswith("model="))
+        for line in lines
+        if (fields := line.split("\t")) and any(field.startswith("model=") for field in fields)
+    }
+    assert actual_overrides == expected_overrides
 
 
 def test_gate_cli_allow_and_deny(tmp_path):

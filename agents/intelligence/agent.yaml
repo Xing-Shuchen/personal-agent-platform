@@ -8,6 +8,7 @@ spec:
     name: intelligence
     source: profile
   model: zai-intelligence-serendipity/glm-5.2
+  model_fallback: true
   capabilities:
     - personal_context.read
     - web.search

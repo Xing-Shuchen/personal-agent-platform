@@ -8,6 +8,7 @@ spec:
     name: serendipity
     source: profile
   model: zai-intelligence-serendipity/glm-5.2
+  model_fallback: true
   capabilities:
     - personal_context.read
     - local_state.write
