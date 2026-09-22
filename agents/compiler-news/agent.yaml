@@ -21,6 +21,7 @@ spec:
       - name: compiler-hpc-brief
         schedule: "5 8 * * *"
         skill: compiler-hpc-brief
+        model: qwen/deepseek-v4-pro
         args: {}
         attach_to_session: true
         delivery: user-home
