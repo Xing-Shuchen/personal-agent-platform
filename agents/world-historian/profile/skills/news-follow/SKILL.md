@@ -5,7 +5,8 @@ description: Follow active World Historian threads for material new evidence, co
 
 # Follow active threads
 
-Use the requested priority as the work-set filter.
+At the start of every follow run, apply the priority lifecycle below before
+selecting the requested-priority work set.
 
 ## Local increments first
 
@@ -28,8 +29,9 @@ titles, timestamps, URLs, and short summaries; do not dump full article bodies.
 ## Execution budget
 
 This is an incremental collection job, not an open-ended research session.
-Use at most one local feed query, one due-thread list query, one thread-roster
-query (see Delivery contract), and one detail query per candidate thread. Process at most ten due threads per run and at
+Use one local lifecycle-candidate query, at most one local feed query, one
+due-thread list query, one thread-roster query (see Delivery contract), and one
+detail query per candidate thread. Process at most ten due threads per run and at
 most five web searches total; stop searching as soon as the configured
 expansion budget is satisfied. Never inspect OpenClaw automations, sessions,
 home directories, or unrelated logs while running this skill. If a required
@@ -103,16 +105,27 @@ must never appear in a follow update.
   agents/world-historian/runtime/cli.py roster
 ```
 
-## Priority lifecycle (background demotion, then close)
+## Priority lifecycle (tiered stepdown, then close)
 
-Applied by the `world-follow-background` job before it selects its work set
-(and safe to apply in any follow run when a stale thread is noticed):
+Every `news-follow` run, for all four priorities, must find and persist
+lifecycle candidates before selecting its work set. This is required even for
+non-background follow runs because the first two thresholds are shorter than
+the background job cadence. The stepdown is determined only by a thread's
+current priority and newest event:
 
-- No new event for over 14 days: demote to `priority: background`. The thread
-  stays `active` and tracked, just on the biweekly cadence. Genuinely new
-  evidence promotes it back through the normal bundle path.
-- No new event for over 60 days (two months): set `status: closed`. A closed
-  thread is not followed at all and must not appear in the tracked roster.
+| Current priority | Newest event older than | New priority |
+| --- | ---: | --- |
+| `high` | 3 days | `normal` |
+| `normal` | 7 days | `low` |
+| `low` | 14 days | `background` |
+| `background` | — | never demote further |
+
+Demote at most one tier per run: even a `high` thread idle for 30 days becomes
+`normal` in that run, and a later run may step it down again. A genuinely new
+event promotes a thread only through the normal bundle path. No new event for
+over 60 days (two months) instead sets `status: closed`; this close decision
+takes precedence over demotion. Threads with no events also close. A closed
+thread is not followed at all and must not appear in the tracked roster.
 
 Find candidates with this read-only command (use the defaults unless testing a
 different lifecycle window):
@@ -124,10 +137,12 @@ different lifecycle window):
 ```
 
 Persist each change through `store-bundle`: `DEMOTE` → the thread's `id`,
-`title`, `status: "active"`, `priority: "background"`; `CLOSE` → `id`, `title`,
-`status: "closed"`. A lifecycle-only change is not a user-facing update; do
-not deliver it unless the same run also persisted a material event or claim
-correction for a tracked thread.
+`title`, `status: "active"`, and the target priority in the fourth tab-separated
+column of its `DEMOTE` line; `CLOSE` → `id`, `title`, `status: "closed"`. For
+either lifecycle-only bundle, carry the existing `last_checked_at`,
+`next_check_at`, and `quiet_count` values through verbatim: never reset or zero
+those raw fields. A lifecycle-only change is not user-facing: if it is the
+run's only change, the final response must be exactly `NO_REPLY`.
 
 ## Delivery contract
 
