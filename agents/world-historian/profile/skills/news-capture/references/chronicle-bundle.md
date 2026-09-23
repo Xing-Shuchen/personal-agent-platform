@@ -64,7 +64,7 @@ Minimum capture example:
       "observed_at": "2026-08-31T12:00:00+08:00",
       "confidence": 0.95,
       "thread_refs": ["thread"],
-      "entity_names": ["Example"]
+      "entity_names": [{"name": "Example", "kind": "organization", "role": "mentioned"}]
     }
   ],
   "claims": [
@@ -81,6 +81,10 @@ Minimum capture example:
 ```
 
 Important fields:
+
+- Every entity is an object with `name` and a canonical `kind` (plus `role`
+  for event entities); never use bare entity strings or `kind: "unknown"` in a
+  capture bundle. See [the canonical kind vocabulary](/home/xingzeng/personal-agent-platform/agents/world-historian/profile/references/entity-kinds.md).
 
 - An event's `title` is a required-in-practice short heading (at most 60
   characters) for the timeline. It identifies the event in a compact noun or

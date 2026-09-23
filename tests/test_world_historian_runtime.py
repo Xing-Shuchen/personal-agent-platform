@@ -51,6 +51,36 @@ def test_store_bundle_is_atomic_and_idempotent(tmp_path):
     assert counts["sources"] == 1
 
 
+def test_entity_maintenance_commands_are_deterministic_and_safe(tmp_path):
+    db = tmp_path / "chronicle.sqlite"
+    bundle = tmp_path / "entities.json"
+    bundle.write_text(json.dumps({"entities": [
+        {"name": "Zulu", "kind": "unknown"}, {"name": "Alpha", "kind": "company"},
+        {"name": "Bravo", "kind": "unknown"},
+    ]}), encoding="utf-8")
+    assert run_runtime(db, "store-bundle", "--json", str(bundle)).returncode == 0
+    assert run_runtime(db, "entities", "--missing-kind").stdout.splitlines() == [
+        "- Bravo\tunknown", "- Zulu\tunknown"]
+    counts = run_runtime(db, "entity-kinds")
+    assert counts.returncode == 0
+    assert counts.stdout.splitlines()[-1] == "- unknown\t2"
+
+    mapping = tmp_path / "map.json"
+    mapping.write_text(json.dumps({"Bravo": "person", "Missing": "place"}), encoding="utf-8")
+    dry = run_runtime(db, "entities-reclassify", "--map", str(mapping), "--dry-run")
+    assert dry.stdout.splitlines() == ["- Bravo\tunknown\tperson", "updated=1 unchanged=0 absent_from_db=1"]
+    assert "- Bravo\tunknown" in run_runtime(db, "entities", "--missing-kind").stdout
+    applied = run_runtime(db, "entities-reclassify", "--map", str(mapping))
+    assert applied.stdout == "updated=1 unchanged=0 absent_from_db=1\n"
+    assert run_runtime(db, "entities-reclassify", "--map", str(mapping)).stdout == "updated=0 unchanged=1 absent_from_db=1\n"
+
+    invalid = tmp_path / "invalid.json"
+    invalid.write_text(json.dumps({"Zulu": "not-a-kind"}), encoding="utf-8")
+    rejected = run_runtime(db, "entities-reclassify", "--map", str(invalid))
+    assert rejected.returncode == 2 and rejected.stderr.startswith("ERROR:")
+    assert "- Zulu\tunknown" in run_runtime(db, "entities", "--missing-kind").stdout
+
+
 def test_invalid_personal_relation_rolls_back_whole_bundle(tmp_path):
     db = tmp_path / "chronicle.sqlite"
     data = sample_bundle()

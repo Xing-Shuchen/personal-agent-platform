@@ -23,6 +23,7 @@ from db import (
     all_thread_ids,
     connect,
     default_db_path,
+    ENTITY_KINDS,
     initialize,
     migrate,
     search,
@@ -108,6 +109,16 @@ def build_parser() -> argparse.ArgumentParser:
     p_store.add_argument("--no-sync", action="store_true",
                          help="skip the Obsidian export even if threads were touched")
 
+    sub.add_parser("entity-kinds", help="print vocabulary entity-kind counts")
+    p_entities = sub.add_parser("entities", help="list entities by name")
+    p_entities.add_argument("--kind", choices=ENTITY_KINDS)
+    p_entities.add_argument("--missing-kind", action="store_true",
+                            help="list only unclassified (unknown) entities")
+    p_reclassify = sub.add_parser("entities-reclassify", help="apply a name-to-kind map")
+    p_reclassify.add_argument("--map", required=True, dest="map_path",
+                              help="JSON object or list of {name, kind} objects")
+    p_reclassify.add_argument("--dry-run", action="store_true")
+
     p_sync = sub.add_parser("sync", help="rebuild Obsidian thread files from the database")
     p_sync.add_argument("--thread", action="append", default=[],
                         help="limit to these thread ids (repeatable; default all)")
@@ -135,6 +146,65 @@ def build_parser() -> argparse.ArgumentParser:
 def _readonly_connection(db_path: Path) -> sqlite3.Connection:
     """Open an existing Chronicle database without any write-side effects."""
     return sqlite3.connect(f"{db_path.resolve().as_uri()}?mode=ro", uri=True)
+
+
+def _reclassification_map(path: str) -> dict[str, str]:
+    raw = _read_json(path)
+    if isinstance(raw, dict):
+        pairs = raw.items()
+    elif isinstance(raw, list):
+        pairs = []
+        for item in raw:
+            if not isinstance(item, dict) or set(item) != {"name", "kind"}:
+                raise ValueError("--map list entries must contain exactly name and kind")
+            pairs.append((item["name"], item["kind"]))
+    else:
+        raise ValueError("--map must be an object or a list of {name, kind} objects")
+    result: dict[str, str] = {}
+    for name, kind in pairs:
+        if not isinstance(name, str) or not name.strip():
+            raise ValueError("--map names must be non-empty strings")
+        if not isinstance(kind, str) or kind not in ENTITY_KINDS:
+            raise ValueError(f"invalid entity kind {kind!r}")
+        if name in result:
+            raise ValueError(f"duplicate entity name in --map: {name!r}")
+        result[name] = kind
+    return result
+
+
+def _print_entities(conn: sqlite3.Connection, args: argparse.Namespace) -> None:
+    if args.kind and args.missing_kind:
+        raise ValueError("--kind and --missing-kind cannot be used together")
+    kind = "unknown" if args.missing_kind else args.kind
+    query = "SELECT name, kind FROM entities"
+    parameters: tuple[str, ...] = ()
+    if kind:
+        query += " WHERE kind = ?"
+        parameters = (kind,)
+    query += " ORDER BY name"
+    for name, entity_kind in conn.execute(query, parameters):
+        print(f"- {name}\t{entity_kind}")
+
+
+def _entities_reclassify(conn: sqlite3.Connection, mapping: dict[str, str],
+                         dry_run: bool) -> None:
+    rows = {
+        str(row["name"]): str(row["kind"])
+        for row in conn.execute("SELECT name, kind FROM entities WHERE name IN (%s)" %
+                                ",".join("?" for _ in mapping), tuple(mapping))
+    } if mapping else {}
+    absent = sorted(set(mapping) - set(rows))
+    changes = [(name, rows[name], mapping[name]) for name in sorted(rows)
+               if rows[name] != mapping[name]]
+    unchanged = len(rows) - len(changes)
+    if dry_run:
+        for name, old, new in changes:
+            print(f"- {name}\t{old}\t{new}")
+    else:
+        with conn:
+            conn.executemany("UPDATE entities SET kind = ? WHERE name = ?",
+                             [(new, name) for name, _old, new in changes])
+    print(f"updated={len(changes)} unchanged={unchanged} absent_from_db={len(absent)}")
 
 
 def _daily_stats_day(value: str | None) -> str:
@@ -300,6 +370,24 @@ def main(argv: list[str] | None = None) -> int:
                 _print_lifecycle_candidates(conn, args)
             return 0
 
+        if args.command in ("entity-kinds", "entities"):
+            with _readonly_connection(db_path) as conn:
+                if args.command == "entity-kinds":
+                    counts = dict(conn.execute(
+                        "SELECT kind, COUNT(*) FROM entities GROUP BY kind"))
+                    for kind in ENTITY_KINDS:
+                        print(f"- {kind}\t{counts.get(kind, 0)}")
+                else:
+                    _print_entities(conn, args)
+            return 0
+
+        # Validate the complete map before opening or migrating the database:
+        # invalid input must have no database side effects.
+        reclassification = (
+            _reclassification_map(args.map_path)
+            if args.command == "entities-reclassify" else None
+        )
+
         with connect(db_path) as conn:
             migrate(conn)
             if args.command == "stats":
@@ -333,6 +421,8 @@ def main(argv: list[str] | None = None) -> int:
                     print(f"thread not found: {args.thread_id}", file=sys.stderr)
                     return 1
                 _print(detail)
+            elif args.command == "entities-reclassify":
+                _entities_reclassify(conn, reclassification or {}, args.dry_run)
         return 0
     except (ChronicleError, json.JSONDecodeError, sqlite3.Error, OSError,
             ValueError) as exc:

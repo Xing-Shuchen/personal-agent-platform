@@ -80,6 +80,11 @@ only genuine deltas through `/home/xingzeng/personal-agent-platform/agents/world
 dispute claims explicitly; never overwrite their historical state. Update each
 thread's last-check state even when no event is added.
 
+Every entity written in a follow bundle must be an object with `name` and a
+closed-vocabulary `kind` (plus `role` for an event entity), never a bare name.
+Use [entity-kinds.md](/home/xingzeng/personal-agent-platform/agents/world-historian/profile/references/entity-kinds.md)
+and fix any proposed `kind: "unknown"` before persisting.
+
 Every new event must include a concise `title` (maximum 60 characters) for
 the timeline heading. Put the full account in `summary` as Markdown body text:
 separate distinct developments into paragraphs or bullets, and never use the

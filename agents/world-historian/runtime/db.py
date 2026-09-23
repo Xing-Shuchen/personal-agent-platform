@@ -16,6 +16,14 @@ PERSONAL_RELATIONS = {
     "social_context", "later_recalled",
 }
 
+# The order is also the deterministic tie-break order used by migration 0006.
+ENTITY_KINDS = (
+    "company", "organization", "person", "product", "model", "software",
+    "benchmark", "aggregator", "media", "government", "place", "concept",
+    "unknown",
+)
+ENTITY_KIND_SET = frozenset(ENTITY_KINDS)
+
 
 class ChronicleError(ValueError):
     """Raised when a bundle would violate Chronicle invariants."""
@@ -133,6 +141,35 @@ def _event_title(item: dict[str, Any]) -> str | None:
     return value
 
 
+def _entity_kind(value: object, where: str) -> str:
+    if not isinstance(value, str) or value not in ENTITY_KIND_SET:
+        raise ChronicleError(
+            f"{where}.kind must be one of: {', '.join(ENTITY_KINDS)}"
+        )
+    return value
+
+
+def _ensure_entity(conn: sqlite3.Connection, name: str, kind: str, now: str,
+                   aliases: object | None = None) -> str:
+    """Find an entity by name and only upgrade an unclassified row in place."""
+    row = conn.execute("SELECT id, kind FROM entities WHERE name = ?", (name,)).fetchone()
+    if row is None:
+        entity_id = _stable("ent", name)
+        conn.execute(
+            "INSERT INTO entities(id, name, kind, aliases_json, created_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (entity_id, name, kind, _json(aliases, []), now),
+        )
+        return entity_id
+    entity_id, existing_kind = str(row["id"]), str(row["kind"])
+    if existing_kind == "unknown" and kind != "unknown":
+        conn.execute("UPDATE entities SET kind = ? WHERE id = ?", (kind, entity_id))
+    if aliases is not None:
+        conn.execute("UPDATE entities SET aliases_json = ? WHERE id = ?",
+                     (_json(aliases, []), entity_id))
+    return entity_id
+
+
 def store_bundle(conn: sqlite3.Connection, bundle: dict[str, Any]) -> dict[str, Any]:
     """Validate and atomically upsert one cross-referenced Chronicle bundle.
 
@@ -168,12 +205,6 @@ def store_bundle(conn: sqlite3.Connection, bundle: dict[str, Any]) -> dict[str, 
     def ensure_entity(raw_entity: object, where: str) -> tuple[str, str]:
         if isinstance(raw_entity, str):
             name, kind, role = raw_entity, "unknown", "mentioned"
-            existing = conn.execute(
-                "SELECT id FROM entities WHERE name = ? ORDER BY (kind = 'unknown'), kind LIMIT 1",
-                (name,),
-            ).fetchone()
-            if existing is not None:
-                return str(existing[0]), role
         elif isinstance(raw_entity, dict):
             name = raw_entity.get("name")
             kind = raw_entity.get("kind", "unknown")
@@ -182,12 +213,7 @@ def store_bundle(conn: sqlite3.Connection, bundle: dict[str, Any]) -> dict[str, 
             raise ChronicleError(f"{where} must contain strings or entity objects")
         if not isinstance(name, str) or not name.strip():
             raise ChronicleError(f"{where} must contain entity names")
-        entity_id = _stable("ent", name, kind)
-        conn.execute(
-            "INSERT OR IGNORE INTO entities(id, name, kind, aliases_json, created_at) "
-            "VALUES (?, ?, ?, '[]', ?)", (entity_id, name, kind, now),
-        )
-        return entity_id, str(role)
+        return _ensure_entity(conn, name, _entity_kind(kind, where), now), str(role)
 
     try:
         conn.execute("BEGIN IMMEDIATE")
@@ -217,15 +243,9 @@ def store_bundle(conn: sqlite3.Connection, bundle: dict[str, Any]) -> dict[str, 
 
         for item in _items(bundle, "entities"):
             name = str(_required(item, "name", "entity"))
-            kind = str(item.get("kind", "unknown"))
-            identifier = str(item.get("id") or _stable("ent", name, kind))
+            kind = _entity_kind(item.get("kind", "unknown"), "entity")
+            identifier = _ensure_entity(conn, name, kind, now, item.get("aliases"))
             remember(item, identifier)
-            conn.execute(
-                """INSERT INTO entities(id, name, kind, aliases_json, created_at)
-                   VALUES (?, ?, ?, ?, ?)
-                   ON CONFLICT(id) DO UPDATE SET aliases_json=excluded.aliases_json""",
-                (identifier, name, kind, _json(item.get("aliases"), []), now),
-            )
             counts["entities"] = counts.get("entities", 0) + 1
 
         for item in _items(bundle, "threads"):

@@ -52,6 +52,43 @@ def test_migrations_recorded_and_idempotent(tmp_path):
         assert expected in tables
 
 
+def test_entity_name_unique_migration_merges_links_and_metadata(tmp_path):
+    """0006 retains one deterministic entity and rewrites both link tables."""
+    db = load_runtime_db()
+    conn = db.connect(tmp_path / "legacy.sqlite")
+    migrations = Path(db.__file__).with_name("migrations")
+    conn.execute("CREATE TABLE schema_migrations (version TEXT PRIMARY KEY, applied_at TEXT NOT NULL)")
+    for path in sorted(migrations.glob("000[1-5]_*.sql")):
+        conn.executescript(path.read_text(encoding="utf-8"))
+        conn.execute("INSERT INTO schema_migrations VALUES (?, 'test')", (path.stem,))
+    conn.execute("INSERT INTO entities VALUES ('unknown', 'OpenAI', 'unknown', '[\"OA\"]', '2026-02-01')")
+    conn.execute("INSERT INTO entities VALUES ('company', 'OpenAI', 'company', '[\"OpenAI Inc\", \"OA\"]', '2026-01-01')")
+    conn.execute("INSERT INTO threads VALUES ('thread', 'Thread', 'active', 'normal', 'x', NULL, NULL, NULL, 0, '2026', '2026')")
+    conn.execute("INSERT INTO events(id, summary, observed_at, created_at, updated_at) VALUES ('one', 'one', '2026', '2026', '2026'), ('two', 'two', '2026', '2026', '2026')")
+    conn.execute("INSERT INTO event_entities VALUES ('one', 'unknown', 'mentioned'), ('two', 'company', 'mentioned')")
+    conn.execute("INSERT INTO thread_entities VALUES ('thread', 'unknown'), ('thread', 'company')")
+    conn.commit()
+
+    assert db.migrate(conn) == ["0006_entity_name_unique"]
+    assert [tuple(row) for row in conn.execute("SELECT id, name, kind, aliases_json, created_at FROM entities")] == [
+        ("company", "OpenAI", "company", '["OpenAI Inc","OA"]', "2026-01-01")]
+    assert [tuple(row) for row in conn.execute("SELECT event_id, entity_id, role FROM event_entities ORDER BY event_id")] == [
+        ("one", "company", "mentioned"), ("two", "company", "mentioned")]
+    assert [tuple(row) for row in conn.execute("SELECT thread_id, entity_id FROM thread_entities")] == [("thread", "company")]
+    assert db.migrate(conn) == []
+
+
+def test_entity_kind_upgrade_preserves_identity_and_known_classification(tmp_path):
+    conn, db = fresh_conn(tmp_path)
+    db.store_bundle(conn, {"entities": [{"name": "Example", "kind": "unknown"}]})
+    first_id = conn.execute("SELECT id FROM entities WHERE name = 'Example'").fetchone()[0]
+    db.store_bundle(conn, {"entities": [{"name": "Example", "kind": "company"}]})
+    db.store_bundle(conn, {"entities": [{"name": "Example", "kind": "unknown"}]})
+    db.store_bundle(conn, {"entities": [{"name": "Example", "kind": "organization"}]})
+    assert tuple(conn.execute("SELECT id, kind FROM entities WHERE name = 'Example'").fetchone()) == (
+        first_id, "company")
+
+
 def test_background_thread_priority_is_supported(tmp_path):
     conn, db = fresh_conn(tmp_path)
     db.store_bundle(conn, {"threads": [{

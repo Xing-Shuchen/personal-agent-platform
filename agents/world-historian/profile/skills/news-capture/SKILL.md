@@ -24,6 +24,10 @@ Treat the input as a seed for an ongoing thread, not as an article title.
    The title is an identifying phrase, never a compressed evidence dump.
 5. Create a small initial source set, the event, its claims, thread entities,
    open questions, and watch queries. Do not assert motivations as facts.
+   Every entity must be an object with `name` and `kind` (and `role` for an
+   event entity), never a bare name. Choose `kind` from the closed vocabulary
+   in [entity-kinds.md](/home/xingzeng/personal-agent-platform/agents/world-historian/profile/references/entity-kinds.md);
+   `kind: "unknown"` is a defect to fix before persistence.
    For every named person whose statement is referenced, also retrieve and
    store the verbatim original (发言原话 / 公开信 / 文章全文或明确节选) as a
    Chronicle `quote` with a `slug` (renders to `原文素材/<slug>.md`) and its
