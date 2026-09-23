@@ -24,6 +24,7 @@ agents/*/profile/var/
 
 # Generated run artifacts
 agents/*/runtime/reflect-*.json
+agents/*/runtime/follow-*.json
 
 # SQLite transient sidecars. The primary database is already covered by
 # *.sqlite above; these files are recreated by SQLite and must not be tracked.
