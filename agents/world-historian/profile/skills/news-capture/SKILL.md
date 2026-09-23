@@ -31,7 +31,10 @@ Treat the input as a seed for an ongoing thread, not as an article title.
    For every named person whose statement is referenced, also retrieve and
    store the verbatim original (发言原话 / 公开信 / 文章全文或明确节选) as a
    Chronicle `quote` with a `slug` (renders to `原文素材/<slug>.md`) and its
-   source URL. Prefer the original platform (微博 / 公众号 / 头条 / 官网) over
+   source URL. Every full-text quote must also carry a concise, independently
+   written `summary`. The thread projection must show only the Obsidian wiki
+   link and `**摘要**`—never inline the full text or copy its first line as a
+   preview. Prefer the original platform (微博 / 公众号 / 头条 / 官网) over
    media paraphrase; if only a paraphrase is available, store the verbatim
    quotation as reported and state the limitation. Never fabricate a quote.
 6. Read [the Chronicle bundle format](references/chronicle-bundle.md),

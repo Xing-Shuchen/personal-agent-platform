@@ -372,6 +372,9 @@ def store_bundle(conn: sqlite3.Connection, bundle: dict[str, Any]) -> dict[str, 
 
         for item in _items(bundle, "quotes"):
             quote_text = str(_required(item, "quote_text", "quote"))
+            summary = item.get("summary")
+            if summary is not None and (not isinstance(summary, str) or not summary.strip()):
+                raise ChronicleError("quote.summary must be a non-empty string when present")
             speaker = item.get("speaker")
             title = item.get("title")
             event_id = resolve(item["event_ref"], "quote.event_ref") if item.get("event_ref") else None
@@ -388,18 +391,21 @@ def store_bundle(conn: sqlite3.Connection, bundle: dict[str, Any]) -> dict[str, 
             slug = item.get("slug")
             if slug is not None and (not isinstance(slug, str) or not slug.strip()):
                 raise ChronicleError("quote.slug must be a non-empty string when present")
+            if slug is not None and summary is None:
+                raise ChronicleError("quote.summary is required when quote.slug is present")
             conn.execute(
                 """INSERT INTO quotes
-                   (id, event_id, source_id, speaker, title, quote_text, quote_format,
+                   (id, event_id, source_id, speaker, title, quote_text, summary, quote_format,
                     url, slug, fetched_at, created_at, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                    ON CONFLICT(id) DO UPDATE SET
                      event_id=excluded.event_id, source_id=excluded.source_id,
                      speaker=excluded.speaker, title=excluded.title,
-                     quote_text=excluded.quote_text, quote_format=excluded.quote_format,
+                     quote_text=excluded.quote_text, summary=excluded.summary,
+                     quote_format=excluded.quote_format,
                      url=excluded.url, slug=excluded.slug, fetched_at=excluded.fetched_at,
                      updated_at=excluded.updated_at""",
-                (identifier, event_id, source_id, speaker, title, quote_text,
+                (identifier, event_id, source_id, speaker, title, quote_text, summary,
                  quote_format, item.get("url"), slug,
                  item.get("fetched_at", now), now, now),
             )

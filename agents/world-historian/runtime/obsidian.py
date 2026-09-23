@@ -285,12 +285,20 @@ def render_snapshot(snapshot: dict[str, Any], synced_at: str,
                     origin += f" · [网页存档]({url})"
                 lines.append(f"> [!quote] {header}")
                 lines.append(f"> 来源：{origin}")
-                preview = [
-                    ln for ln in str(quote.get("quote_text", "")).splitlines()
-                    if ln.strip()
-                ]
-                if preview:
-                    lines.append(f"> {_one_line(preview[0])[:160]}…")
+                summary = str(quote.get("summary") or "").strip()
+                if summary:
+                    lines.append(f"> **摘要**：{_escape_tags(_one_line(summary))}")
+                else:
+                    # Legacy standalone materials predate quote summaries.
+                    # Preserve their compact preview until they are explicitly
+                    # backfilled; new slugged quotes are required to carry a
+                    # summary by store_bundle.
+                    preview = [
+                        ln for ln in str(quote.get("quote_text", "")).splitlines()
+                        if ln.strip()
+                    ]
+                    if preview:
+                        lines.append(f"> {_one_line(preview[0])[:160]}…")
             else:
                 source = _one_line(quote.get("source_title")) or "佚名来源"
                 origin = f"{header} —— {source}"

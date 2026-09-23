@@ -114,11 +114,14 @@ Important fields:
   `relation_score`. Candidates remain non-active until explicitly promoted.
 - Quotes store verbatim originals (发言原话、公开信全文/节选) attached to an
   event: `event_ref` (and optionally `source_ref`), `speaker`, `title`,
-  `quote_text`, `quote_format` (`text` or `markdown`), `url`, `fetched_at`,
-  and optional `slug`. With `slug`, the Obsidian render writes the full text
+  `quote_text`, `summary`, `quote_format` (`text` or `markdown`), `url`,
+  `fetched_at`, and optional `slug`. `summary` is a concise editorial account
+  of the quoted material, not a copied opening sentence. With `slug`, the Obsidian render writes the full text
   to `原文素材/<slug>.md` (frontmatter: type/thread_id/event_id/speaker/
-  title/url) and the thread file shows only a preview plus an Obsidian link
-  `[[原文素材/<slug>|…]]`. Without `slug`, the quote text is inlined in the
+  title/url) and the thread file shows only an Obsidian link
+  `[[原文素材/<slug>|…]]` plus `**摘要**：…`; it never repeats the verbatim
+  text or an opening-line preview. Full texts must always have both `slug` and
+  `summary`. Without `slug`, the quote text is inlined in the
   thread file. Refs are bundle-local: cross-bundle references must use
   actual IDs (e.g. `src_...`, `evt_...`, `qte_...`), not earlier refs.
   For X posts (e.g. @justinsuntron) verbatim full text often has no

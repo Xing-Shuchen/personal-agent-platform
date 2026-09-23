@@ -56,7 +56,9 @@ def quote_bundle() -> dict:
     bundle["quotes"] = [{
         "ref": "q1", "event_ref": "e1", "source_ref": "s1",
         "speaker": "Example Spokesperson", "title": "Example statement",
-        "quote_text": "We changed it.", "slug": "example-statement",
+        "quote_text": "We changed it.",
+        "summary": "The spokesperson confirmed the transition.",
+        "slug": "example-statement",
     }]
     return bundle
 
@@ -87,6 +89,19 @@ def test_capture_creates_one_file_with_projection(tmp_path):
     assert "- [ ] Why now?" in text
     assert "`Example follow-up`（exact）" in text
     assert "# 手工批注" in text
+
+
+def test_standalone_quote_renders_link_and_summary_without_verbatim_text(tmp_path):
+    conn = fresh(tmp_path)
+    result = db.store_bundle(conn, quote_bundle())
+    vault, outcome = sync(conn, tmp_path, result["touched_threads"])
+    assert outcome["written"] and not outcome["errors"]
+    text = only_file(vault).read_text(encoding="utf-8")
+    assert "[[原文素材/example-statement|" in text
+    assert "> **摘要**：The spokesperson confirmed the transition." in text
+    assert "> We changed it." not in text
+    assert "We changed it." in (vault / "原文素材" / "example-statement.md").read_text(
+        encoding="utf-8")
 
 
 def test_timeline_is_rendered_newest_first(tmp_path):

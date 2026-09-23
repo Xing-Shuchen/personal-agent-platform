@@ -69,7 +69,7 @@ def test_entity_name_unique_migration_merges_links_and_metadata(tmp_path):
     conn.execute("INSERT INTO thread_entities VALUES ('thread', 'unknown'), ('thread', 'company')")
     conn.commit()
 
-    assert db.migrate(conn) == ["0006_entity_name_unique"]
+    assert db.migrate(conn) == ["0006_entity_name_unique", "0007_quote_summaries"]
     assert [tuple(row) for row in conn.execute("SELECT id, name, kind, aliases_json, created_at FROM entities")] == [
         ("company", "OpenAI", "company", '["OpenAI Inc","OA"]', "2026-01-01")]
     assert [tuple(row) for row in conn.execute("SELECT event_id, entity_id, role FROM event_entities ORDER BY event_id")] == [

@@ -98,6 +98,11 @@ formula (`$G(T) \gg \log T\,\log_2 T/\log_4 T$`, `$\pi_1(X)$`), never Unicode
 math notation (`≫`, `log₂T`, `π₁`). Narrative prose stays plain — only actual
 formulas/expressions get `$` delimiters.
 
+When adding a verbatim full-text quote, always give it a `slug` and a concise
+editorial `summary`. The full text belongs in `原文素材/<slug>.md`; the thread
+projection shows only the `[[原文素材/…|…]]` link and `**摘要**`, never the
+full text or an opening-line preview.
+
 ## Vault completion
 
 If this run wrote or changed any vault file, finish the vault SOP before
