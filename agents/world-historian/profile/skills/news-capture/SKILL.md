@@ -55,5 +55,18 @@ only actual formulas/expressions get `$` delimiters. Never use Unicode
 sub/superscripts inside formulas (`log₃`, `π₁` → `\log_3`, `\pi_1`);
 `S⁶` in running prose may stay, but inside a formula write `$S^6$`.
 
+## Vault completion
+
+If this run wrote or changed any vault file, finish the vault SOP before
+returning; skip it only when no vault file changed. Follow
+`/home/xingzeng/.openclaw/workspace-feishu3/skills/obsidian-remotely-save-sync/SKILL.md`
+and `/home/xingzeng/.openclaw/agents/feishu3/agent/workshop-skills/vault-annotation-guard/SKILL.md`:
+
+1. Trigger the Remotely Save pull with the Obsidian CLI (`HOME=/home/xingzeng`) and verify with `verify_sync_diff.py`.
+2. Run the annotation guard for each changed file (compare 「手工批注」 with `HEAD`); restore it from git if its annotation was lost.
+3. Commit vault changes grouped by theme, using Chinese messages and explicit `git add <path group>`.
+4. Push.
+5. Trigger Remotely Save again and verify the objects landed on COS.
+
 Initialize or inspect storage with `/home/xingzeng/personal-agent-platform/agents/world-historian/runtime/cli.py init`, `search`, `thread`,
 and `stats`. Never place the SQLite database or raw snapshots under `profile/`.

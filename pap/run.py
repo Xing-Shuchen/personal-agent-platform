@@ -107,12 +107,12 @@ def is_retryable(failure_kind: str) -> bool:
     return failure_kind in RETRYABLE_FAILURES
 
 
-#: A provider that refused the generated text refuses the same text again, so
-#: the refusal gets its own kind and never joins the retryable ``runner`` bucket
-#: reserved for transport trouble.  The markers are what the refusing provider
-#: actually said, read from the run's own transcript record; the malformed-400
-#: placeholder is a provider client error whose body OpenClaw will not replay,
-#: and re-sending the identical prompt fails the same way.
+#: A provider refusal gets its own kind and never joins the retryable ``runner``
+#: bucket reserved for transport trouble.  As of 2026-09-24, refusals from the
+#: China-side routes fall back once to the official DeepSeek API; that pinned
+#: attempt is worthwhile because it is a different provider with different
+#: validation.  This supersedes the earlier exclusion of malformed-400 payload
+#: rejections, which assumed that re-sending the identical prompt would fail.
 PROVIDER_REJECTION = "provider_rejection"
 PROVIDER_REJECTION_MARKERS = (
     "inappropriate content",
@@ -120,6 +120,8 @@ PROVIDER_REJECTION_MARKERS = (
     "data_inspection_failed",
     "content_filter",
     "malformed diagnostic json",
+    "provider rejected the request schema or tool payload",
+    "request format rejected, http 400",
 )
 
 # OpenCode Zen failures which selecting the same model and prompt cannot fix.

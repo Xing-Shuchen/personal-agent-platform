@@ -98,6 +98,12 @@ formula (`$G(T) \gg \log T\,\log_2 T/\log_4 T$`, `$\pi_1(X)$`), never Unicode
 math notation (`≫`, `log₂T`, `π₁`). Narrative prose stays plain — only actual
 formulas/expressions get `$` delimiters.
 
+## Vault completion
+
+If this run wrote or changed any vault file, finish the vault SOP before
+returning; skip it only when no vault file changed. Steps:
+[references/vault-completion-sop.md](references/vault-completion-sop.md).
+
 ## Thread roster (read-only, delivery set)
 
 To list the threads a follow update delivers, run this read-only command

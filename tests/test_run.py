@@ -5,7 +5,7 @@ import signal
 import subprocess
 from pathlib import Path
 
-from pap.run import OPENCLAW_EMPTY_FINALIZATION_FALLBACK, _opencode_output, _prompt, invoke, is_retryable, new_run_id, runs
+from pap.run import OPENCLAW_EMPTY_FINALIZATION_FALLBACK, _opencode_output, _prompt, invoke, is_retryable, new_run_id, provider_rejection, runs
 from pap.spec import load_spec
 
 
@@ -618,6 +618,20 @@ def test_a_provider_refusal_is_recorded_as_non_retryable(tmp_path):
     record = runs(log)[0]
     assert record["error"] == "Output data may contain inappropriate content."
     assert record["retryable"] is False
+
+
+def test_provider_rejection_recognizes_payload_rejections_and_existing_markers():
+    for text in (
+        "provider rejected the request schema or tool payload.",
+        "zai/glm-5.3 request failed (request format rejected, HTTP 400).",
+        "inappropriate content",
+        "content exists risk",
+        "data_inspection_failed",
+        "content_filter",
+        "malformed diagnostic json",
+    ):
+        assert provider_rejection(text)
+    assert provider_rejection("LLM request timed out.") is False
 
 
 def test_provider_rejection_uses_declared_fallback_once_and_records_provenance(tmp_path):
