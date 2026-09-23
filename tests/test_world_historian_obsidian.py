@@ -79,6 +79,7 @@ def test_capture_creates_one_file_with_projection(tmp_path):
     text = target.read_text(encoding="utf-8")
     assert f"thread_id: \"{result['refs']['t1']}\"" in text
     assert "type: note" in text and "area: world-historian" in text
+    assert 'last_event_ingested_at: "' in text
     assert "# 时间线" in text
     assert "## Example changed" in text
     assert "## Example changed\nExample changed\n\n---\n\n- 发生时间：" in text

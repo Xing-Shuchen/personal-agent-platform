@@ -329,13 +329,19 @@ def store_bundle(conn: sqlite3.Connection, bundle: dict[str, Any]) -> dict[str, 
             counts["events"] = counts.get("events", 0) + 1
             for thread_ref in item.get("thread_refs", []):
                 thread_id = resolve(thread_ref, "event.thread_refs[]")
-                conn.execute(
+                membership = conn.execute(
                     """INSERT OR IGNORE INTO thread_events
                        (thread_id, event_id, membership_confidence, created_at)
                        VALUES (?, ?, ?, ?)""",
                     (thread_id, identifier,
                      _confidence(item.get("membership_confidence"), "membership_confidence", 1.0), now),
                 )
+                if membership.rowcount:
+                    # Derived runtime state: bundles cannot set or override it.
+                    conn.execute(
+                        "UPDATE threads SET last_event_ingested_at = ? WHERE id = ?",
+                        (now, thread_id),
+                    )
                 touched.add(thread_id)
             for raw_entity in item.get("entity_names", []):
                 entity_id, role = ensure_entity(raw_entity, "event.entity_names")

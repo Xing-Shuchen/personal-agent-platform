@@ -69,7 +69,10 @@ def test_entity_name_unique_migration_merges_links_and_metadata(tmp_path):
     conn.execute("INSERT INTO thread_entities VALUES ('thread', 'unknown'), ('thread', 'company')")
     conn.commit()
 
-    assert db.migrate(conn) == ["0006_entity_name_unique", "0007_quote_summaries"]
+    assert db.migrate(conn) == [
+        "0006_entity_name_unique", "0007_quote_summaries",
+        "0008_thread_last_event_ingested_at",
+    ]
     assert [tuple(row) for row in conn.execute("SELECT id, name, kind, aliases_json, created_at FROM entities")] == [
         ("company", "OpenAI", "company", '["OpenAI Inc","OA"]', "2026-01-01")]
     assert [tuple(row) for row in conn.execute("SELECT event_id, entity_id, role FROM event_entities ORDER BY event_id")] == [
@@ -142,6 +145,32 @@ def test_thread_title_dedupes_to_stable_id(tmp_path):
     assert first["refs"]["t1"] == second["refs"]["t1"]
     assert first["refs"]["t1"].startswith("thr_")
     assert conn.execute("SELECT COUNT(*) FROM events").fetchone()[0] == 1
+
+
+def test_thread_last_event_ingested_at_changes_only_for_new_membership(tmp_path, monkeypatch):
+    conn, db = fresh_conn(tmp_path)
+    monkeypatch.setattr(db, "_now", lambda: "2026-09-24T10:00:00+08:00")
+    initial = base_bundle()
+    # This is database-maintained state, never a model/bundle-controlled field.
+    initial["threads"][0]["last_event_ingested_at"] = "2099-01-01T00:00:00+08:00"
+    first = db.store_bundle(conn, initial)
+    tid = first["refs"]["t1"]
+    assert conn.execute(
+        "SELECT last_event_ingested_at FROM threads WHERE id = ?", (tid,)
+    ).fetchone()[0] == "2026-09-24T10:00:00+08:00"
+
+    monkeypatch.setattr(db, "_now", lambda: "2026-09-24T11:00:00+08:00")
+    db.store_bundle(conn, base_bundle())
+    assert conn.execute(
+        "SELECT last_event_ingested_at FROM threads WHERE id = ?", (tid,)
+    ).fetchone()[0] == "2026-09-24T10:00:00+08:00"
+
+    db.store_bundle(conn, {"events": [{
+        "summary": "A genuinely new increment", "thread_refs": [tid],
+    }]})
+    assert conn.execute(
+        "SELECT last_event_ingested_at FROM threads WHERE id = ?", (tid,)
+    ).fetchone()[0] == "2026-09-24T11:00:00+08:00"
 
 
 def test_superseded_claims_are_kept_not_deleted(tmp_path):

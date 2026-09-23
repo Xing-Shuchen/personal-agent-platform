@@ -134,6 +134,7 @@ def _frontmatter(snapshot: dict[str, Any], synced_at: str) -> str:
         f"thread_id: {_yaml_str(snapshot['id'])}",
         f"status: {_yaml_str(snapshot.get('status', 'active'))}",
         f"priority: {_yaml_str(snapshot.get('priority', 'normal'))}",
+        f"last_event_ingested_at: {_yaml_str(snapshot.get('last_event_ingested_at'))}",
         f"created: {_yaml_str(created)}",
         f"updated: {_yaml_str(synced_at)}",
         "source: world-historian chronicle",
