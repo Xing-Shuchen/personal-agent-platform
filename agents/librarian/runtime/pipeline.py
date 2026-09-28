@@ -122,9 +122,9 @@ def process_capture(lib: Library, owner_id: str, capture_id: str,
                     vocabulary: dict[str, Any] | None = None) -> list[dict[str, Any]]:
     """Run one captured original through a replaceable extractor and normalize.
 
-    A persisted successful run is reused on retry. Deliberate reprocessing
-    with another version currently stops at reconciliation rather than
-    overwriting any user correction.
+    A persisted successful run is reused on retry. Reprocessing with another
+    version stores a candidate observation for reconciliation without
+    overwriting current traces or any user correction.
     """
     capture = lib.get(owner_id, "PageCapture", capture_id)
     if vocabulary and vocabulary.get("enabled"):
@@ -133,12 +133,15 @@ def process_capture(lib: Library, owner_id: str, capture_id: str,
         normalizer_version = f"{normalizer_version}:{vocabulary['version']}"
     old = lib.db.execute("SELECT body FROM records WHERE owner_id=? AND model='ProcessingRun' AND current=1",
                          (owner_id,)).fetchall()
-    for row in old:
-        run = json.loads(row["body"])
-        if run["capture_id"] == capture_id and run["outcome"] in {"success", "partial"}:
-            if run["extractor_version"] != extractor_version or run["normalizer_version"] != normalizer_version:
-                raise LibrarianError("RECONCILIATION_REQUIRED", "reprocessing needs trace reconciliation")
+    runs = [run for row in old if (run := json.loads(row["body"]))["capture_id"] == capture_id]
+    completed = [run for run in runs if run["outcome"] in {"success", "partial"}]
+    for run in completed:
+        if run["extractor_version"] == extractor_version and run["normalizer_version"] == normalizer_version:
             return _traces_for_capture(lib, owner_id, capture_id)
+    if any(run["outcome"] == "pending" and "RECONCILIATION_REQUIRED" in run["issues"]
+           and run["extractor_version"] == extractor_version
+           and run["normalizer_version"] == normalizer_version for run in runs):
+        raise LibrarianError("RECONCILIATION_REQUIRED", "new observation awaits reconciliation")
 
     run_id = _new("run")
     original = lib.read_original(owner_id, capture_id)
@@ -178,6 +181,24 @@ def process_capture(lib: Library, owner_id: str, capture_id: str,
         _failed_run(lib, owner_id, capture_id, run_id, extractor_version,
                     normalizer_version, "EXTRACTION_SCHEMA_INVALID", raw_asset)
         raise LibrarianError("EXTRACTION_SCHEMA_INVALID", f"extractor output invalid: {error}") from error
+
+    if completed:
+        # A new extractor/configuration may split or merge detection groups.
+        # Preserve its evidence for review without replacing corrected traces.
+        pending = {"object_type": "ProcessingRun", "schema_version": "0.1.0",
+                   "id": run_id, "owner_id": owner_id, "created_at": _now(),
+                   "capture_id": capture_id, "checkpoint": "EXTRACTED",
+                   "outcome": "pending", "issues": ["RECONCILIATION_REQUIRED"],
+                   "extractor_version": extractor_version,
+                   "normalizer_version": normalizer_version,
+                   "revision": 1, "supersedes_revision": None}
+        with lib.transaction():
+            lib._put(pending)
+            lib._put(observation)
+            lib.db.execute("INSERT INTO extractor_attempts VALUES(?,?,?,?,?,?)",
+                           (owner_id, capture_id, run_id, _json(raw_asset), "pending",
+                            "RECONCILIATION_REQUIRED"))
+        raise LibrarianError("RECONCILIATION_REQUIRED", "new observation awaits reconciliation")
 
     def build_resolution() -> tuple[dict[str, Any], str, bool]:
         prior_row = lib.db.execute("SELECT body FROM records WHERE owner_id=? AND model='CaptureResolution' "

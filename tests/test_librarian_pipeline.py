@@ -260,6 +260,39 @@ def test_correction_adds_revision_and_keeps_evidence(tmp_path: Path):
         assert [e["event"] for e in lib.pending_events("owner_a")].count("reading.trace.corrected") == 1
 
 
+def test_new_extractor_preserves_candidate_observation_without_overwriting_correction(tmp_path: Path):
+    with Library(tmp_path) as lib:
+        receipt = lib.ingest("owner_a", transport="gateway", account_id="a",
+                             conversation_id="c", source_event_id="m",
+                             attachments=[{"source_item_id": "i", "mime_type": "image/png",
+                                           "data": _photo()}], idempotency_key="k")
+        capture_id = receipt["capture_ids"][0]
+        trace = process_capture(lib, "owner_a", capture_id, lambda _: _output(),
+                                extractor_version="vision-v1")[1]
+        corrected = correct_trace(lib, "owner_a", trace["id"], 1,
+                                  annotation="Parsons!", reason="user correction")
+        initial_events = len(lib.pending_events("owner_a"))
+        with pytest.raises(LibrarianError) as error:
+            process_capture(lib, "owner_a", capture_id, lambda _: _output(),
+                            extractor_version="vision-v2")
+        assert error.value.code == "RECONCILIATION_REQUIRED"
+        pending = [json.loads(row[0]) for row in lib.db.execute(
+            "SELECT body FROM records WHERE model='ProcessingRun'")
+            if json.loads(row[0])["outcome"] == "pending"]
+        assert len(pending) == 1
+        assert pending[0]["checkpoint"] == "EXTRACTED"
+        assert pending[0]["issues"] == ["RECONCILIATION_REQUIRED"]
+        assert lib.db.execute("SELECT COUNT(*) FROM records WHERE model='PageObservation'").fetchone()[0] == 2
+        assert lib.get("owner_a", "ReadingTrace", trace["id"]) == corrected
+        assert len(lib.pending_events("owner_a")) == initial_events
+        def should_not_run(_raw):
+            raise AssertionError("already recorded candidate must not be re-extracted")
+        with pytest.raises(LibrarianError) as retry:
+            process_capture(lib, "owner_a", capture_id, should_not_run,
+                            extractor_version="vision-v2")
+        assert retry.value.code == "RECONCILIATION_REQUIRED"
+
+
 def test_explicit_session_yields_resolved_trace_and_default_search(tmp_path: Path):
     created = "2026-09-28T00:00:00+00:00"
     with Library(tmp_path) as lib:
