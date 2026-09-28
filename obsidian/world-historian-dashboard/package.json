@@ -1,11 +1,11 @@
 {
   "name": "world-historian-dashboard",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "private": true,
   "scripts": {
     "build": "node esbuild.config.mjs",
     "check": "svelte-check --tsconfig ./tsconfig.json",
-    "smoke": "node smoke.mjs ../../var/world-historian/dashboard"
+    "smoke": "node smoke.mjs ../../var/world-historian/dashboard && node bundle-smoke.mjs ../../var/world-historian/dashboard"
   },
   "dependencies": {
     "svelte": "^5.38.0"

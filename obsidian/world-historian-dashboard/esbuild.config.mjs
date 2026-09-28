@@ -13,4 +13,4 @@ const sveltePlugin = {
   }
 };
 await esbuild.build({ entryPoints: ['src/main.ts'], outfile: 'main.js', bundle: true,
-  platform: 'node', format: 'cjs', target: 'es2022', external: ['obsidian'], plugins: [sveltePlugin] });
+  platform: 'node', conditions: ['browser'], format: 'cjs', target: 'es2022', external: ['obsidian'], plugins: [sveltePlugin] });

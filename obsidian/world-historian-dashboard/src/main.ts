@@ -24,11 +24,17 @@ class DashboardView extends ItemView {
     const root=this.contentEl;root.empty();root.addClass('wh-dashboard-host');
     let repository:Repository|null=null;let error='';let stale=false;
     try{repository=Repository.open(this.plugin.settings.output);try{stale=statSync(this.plugin.settings.database).mtimeMs>Date.parse(repository.manifest.generated_at)}catch{repository.warning=repository.warning||'Chronicle database is unavailable; showing cached generation'}}catch(e){error=String(e)}
-    this.component=mount(Dashboard,{target:root,props:{repository,error,stale,
-      refresh:()=>this.plugin.refreshAndRender(),
-      openNote:(path:string)=>this.plugin.openNote(path),
-      openCanonical:(ref:Ref)=>this.plugin.openCanonical(ref),
-      settings:()=>this.plugin.openSettings()}});
+    try {
+      this.component=mount(Dashboard,{target:root,props:{repository,error,stale,
+        refresh:()=>this.plugin.refreshAndRender(),
+        openNote:(path:string)=>this.plugin.openNote(path),
+        openCanonical:(ref:Ref)=>this.plugin.openCanonical(ref),
+        settings:()=>this.plugin.openSettings()}});
+    } catch (cause) {
+      root.textContent=`World Historian Dashboard failed to open: ${String(cause)}`;
+      root.addClass('wh-alert');
+      console.error('World Historian Dashboard failed to mount',cause);
+    }
   }
 }
 
