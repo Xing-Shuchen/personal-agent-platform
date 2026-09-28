@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 from PIL import Image
 
-from agents.librarian.runtime.pipeline import correct_trace, process_capture, rebuild_index, resolve_capture, search, search_response
+from agents.librarian.runtime.pipeline import correct_trace, process_capture, rebuild_index, render_trace_crop, resolve_capture, search, search_response
 from agents.librarian.runtime.review import review_queues
 from agents.librarian.runtime.store import Library, LibrarianError, validate
 
@@ -461,6 +461,59 @@ def test_observation_dimensions_follow_exif_oriented_original(tmp_path: Path):
         output["image_space"].update(width=1400, height=1000)
         assert len(process_capture(lib, "owner_a", capture_id,
                                    lambda _: json.dumps(output).encode())) == 2
+
+
+def test_trace_crop_uses_oriented_original_and_stays_within_page(tmp_path: Path):
+    source = Image.new("RGB", (1000, 600), "red")
+    source.paste("blue", (0, 300, 1000, 600))
+    exif = Image.Exif()
+    exif[274] = 6
+    stream = io.BytesIO()
+    source.save(stream, format="JPEG", exif=exif)
+    photo = stream.getvalue()
+    output = json.loads(_output())
+    output["image_space"].update(width=600, height=1000)
+    output["pages"] = [
+        {"id": "left", "bbox": [0, 0, .5, 1], "side": "left",
+         "page": {"value": None, "confidence": None,
+                  "basis": "unknown", "status": "unresolved"}},
+        {"id": "right", "bbox": [.5, 0, 1, 1], "side": "right",
+         "page": {"value": None, "confidence": None,
+                  "basis": "unknown", "status": "unresolved"}},
+    ]
+    output["printed_regions"] = []
+    output["annotations"] = []
+    output["marks"] = [
+        {**_detection("left_mark", "underline", None),
+         "page_region_id": "left", "bbox": [.38, .2, .48, .4]},
+        {**_detection("right_mark", "underline", None),
+         "page_region_id": "right", "bbox": [.52, .2, .62, .4]},
+    ]
+    with Library(tmp_path) as lib:
+        receipt = lib.ingest("owner_a", transport="gateway", account_id="a",
+                             conversation_id="c", source_event_id="m",
+                             attachments=[{"source_item_id": "i", "mime_type": "image/jpeg",
+                                           "data": photo}], idempotency_key="k")
+        traces = process_capture(lib, "owner_a", receipt["capture_ids"][0],
+                                 lambda _: json.dumps(output).encode())
+        assert len(traces) == 2
+        assert {trace["location"]["page_region_id"] for trace in traces} == {"left", "right"}
+        by_page = {trace["location"]["page_region_id"]: trace for trace in traces}
+        for side, expected in (("left", "blue"), ("right", "red")):
+            crop = render_trace_crop(lib, "owner_a", by_page[side]["id"], context=.25)
+            with Image.open(io.BytesIO(crop)) as image:
+                assert image.format == "PNG"
+                pixel = image.getpixel((image.width // 2, image.height // 2))
+                if expected == "blue":
+                    assert pixel[2] > 200 and pixel[0] < 40
+                else:
+                    assert pixel[0] > 200 and pixel[2] < 40
+                assert image.width <= 300
+        with pytest.raises(LibrarianError) as error:
+            render_trace_crop(lib, "owner_b", by_page["left"]["id"])
+        assert error.value.code == "UNAUTHORIZED"
+        with pytest.raises(LibrarianError, match="crop context"):
+            render_trace_crop(lib, "owner_a", by_page["left"]["id"], context=float("nan"))
 
 
 def test_opt_in_symbol_signal_and_important_content_review(tmp_path: Path):

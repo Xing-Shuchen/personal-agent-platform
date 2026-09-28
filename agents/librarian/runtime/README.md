@@ -36,6 +36,10 @@ and [coordinate](https://platform.claude.com/docs/en/build-with-claude/vision-co
 API documentation for the request shape and resize behavior.
 Search accepts text or a structural filter, including textless symbol traces,
 and returns the same provenance-bearing hit contract for all three media.
+`render_trace_crop` produces an owner-scoped PNG for the current physical trace
+from the immutable original after applying its EXIF orientation. It pads the
+trace box within its page region, so a facing page is not included. The full
+original remains readable separately through `Library.read_trace_evidence`.
 `review.py` exposes separate owner-scoped queues for processed captures with
 unresolved catalog context and important traces whose recognized content is
 uncertain. Ordinary low-confidence marks do not enter the content queue. A

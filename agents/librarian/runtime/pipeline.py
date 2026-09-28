@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import math
 import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
@@ -498,6 +499,48 @@ def rebuild_index(lib: Library, owner_id: str) -> int:
             if trace["status"] == "active":
                 _index_trace(lib, trace)
     return len(traces)
+
+
+def render_trace_crop(lib: Library, owner_id: str, trace_id: str,
+                      *, context: float = .05) -> bytes:
+    """Render the current physical trace bbox in original display coordinates.
+
+    Context is a fraction of the trace width/height. The padded box is clipped
+    to its page region so a facing page never enters the crop. The original
+    remains separately readable through ``Library.read_trace_evidence``.
+    """
+    if not isinstance(context, (int, float)) or isinstance(context, bool) or not math.isfinite(context) or not 0 <= context <= .25:
+        raise LibrarianError("VALIDATION_FAILED", "crop context must be between 0 and .25")
+    trace = lib.get(owner_id, "ReadingTrace", trace_id)
+    if trace["medium"] != "physical" or trace["location"]["kind"] != "physical":
+        raise LibrarianError("VALIDATION_FAILED", "crop requires a physical trace")
+    location = trace["location"]
+    box, page = location["bbox"], location["page_bbox"]
+    if not _inside(box, page):
+        raise LibrarianError("VALIDATION_FAILED", "trace bbox is outside its page region")
+    padded = [max(page[0], box[0] - (box[2] - box[0]) * context),
+              max(page[1], box[1] - (box[3] - box[1]) * context),
+              min(page[2], box[2] + (box[2] - box[0]) * context),
+              min(page[3], box[3] + (box[3] - box[1]) * context)]
+    original = lib.read_original(owner_id, trace["source"]["capture_id"])
+    try:
+        with Image.open(io.BytesIO(original)) as source:
+            image = ImageOps.exif_transpose(source)
+            image.load()
+            width, height = image.size
+            bounds = (max(0, math.floor(padded[0] * width)),
+                      max(0, math.floor(padded[1] * height)),
+                      min(width, math.ceil(padded[2] * width)),
+                      min(height, math.ceil(padded[3] * height)))
+            if bounds[0] >= bounds[2] or bounds[1] >= bounds[3]:
+                raise LibrarianError("VALIDATION_FAILED", "trace crop has no pixels")
+            output = io.BytesIO()
+            image.crop(bounds).save(output, format="PNG")
+            return output.getvalue()
+    except (UnidentifiedImageError, OSError, ValueError) as error:
+        if isinstance(error, LibrarianError):
+            raise
+        raise LibrarianError("OBJECT_STORE_UNAVAILABLE", "original image cannot be rendered") from error
 
 
 def correct_trace(lib: Library, owner_id: str, trace_id: str, expected_revision: int,
