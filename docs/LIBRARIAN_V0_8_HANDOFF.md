@@ -375,3 +375,4 @@ The one remaining first-book conflict is a genuine 5-to-8 mark change on
 `capture_92f01023e12541aeb64c135ec543a6ba`; the new observation includes
 upper-page ink absent from the old active traces. It needs an explicit review
 decision, not an automatic overwrite.
+<!-- 2026-09-29: librarian_review is an owner-bound, read-only tool for pending extraction conflicts. Production has one latest pending capture, capture_92f01023e12541aeb64c135ec543a6ba. The proposed v7 projection is three grouped underlines from eight marks versus five old traces; candidate text has omissions. Do not auto-accept. Tool capability must be accepted before Gateway restart. -->

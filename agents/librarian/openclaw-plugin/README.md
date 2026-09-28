@@ -25,9 +25,11 @@ trusted inbound message ID and conversation scope. The model supplies only
 the requested action, title or reported page. `librarian_evidence` reads an
 owner-scoped physical trace, sends a temporary cropped original to the
 current bound conversation, then removes the temporary file; originals remain
-in the private object store and never enter the Vault. Configure the dedicated
+in the private object store and never enter the Vault. `librarian_review` lists
+pending extraction conflicts and compares current traces with proposed groups
+without changing stored records. Configure the dedicated
 OpenClaw agent with `tools.allow` set to
-`["librarian_search", "librarian_session", "librarian_evidence", "session_status"]`. Image intake and background processing run through the
+`["librarian_search", "librarian_session", "librarian_evidence", "librarian_review", "session_status"]`. Image intake and background processing run through the
 plugin service, so the chat agent needs no shell or filesystem tool. This
 prevents a model from bypassing owner-scoped search through local SQLite.
 

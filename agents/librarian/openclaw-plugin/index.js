@@ -61,6 +61,8 @@ const runSessionBridge = (config, message) => runPythonBridge(
   config, "agents.librarian.runtime.gateway_session", message);
 const runEvidenceBridge = (config, message) => runPythonBridge(
   config, "agents.librarian.runtime.gateway_evidence", message);
+const runReviewBridge = (config, message) => runPythonBridge(
+  config, "agents.librarian.runtime.gateway_review", message);
 
 export function workerArgs(config, ownerId) {
   if (!ownerId || configuredOwnerIds(config).length !== 1 ||
@@ -159,6 +161,31 @@ export function librarianEvidenceTool(config, ctx, bridge = runEvidenceBridge) {
   };
 }
 
+export function librarianReviewTool(config, ctx, bridge = runReviewBridge) {
+  if (ctx?.agentId !== "librarian" || !ctx.requesterSenderId) return null;
+  const route = ctx.deliveryContext ?? {};
+  if ((ctx.messageChannel && route.channel && ctx.messageChannel !== route.channel) ||
+      (ctx.agentAccountId && route.accountId && ctx.agentAccountId !== route.accountId)) return null;
+  const ownerId = ownerFor(config, { senderId: ctx.requesterSenderId },
+    { channelId: ctx.messageChannel ?? route.channel,
+      accountId: ctx.agentAccountId ?? route.accountId });
+  if (!ownerId) return null;
+  return {
+    name: "librarian_review",
+    label: "Librarian pending extraction review",
+    description: "Read pending extraction conflicts for this authenticated sender. With no capture_id, list pending captures. With a capture_id, compare current traces and proposed groups; this tool never changes stored traces.",
+    parameters: { type: "object", properties: {
+      capture_id: { type: "string", pattern: "^capture_[A-Za-z0-9_-]+$" },
+    }, additionalProperties: false },
+    async execute(_id, params) {
+      const result = await bridge(config, { owner_id: ownerId,
+        capture_id: params.capture_id });
+      return { content: [{ type: "text", text: JSON.stringify(result) }],
+        details: result };
+    },
+  };
+}
+
 export function rememberInboundSession(config, recent, event, ctx, now = Date.now()) {
   const ownerId = ownerFor(config, event, ctx);
   if (!ownerId || !ctx.sessionKey || !ctx.conversationId || !event.messageId) return;
@@ -253,6 +280,8 @@ export default {
       { name: "librarian_session" });
     api.registerTool((ctx) => librarianEvidenceTool(config, ctx),
       { name: "librarian_evidence" });
+    api.registerTool((ctx) => librarianReviewTool(config, ctx),
+      { name: "librarian_review" });
     api.registerService({ id: "pap-librarian-worker", start: () => {
       const recover = () => {
         for (const ownerId of configuredOwnerIds(config)) {

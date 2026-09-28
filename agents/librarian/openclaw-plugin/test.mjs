@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { acceptMessage, librarianEvidenceTool, librarianSearchTool, librarianSessionTool,
+import { acceptMessage, librarianEvidenceTool, librarianReviewTool, librarianSearchTool, librarianSessionTool,
   rememberInboundSession, workerArgs } from "./index.js";
 
 const config = { ownerMappings: [{ channelId: "telegram", accountId: "bot",
@@ -151,4 +151,21 @@ test("evidence tool sends only to the bound route and removes temporary media", 
   } finally {
     await rm(stateRoot, { recursive: true, force: true });
   }
+});
+
+test("review tool is read-only and owner-bound", async () => {
+  const trusted = { agentId: "librarian", requesterSenderId: "person",
+    messageChannel: "telegram", agentAccountId: "bot",
+    deliveryContext: { channel: "telegram", accountId: "bot" } };
+  let seen;
+  const bridge = async (_config, message) => {
+    seen = message;
+    return { pending: [{ capture_id: "capture_fixture" }] };
+  };
+  const tool = librarianReviewTool(config, trusted, bridge);
+  assert.equal(tool.name, "librarian_review");
+  await tool.execute("call", { capture_id: "capture_fixture" });
+  assert.deepEqual(seen, { owner_id: "owner_fixture", capture_id: "capture_fixture" });
+  assert.equal(librarianReviewTool(config, { ...trusted, requesterSenderId: "other" }, bridge), null);
+  assert.equal(librarianReviewTool(config, { ...trusted, agentAccountId: "other" }, bridge), null);
 });

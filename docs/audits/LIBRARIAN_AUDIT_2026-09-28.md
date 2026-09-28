@@ -270,3 +270,5 @@ AC-24 按书页检索补充：`librarian_search` 现接受 `book` 和 `page`，�
 F07 配置身份与 lineage 补充：新 ProcessingRun 将 `normalizer_version`、`vocabulary_version` 与词表映射快照的私有 ObjectRef 分开保存；同名版本但映射不同不再被当作幂等重试。重提取只在旧新快照内容摘要一致时自动对账，旧版没有快照的个人词表 trace 保守停在待人工对账。可确定的一对一标记组替换同时写入 `TraceRelation(supersedes)`，指向旧 trace 及精确 revision。测试覆盖相同快照幂等、同名异配置阻断、同配置换提取器成功和关系写入。无法确定映射的分拆/合并及旧数据人工对账入口仍未关闭。
 
 首本书剩余分组冲突只读诊断：`capture_92f01023e12541aeb64c135ec543a6ba` 的旧视觉 observation 当前有 5 个活跃空文本下划线 trace；v7 待对账 observation 检出 8 个定位下划线，其中较上方两段旧版未覆盖。两代 mark ID 与数量均不同，且旧 trace 已有上下文绑定修订；自动替换会破坏可追溯性，继续保持 `RECONCILIATION_REQUIRED`。下一步需要可展示候选与明确人工裁定的操作入口，不能靠调低自动对账门槛消除该冲突。
+
+2026-09-29 调试补充：新增只读 `librarian_review` 工具与 owner 范围桥。无参数时仅列每张照片最新 ProcessingRun 仍待对账的项目，避免旧 v4/v5/v6 pending 记录误报；带 capture ID 时对比当前 trace 与待入库 normalize 候选，不修改数据库。生产库结果仅余上述一张照片：5 条当前 trace 对应 v7 的 3 个划线组（8 个检测点），候选印刷页 39、39、40，候选文字有缺行，仍需人工对照原图和 EPUB。插件能力已重新登记、配置校验通过，Gateway 启动并建立飞书长连接；真实飞书调用与明确裁定仍未验收。
