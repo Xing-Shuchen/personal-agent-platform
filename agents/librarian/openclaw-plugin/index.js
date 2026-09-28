@@ -56,8 +56,17 @@ const runSearchBridge = (config, message) => runPythonBridge(
 
 function startWorker(config, ownerId) {
   if (!config.vaultRoot || !ownerId) return;
-  const child = spawn(config.python ?? "python3", ["-m", "agents.librarian.runtime.worker",
-    "--root", config.stateRoot, "--vault", config.vaultRoot, "--owner", ownerId], {
+  const args = ["-m", "agents.librarian.runtime.worker",
+    "--root", config.stateRoot, "--vault", config.vaultRoot, "--owner", ownerId];
+  const digital = config.digitalSources ?? {};
+  if (digital.koodo) args.push("--koodo-source-id", digital.koodo.sourceId,
+    "--koodo-books-db", digital.koodo.booksDb, "--koodo-notes-db", digital.koodo.notesDb);
+  if (digital.weread) {
+    args.push("--weread-source-id", digital.weread.sourceId,
+      "--weread-plugin-data", digital.weread.pluginData);
+    for (const bookId of digital.weread.bookIds) args.push("--weread-book-id", bookId);
+  }
+  const child = spawn(config.python ?? "python3", args, {
     cwd: config.repoRoot,
     env: { ...process.env, PYTHONPATH: [config.repoRoot, process.env.PYTHONPATH ?? ""].join(delimiter) },
     stdio: "ignore",

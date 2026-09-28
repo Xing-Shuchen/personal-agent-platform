@@ -492,7 +492,99 @@ def _index_trace(lib: Library, trace: dict[str, Any]) -> None:
 def _traces_for_capture(lib: Library, owner_id: str, capture_id: str) -> list[dict[str, Any]]:
     rows = lib.db.execute("SELECT body FROM records WHERE owner_id=? AND model='ReadingTrace' AND current=1 ORDER BY rowid",
                           (owner_id,)).fetchall()
-    return [trace for row in rows if (trace := json.loads(row["body"]))["source"].get("capture_id") == capture_id]
+    return [trace for row in rows if (trace := json.loads(row["body"]))["source"].get("capture_id") == capture_id
+            and trace["status"] == "active"]
+
+
+def reconcile_extraction(lib: Library, owner_id: str, capture_id: str,
+                         extractor_version: str) -> list[dict[str, Any]]:
+    """Accept a pending new extraction when no trace has a user correction.
+
+    The former traces remain as superseded revisions. The new observation and
+    page geometry keep their own immutable evidence and resolution revision.
+    """
+    capture = lib.get(owner_id, "PageCapture", capture_id)
+    rows = lib.db.execute("SELECT body FROM records WHERE owner_id=? AND model='ProcessingRun' AND current=1",
+                          (owner_id,)).fetchall()
+    pending = [run for row in rows if (run := json.loads(row["body"]))["capture_id"] == capture_id
+               and run["extractor_version"] == extractor_version and run["outcome"] == "pending"
+               and "RECONCILIATION_REQUIRED" in run["issues"]]
+    if len(pending) != 1:
+        raise LibrarianError("RECONCILIATION_REQUIRED", "exactly one pending extraction required")
+    run = pending[0]
+    observations = [json.loads(row["body"]) for row in lib.db.execute(
+        "SELECT body FROM records WHERE owner_id=? AND model='PageObservation' AND current=1",
+        (owner_id,)).fetchall()]
+    candidates = [item for item in observations if item["processing_run_id"] == run["id"]]
+    if len(candidates) != 1:
+        raise LibrarianError("RECONCILIATION_REQUIRED", "pending observation missing")
+    observation = candidates[0]
+    old_traces = _traces_for_capture(lib, owner_id, capture_id)
+    if any(trace["status"] != "active" or trace["revision"] != 1 or
+           trace["content"]["printed_text"]["basis"] == "user_statement" or
+           trace["content"]["annotation"]["basis"] == "user_statement"
+           for trace in old_traces):
+        raise LibrarianError("RECONCILIATION_REQUIRED", "corrected traces require user reconciliation")
+    row = lib.db.execute("SELECT body FROM records WHERE owner_id=? AND model='CaptureResolution' "
+                         "AND current=1 AND json_extract(body,'$.capture_id')=?",
+                         (owner_id, capture_id)).fetchone()
+    if row is None:
+        raise LibrarianError("RECONCILIATION_REQUIRED", "capture resolution missing")
+    prior = json.loads(row["body"])
+    resolution = json.loads(_json(prior))
+    resolution.update({"created_at": _now(), "pages": observation["pages"],
+                       "revision": prior["revision"] + 1,
+                       "supersedes_revision": prior["revision"]})
+    validate("CaptureResolution", resolution)
+    state = "resolved" if all(resolution[key]["value"] for key in
+                              ("session", "work", "edition", "book_instance")) else "unresolved"
+    traces = normalize(capture, observation, resolution, state, run["normalizer_version"])
+    revised_run = json.loads(_json(run))
+    revised_run.update({"created_at": _now(), "checkpoint": "NORMALIZED",
+                        "outcome": "success" if state == "resolved" and
+                        all(page["page"]["status"] == "resolved" for page in resolution["pages"]
+                            if any(item["page_region_id"] == page["id"] for item in
+                                   observation["marks"] + observation["annotations"] + observation["symbols"]))
+                        else "partial", "issues": [],
+                        "revision": run["revision"] + 1,
+                        "supersedes_revision": run["revision"]})
+    if state != "resolved":
+        revised_run["issues"].append("NEEDS_BOOK_RESOLUTION")
+    if any(trace["location"]["page"] is None for trace in traces):
+        revised_run["issues"].append("NEEDS_PAGE_RESOLUTION")
+        revised_run["outcome"] = "partial"
+    validate("ProcessingRun", revised_run)
+    with lib.transaction():
+        lib._put(resolution)
+        for trace in old_traces:
+            superseded = json.loads(_json(trace))
+            superseded.update({"created_at": _now(), "status": "superseded",
+                               "revision": trace["revision"] + 1,
+                               "supersedes_revision": trace["revision"]})
+            lib._put(superseded)
+            lib.db.execute("DELETE FROM trace_index WHERE owner_id=? AND trace_id=?",
+                           (owner_id, trace["id"]))
+            lib._event(owner_id, "reading.trace.corrected", "reading_trace", trace["id"],
+                       superseded["revision"], {"trace_id": trace["id"],
+                       "previous_revision": trace["revision"],
+                       "revision": superseded["revision"],
+                       "reason": "extractor reconciliation"}, run["id"])
+        for trace in traces:
+            lib._put(trace)
+            _index_trace(lib, trace)
+            lib._event(owner_id, "reading.trace.created", "reading_trace", trace["id"], 1,
+                       {"trace_id": trace["id"], "revision": 1, "medium": "physical",
+                        "book_instance_id": trace["book_instance_id"]}, run["id"])
+        lib._put(revised_run)
+        lib.db.execute("UPDATE extractor_attempts SET status='success', error_code=NULL "
+                       "WHERE owner_id=? AND capture_id=? AND run_id=?",
+                       (owner_id, capture_id, run["id"]))
+        lib._event(owner_id, "reading.capture.processed", "processing_run", run["id"],
+                   revised_run["revision"], {"capture_id": capture_id,
+                   "processing_run_id": run["id"], "outcome": revised_run["outcome"],
+                   "trace_refs": [{"trace_id": item["id"], "revision": 1} for item in traces],
+                   "issues": revised_run["issues"]}, run["id"])
+    return traces
 
 
 def rebuild_index(lib: Library, owner_id: str) -> int:

@@ -170,8 +170,8 @@ def _underline_score(gray, points: list[list[float]]) -> float:
 def _detection(identifier: str, box: list[float], kind: str, text: str | None,
                confidence: float | None, *, linked: list[str] | None = None,
                link_confidence: float | None = None,
-               basis: str = "vision") -> dict:
-    return {"id": identifier, "page_region_id": "page_main", "bbox": box,
+               basis: str = "vision", page_region_id: str = "page_main") -> dict:
+    return {"id": identifier, "page_region_id": page_region_id, "bbox": box,
             "kind": kind,
             "text": ({"text": text, "confidence": confidence, "basis": basis}
                      if text else None),
@@ -191,9 +191,12 @@ def openclaw_note_refiner(crop: bytes) -> tuple[str, dict]:
     if result.returncode:
         raise RuntimeError("handwriting model unavailable")
     envelope = json.loads(result.stdout)
-    if envelope.get("ok") is not True or not envelope.get("outputs"):
+    outputs = envelope.get("outputs") if isinstance(envelope, dict) else None
+    if (envelope.get("ok") is not True or not isinstance(outputs, list)
+            or len(outputs) != 1 or not isinstance(outputs[0], dict)
+            or not isinstance(outputs[0].get("text"), str)):
         raise RuntimeError("handwriting model response invalid")
-    response = envelope["outputs"][0]["text"].strip()
+    response = outputs[0]["text"].strip()
     if not response or len(response) > 500:
         raise RuntimeError("handwriting model response out of bounds")
     return response, envelope
@@ -201,7 +204,8 @@ def openclaw_note_refiner(crop: bytes) -> tuple[str, dict]:
 
 def ocr_extractor(*, epub: Path, max_edge: int = 2000,
                   max_pixels: int = 2_000_000,
-                  note_refiner: Callable[[bytes], tuple[str, dict]] | None = None):
+                  note_refiner: Callable[[bytes], tuple[str, dict]] | None = None,
+                  preceding_page: int | None = None):
     """Return a reusable local extractor; only evidence on the photo is traced."""
     from rapidocr import RapidOCR
     import cv2
@@ -244,10 +248,7 @@ def ocr_extractor(*, epub: Path, max_edge: int = 2000,
             bottom = max(line["bbox"][3] for line in body)
             page_box = [max(0.0, left - .06), max(0.0, top - .12),
                         min(1.0, right + .13), min(1.0, bottom + .15)]
-            page_numbers = []
-            marked_y = [line["bbox"][1] for line in body
-                        if line["underline_score"] >= .075]
-            middle = sum(marked_y) / len(marked_y) if marked_y else (top + bottom) / 2
+            markers = []
             for line in lines:
                 value = re.fullmatch(r"\s*(\d{1,3})\s*", line["ocr_text"])
                 attached = re.match(r"^\s*(\d{1,3})(?=[一-龥])", line["ocr_text"])
@@ -257,18 +258,81 @@ def ocr_extractor(*, epub: Path, max_edge: int = 2000,
                     continue
                 number = int(value.group(1))
                 if 1 <= number <= 999 and page_box[0] <= line["bbox"][0] <= page_box[2]:
-                    page_numbers.append((abs((line["bbox"][1] + line["bbox"][3]) / 2 - middle),
-                                         number, line["ocr_score"]))
-            if page_numbers:
-                _, number, confidence = min(page_numbers)
-                page = {"value": {"label": str(number), "number": number,
-                                  "scheme": "arabic"}, "confidence": confidence,
-                        "basis": "vision", "status": "resolved"}
-            else:
-                page = {"value": None, "confidence": None, "basis": "unknown",
-                        "status": "unresolved"}
-            observation["pages"].append({"id": "page_main", "bbox": page_box,
-                                         "side": "unknown", "page": page})
+                    markers.append({"number": number, "y": line["bbox"][1],
+                                    "confidence": line["ocr_score"], "source": "full_ocr"})
+            marker_probe = []
+            if len(markers) == 1:
+                # A second original-book page number is often missed when it
+                # sits next to body text. Re-read only that margin at 2x.
+                margin_x = left
+                if markers[0]["number"] and markers[0]["y"] >= 0:
+                    selected = next((line for line in lines if
+                                     abs(line["bbox"][1] - markers[0]["y"]) < .002
+                                     and line["ocr_text"].lstrip().startswith(str(markers[0]["number"]))), None)
+                    margin_x = left if selected is None or selected["bbox"][0] < (left + right) / 2 else right
+                x0 = max(0, margin_x - (.06 if margin_x == left else .12))
+                x1 = min(1, margin_x + (.13 if margin_x == left else .08))
+                spans = [(max(0, top - .03), markers[0]["y"] - .02),
+                         (markers[0]["y"] + .02, min(1, bottom + .03))]
+                windows = []
+                for start, end in spans:
+                    while end - start >= .08:
+                        stop = min(end, start + .30)
+                        windows.append((start, stop))
+                        if stop == end:
+                            break
+                        start = stop - .04
+                for y0, y1 in windows:
+                    crop = image.crop((int(x0 * width), int(y0 * height),
+                                       int(x1 * width), int(y1 * height)))
+                    crop = crop.resize((crop.width * 2, crop.height * 2))
+                    probe = engine(np.asarray(crop))
+                    for quad, value, score in zip(
+                            [] if probe.boxes is None else probe.boxes,
+                            probe.txts or [], probe.scores or []):
+                        match = re.match(r"^\s*(\d{1,3})(?=\s|[一-龥]|$)", str(value))
+                        if not match:
+                            continue
+                        number = int(match.group(1))
+                        if abs(number - markers[0]["number"]) > 2:
+                            continue
+                        points = [[float(point[0]) / 2 + int(x0 * width),
+                                   float(point[1]) / 2 + int(y0 * height)] for point in quad]
+                        box = _box(points, width, height)
+                        marker_probe.append({"text": str(value), "bbox": box,
+                                             "confidence": round(float(score), 4)})
+                        if all(abs(box[1] - existing["y"]) > .025 for existing in markers):
+                            markers.append({"number": number, "y": box[1],
+                                            "confidence": round(float(score), 4),
+                                            "source": "margin_ocr"})
+            markers.sort(key=lambda item: item["y"])
+            # Text above the first visible marker belongs to the prior
+            # original page only when the preceding capture supplied that
+            # exact page number; otherwise its page remains unresolved.
+            cuts = [page_box[1]] + [max(page_box[1] + .001, item["y"] - .01)
+                                    for item in markers] + [page_box[3]]
+            for index in range(len(cuts) - 1):
+                number = (markers[index - 1]["number"] if index else
+                          preceding_page if markers and preceding_page == markers[0]["number"] - 1
+                          else None)
+                confidence = (markers[index - 1]["confidence"] if index else
+                              .7 if number is not None else None)
+                page = ({"value": {"label": str(number), "number": number,
+                                   "scheme": "arabic"}, "confidence": confidence,
+                         "basis": "vision", "status": "resolved"} if number is not None else
+                        {"value": None, "confidence": None, "basis": "unknown",
+                         "status": "unresolved"})
+                region = [page_box[0], max(page_box[1], cuts[index] - .03),
+                          page_box[2], min(page_box[3], cuts[index + 1] + .03)]
+                observation["pages"].append({"id": f"page_{index}", "bbox": region,
+                                             "side": "unknown", "page": page})
+
+            def region_for(box: list[float]) -> str:
+                middle = (box[1] + box[3]) / 2
+                for index in range(len(cuts) - 1):
+                    if cuts[index] <= middle < cuts[index + 1]:
+                        return f"page_{index}"
+                return f"page_{len(cuts) - 2}"
             marked = []
             for line in body:
                 box = line["bbox"]
@@ -278,24 +342,27 @@ def ocr_extractor(*, epub: Path, max_edge: int = 2000,
                 if line["underline_score"] < .075:
                     continue
                 label = f'print_{line["id"]}'
+                region_id = region_for(box)
                 observation["printed_regions"].append(_detection(
                     label, box, "printed", line["epub_text"],
                     round(min(line["ocr_score"], line["epub_match"]), 4),
-                    basis="source_payload" if line["epub_match"] >= .85 else "vision"))
+                    basis="source_payload" if line["epub_match"] >= .85 else "vision",
+                    page_region_id=region_id))
                 ink_box = [box[0], min(box[3] - .006, box[1] + .004),
                            box[2], min(page_box[3], box[3] + .012)]
                 mark_id = f'underline_{line["id"]}'
                 observation["marks"].append(_detection(
                     mark_id, ink_box, "underline", None,
                     round(min(.95, .5 + line["underline_score"]), 4),
-                    linked=[label], link_confidence=.9))
+                    linked=[label], link_confidence=.9, page_region_id=region_id))
                 marked.append((line, mark_id))
             marked.sort(key=lambda item: item[0]["bbox"][1])
             for (previous, prior_id), (current, current_id) in zip(marked, marked[1:]):
                 a, b = previous["bbox"], current["bbox"]
                 overlap = max(0.0, min(a[2], b[2]) - max(a[0], b[0]))
                 if (b[1] - a[1] <= .042 and
-                        overlap >= .4 * min(a[2] - a[0], b[2] - b[0])):
+                        overlap >= .4 * min(a[2] - a[0], b[2] - b[0]) and
+                        region_for(a) == region_for(b)):
                     observation["links"].append({"from_id": prior_id,
                                                  "to_id": current_id,
                                                  "kind": "continues", "confidence": .9})
@@ -312,8 +379,12 @@ def ocr_extractor(*, epub: Path, max_edge: int = 2000,
                 while last_id in next_mark:
                     last_id = next_mark[last_id]
                 print_id = f'print_{line["id"]}'
-                sentence = groundtruth.sentence(line["epub_text"] or "",
-                                                line_by_mark[last_id]["epub_text"] or "")
+                through = line_by_mark[last_id]["epub_text"] or ""
+                boundary = min((through.find(mark) for mark in "。！？"
+                                if through.find(mark) >= 0), default=-1)
+                if boundary >= 0:
+                    through = through[:boundary + 1]
+                sentence = groundtruth.sentence(line["epub_text"] or "", through)
                 if sentence and print_id in printed_by_id:
                     printed_by_id[print_id]["text"]["text"] = sentence
                 elif print_id in printed_by_id:
@@ -390,7 +461,8 @@ def ocr_extractor(*, epub: Path, max_edge: int = 2000,
                     except (RuntimeError, OSError, ValueError, subprocess.TimeoutExpired):
                         observation["warnings"].append("Handwriting refinement unavailable")
                 observation["annotations"].append(_detection(
-                    f'note_{group[0]["id"]}', bounds, "margin_note", note, confidence))
+                    f'note_{group[0]["id"]}', bounds, "margin_note", note, confidence,
+                    page_region_id=region_for(bounds)))
             if note_rows:
                 observation["warnings"].append(
                     "Handwriting transcription is OCR-derived and may need correction")
@@ -398,6 +470,8 @@ def ocr_extractor(*, epub: Path, max_edge: int = 2000,
             observation["warnings"].append("No marked book page detected")
         raw = {"engine": "RapidOCR", "epub_sha256": groundtruth.sha256,
                "image_space": observation["image_space"], "lines": lines,
+               "page_markers": locals().get("markers", []),
+               "page_marker_probe": locals().get("marker_probe", []),
                "note_refinements": locals().get("note_refinements", [])}
         return ExtractionOutput(raw=json.dumps(raw, ensure_ascii=False).encode(),
                                 observation=json.dumps(observation, ensure_ascii=False).encode(),

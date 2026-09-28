@@ -11,6 +11,32 @@
       "stateRoot": {"type": "string", "minLength": 1},
       "vaultRoot": {"type": "string", "minLength": 1},
       "python": {"type": "string", "minLength": 1},
+      "digitalSources": {
+        "type": "object",
+        "properties": {
+          "koodo": {
+            "type": "object",
+            "properties": {
+              "sourceId": {"type": "string", "minLength": 1},
+              "booksDb": {"type": "string", "minLength": 1},
+              "notesDb": {"type": "string", "minLength": 1}
+            },
+            "required": ["sourceId", "booksDb", "notesDb"],
+            "additionalProperties": false
+          },
+          "weread": {
+            "type": "object",
+            "properties": {
+              "sourceId": {"type": "string", "minLength": 1},
+              "pluginData": {"type": "string", "minLength": 1},
+              "bookIds": {"type": "array", "items": {"type": "string", "minLength": 1}, "minItems": 1}
+            },
+            "required": ["sourceId", "pluginData", "bookIds"],
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
       "ownerMappings": {
         "type": "array",
         "items": {

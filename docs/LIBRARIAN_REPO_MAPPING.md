@@ -7,15 +7,15 @@ and validation report did not accompany the standalone file in this worktree.
 
 | Responsibility | Existing PAP component | Implementation boundary |
 |---|---|---|
-| Agent identity, profile, scheduling | `agents/librarian/agent.yaml`, `agents/librarian/profile/`, `pap/spec.py` | Dedicated Librarian profile is registered locally with no proactive jobs; OpenClaw `librarian` is bound to the dedicated `feishu:librarian` China-region account. DM pairing and trusted sender mapping remain pending. Image intake is the separate hook. |
-| Gateway invocation | `pap/run.py` invokes OpenClaw turns; no typed attachment acceptance API in PAP | `agents/librarian/openclaw-plugin/` observes staged OpenClaw image media and sends stable source IDs and trusted bytes to `runtime/gateway_bridge.py`. Live intake requires an explicit sender-to-owner mapping and Gateway reload. |
+| Agent identity, profile, scheduling | `agents/librarian/agent.yaml`, `agents/librarian/profile/`, `pap/spec.py` | Dedicated Librarian profile is registered locally with no proactive jobs; OpenClaw `librarian` is bound to the dedicated `feishu:librarian` China-region account. DM pairing and trusted sender mapping are active. Image intake is the separate hook. |
+| Gateway invocation | `pap/run.py` invokes OpenClaw turns; no typed attachment acceptance API in PAP | `agents/librarian/openclaw-plugin/` observes staged OpenClaw image media and sends stable source IDs and staged file paths to `runtime/gateway_bridge.py`. The bridge durably stores the original bytes. The mapped first-book Feishu batch and idempotent replay passed. |
 | Work, Edition, BookInstance, ReadingSession, capture, trace | None | Librarian-owned transactional state under `agents/librarian/runtime/`; runtime files under `var/librarian/`. |
 | Original image and raw model output | No general object store. `pap/artifact.py` is append-only JSONL without blob durability or access control | Add a Librarian-local content-addressed object port; persist bytes before a capture receipt. Do not put private images in Git or the shared artifact log. |
 | Domain events | `pap/artifact.py` and `paplog` are observability/inter-agent records, not transactional domain outboxes | Store domain outbox rows in the same SQLite transaction as trace/session changes. A publisher can bridge events later. |
 | Migrations | World Historian has an agent-specific SQLite migration pattern | Use agent-local SQLite migrations. Do not insert reading entities into Chronicle. |
-| Search | `pap/cognition.py` indexes Markdown evidence, with WeRead note recognition | Librarian's current-trace index has owner-filtered search and original provenance. The OpenClaw plugin now registers `librarian_search` only for a trusted mapped sender in the dedicated agent, forwarding to `runtime/gateway_search.py`. No sender mapping is configured yet, so live authenticated search-to-answer remains unverified. |
+| Search | `pap/cognition.py` indexes Markdown evidence, with WeRead note recognition | Librarian's current-trace index has owner-filtered search and original provenance. The OpenClaw plugin registers `librarian_search` only for a trusted mapped sender in the dedicated agent, forwarding to `runtime/gateway_search.py`. A mapped search found a real p.41 trace and an unmapped sender had no tool. Real inbound search-to-answer remains unverified. |
 | Digital adapters | Vault has WeRead and Koodo Markdown exports; `pap/cognition.py` recognizes some WeRead headings. This PC also has native Koodo `books.db` and `notes.db`, and the Obsidian WeRead plugin has a configured Agent API key. | `runtime/digital.py` parses observed exports. `runtime/koodo_native.py` reads Koodo SQLite records read-only; initial import/replay was verified on 118 real native notes. `runtime/weread_native.py` reads the WeRead Agent API, maps stable highlight/review IDs, and supports replay, updates, removals and correction conflicts. A real upstream book yielded 38 highlights and one review; first import/replay, raw evidence and owner isolation passed in a temporary store. App-driven changes and periodic invocation remain unverified. |
-| Physical image extraction | No existing PAP vision pipeline for annotated book pages | `runtime/vision.py` prepares a traceable EXIF-oriented derivative for Claude Messages, OpenAI-compatible Chat Completions, or OpenClaw direct image inference. The OpenClaw route uses its configured write-only credential; a synthetic page passed live `process_capture` through `zai/glm-5.3-flash`. `runtime/pipeline.py` renders owner-scoped crops from the original. Direct mark-to-print links across pages are rejected; explicit cross-page observation links remain separate traces. Synthetic rotated two-page geometry passes; real photo acceptance remains open. |
+| Physical image extraction | No existing PAP vision pipeline for annotated book pages | `runtime/vision.py` retains provider image adapters. `runtime/ocr.py` uses local RapidOCR, the owner-provided EPUB and a stroke detector for the first book, with OpenClaw image inference limited to handwriting crops. It segments multiple original-book pages within one photo. `runtime/worker.py` exports capture references with hidden HTML metadata to the Obsidian review note and sends a Feishu notification. `runtime/pipeline.py` retains original/raw evidence, reconciles revised extractions without overwriting user corrections, and renders owner-scoped crops. The separate §38.1 four-photo acceptance remains open. |
 | Exception review | No shared Librarian review UI | `runtime/review.py` returns separate owner-scoped catalog resolution and important-content queues. User corrections close content review after the uncertain fields are checked. |
 | Knowledge promotion | Cognition stores retrieval evidence; no Librarian KnowledgeObject write port | `runtime/knowledge.py` supports provenance-bound candidates, decisions and an idempotent writer port. No actual knowledge service writer is configured; ordinary highlights do not auto-promote. |
 
@@ -33,8 +33,9 @@ and validation report did not accompany the standalone file in this worktree.
 
 ## Evidence still needed for the full specification
 
-The source-design attachment and real annotated photos cited by the draft are
-absent from this repository. The 18 model entry schemas and 42 positive/43
+The source-design attachment and four §38.1 annotated photos cited by the draft
+remain deferred by the user. A different first-book five-photo set was processed
+from Feishu and is under user review. The 18 model entry schemas and 42 positive/43
 negative synthetic fixtures now exist under `agents/librarian/runtime/`. The
 canonical schema has 77 definitions after extracting repeated nested types;
 their names cannot be compared to the unavailable source-design package. The full
@@ -42,10 +43,8 @@ M1 image acceptance test and M2 live adapter test cannot be claimed without
 those inputs. A synthetic extractor can verify persistence, normalization, and
 retrieval behavior, but cannot establish OCR or handwriting accuracy.
 
-On this PC, the local OpenClaw intake plugin is installed and loads one
-`message_received` hook plus the mapped-only `librarian_search` tool, with
-`ownerMappings: []`. The Librarian agent is bound to a connected dedicated
-Feishu account, but no trusted channel/account/sender identity has been
-established for automatic image intake. Leave the mapping empty until that
-identity is known. The live Gateway batch/replay and real-photo acceptance
-remain open; see the AC-by-AC audit in `LIBRARIAN_V0_8_HANDOFF.md`.
+On this PC, the local OpenClaw intake plugin loads one `message_received` hook,
+the mapped-only `librarian_search` tool and a recovery worker service. The
+trusted Feishu sender mapping is active. The first-book batch/replay and mapped
+search call passed; a real inbound question and the separate §38.1 acceptance
+remain open. See the AC-by-AC audit in `LIBRARIAN_V0_8_HANDOFF.md`.
