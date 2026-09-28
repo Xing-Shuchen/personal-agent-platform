@@ -643,7 +643,8 @@ def reconcile_extraction(lib: Library, owner_id: str, capture_id: str,
     new_groups = [set(group) for group in groups(traces, new_mark_ids)]
     rotation_upgrade = False
     if allow_rotation_upgrade and extractor_version.startswith(("rapidocr-epub-notes-v6:",
-                                                                 "rapidocr-epub-notes-v7:")):
+                                                                 "rapidocr-epub-notes-v7:",
+                                                                 "rapidocr-epub-notes-v8:")):
         try:
             raw = json.loads(lib._read_object(observation["raw_output_asset"]))
             source_versions = {lib.get(owner_id, "PageObservation",

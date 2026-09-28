@@ -191,6 +191,40 @@ def _visible_marked_text(line: dict) -> tuple[str, list[float]]:
     return value[start:end].strip(), clipped
 
 
+def _retry_ink_line_ocr(engine, image: Image.Image, line: dict,
+                        groundtruth: EpubGroundTruth) -> dict | None:
+    """Retry a marked, unreadable body line in a narrow photo crop."""
+    import numpy as np
+
+    width, height = image.size
+    box = line["bbox"]
+    left = max(0, int((box[0] - .025) * width))
+    top = max(0, int((box[1] - .018) * height))
+    right = min(width, int((box[2] + .025) * width))
+    bottom = min(height, int((box[3] + .018) * height))
+    if right <= left or bottom <= top:
+        return None
+    result = engine(np.asarray(image.crop((left, top, right, bottom))))
+    candidates = []
+    for quad, value, score in zip([] if result.boxes is None else result.boxes,
+                                  [] if result.txts is None else result.txts,
+                                  [] if result.scores is None else result.scores):
+        points = [[float(x), float(y)] for x, y in quad]
+        center = (sum(point[1] for point in points) / len(points) + top) / height
+        distance = abs(center - (box[1] + box[3]) / 2)
+        if distance > .025:
+            continue
+        epub_text, match = groundtruth.match(str(value))
+        if epub_text and match >= .85 and len(_compact(str(value))) >= 15:
+            candidates.append((distance, -match, str(value), float(score), epub_text, match))
+    if not candidates:
+        return None
+    _, _, value, score, epub_text, match = min(candidates)
+    return {"ocr_text": value, "ocr_score": round(score, 4),
+            "epub_text": epub_text, "epub_match": round(match, 4),
+            "local_ocr_retry": True}
+
+
 def _detection(identifier: str, box: list[float], kind: str, text: str | None,
                confidence: float | None, *, linked: list[str] | None = None,
                link_confidence: float | None = None,
@@ -265,6 +299,17 @@ def ocr_extractor(*, epub: Path | None = None, max_edge: int = 2000,
                           "epub_match": round(float(match), 4),
                           "underline_score": stroke_score,
                           "underline_span": stroke_span})
+        if groundtruth:
+            retried = 0
+            for line in lines:
+                if (retried >= 8 or line["underline_score"] < .065 or
+                        line["epub_match"] >= .85 or
+                        line["bbox"][2] - line["bbox"][0] < .28):
+                    continue
+                retried += 1
+                recovered = _retry_ink_line_ocr(engine, image, line, groundtruth)
+                if recovered:
+                    line.update(recovered)
         body = [line for line in lines if (line["epub_text"] or groundtruth is None) and
                 len(_compact(line["ocr_text"])) >= 15 and
                 line["bbox"][2] - line["bbox"][0] >= .28]
