@@ -316,3 +316,50 @@ Verification: 83 Python Librarian tests, six Node plugin tests, contract
 validator (77 definitions / 18 entries / 42 positive / 43 negative),
 `openclaw config validate`, and Gateway startup passed. The separate
 pp.159/166/171/184 acceptance set and `source-design.txt` remain deferred.
+
+## 2026-09-29 debugging continuation
+
+The owner-supplied EPUB still serves as printed-text alignment evidence; local
+RapidOCR now runs first for interior pages even without an EPUB. The full-page
+vision model is a fallback when local OCR finds no mark. OCR v7 also separates
+a visible top header page number from marginal pagination: a real photo with
+top `23` and marginal `41` now yields page 23, while a different photo with
+only marginal `39` and `40` retains its vertical split. The formal worker
+reprocessed the existing batches, superseded historical traces through the
+normal reconciliation path and updated the Vault note. It still reports 47
+unresolved page labels in the 22-photo group, three in the older group and
+one mark-group conflict; these require review rather than page inference.
+
+All 86 active physical traces now have a Work binding. Three captures had
+older all-unknown resolutions despite a later trusted ISBN fingerprint. The
+worker bound those traces to the existing session from stored evidence,
+revising them without another OCR or model call. Their immutable originals and
+observations were retained. The current owner has 208 active traces and 208
+index rows. A production database query for `帕森斯` returns revised trace
+hits; book/page queries for `社会理论二十讲` return one hit on page 39 and two on
+page 23 with `index_state=ready`. A validation error that had rejected
+`SearchHit` revisions above one was fixed after this live query exposed it.
+
+`librarian_search` now accepts optional title and printed page fields in
+addition to text. The SOUL and running Gateway have been updated. The agent
+also has an owner-scoped `librarian_evidence` tool that makes a temporary crop
+within the original page region, sends it to the bound conversation and
+deletes the temporary file; original photos remain outside the Vault. Tool
+scope, crop and delivery behavior passed local tests, but no post-change real
+Feishu inbound turn has invoked search, session or evidence yet. The owner was
+asked to send a page-39 question followed by an evidence request, so AC-24 and
+the user-visible evidence gate stay open.
+
+Failed batches now use persisted finite backoff and stop after three attempts;
+a changed model or EPUB resets the exhausted retry state. Koodo and WeRead
+both completed a scheduled unchanged sync after Gateway restart (118 and four
+source records respectively). App-driven create/edit/delete and outage
+recovery remain unverified. Correction notifications now deduplicate by trace
+state; the worker sent one new notice for each historical review group after
+the v7 revision. User-side delivery has not been confirmed.
+
+Verification at this point: 95 Python Librarian tests, seven Node plugin
+tests, the 77-definition contract validator, OpenClaw config validation and
+an active Gateway. The worktree is clean and no release tag or branch exists.
+The four-photo §38.1 acceptance set and `source-design.txt` remain deferred by
+the owner; the full v0.8 audit is not closed.
