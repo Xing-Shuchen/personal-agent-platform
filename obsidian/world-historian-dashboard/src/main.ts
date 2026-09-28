@@ -7,8 +7,8 @@ import Dashboard from './Dashboard.svelte';
 import { Repository, type Ref } from './model';
 
 const VIEW_TYPE='world-historian-dashboard';
-type Settings={database:string;output:string;projector:string;noteIndex:string;locationRegistry:string};
-const defaults:Settings={database:'',output:'',projector:'',noteIndex:'',locationRegistry:''};
+type Settings={database:string;output:string;projector:string;pythonExecutable:string;noteIndex:string;locationRegistry:string};
+const defaults:Settings={database:'',output:'',projector:'',pythonExecutable:process.platform==='win32'?'python':'python3',noteIndex:'',locationRegistry:''};
 
 class DashboardView extends ItemView {
   plugin:HistorianPlugin;
@@ -59,7 +59,7 @@ export default class HistorianPlugin extends Plugin {
     if(this.settings.noteIndex)args.push('--note-index',this.settings.noteIndex);
     if(this.settings.locationRegistry)args.push('--location-registry',this.settings.locationRegistry);
     if(this.app.vault.adapter instanceof FileSystemAdapter)args.push('--vault',this.app.vault.adapter.getBasePath());
-    await new Promise<void>((resolve,reject)=>execFile('python3',args,{timeout:1800000,maxBuffer:1024*1024},(error,stdout,stderr)=>error?reject(new Error(stderr||error.message)):resolve()));
+    await new Promise<void>((resolve,reject)=>execFile(this.settings.pythonExecutable,args,{timeout:1800000,maxBuffer:1024*1024},(error,stdout,stderr)=>error?reject(new Error(stderr||error.message)):resolve()));
     new Notice('World Historian read model refreshed');
   }
   async refreshAndRender(){try{await this.refresh();for(const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE))await (leaf.view as DashboardView).render()}catch(e){new Notice(`Refresh failed: ${String(e)}`,10000)}}
@@ -68,7 +68,7 @@ export default class HistorianPlugin extends Plugin {
     if(ref.kind!=='chronicle'||!ref.table||!ref.id){new Notice('Canonical record is unavailable');return}
     try{
       const args=[this.settings.projector,'--db',this.settings.database,'--inspect-table',ref.table,'--inspect-id',ref.id];
-      const raw=await new Promise<string>((resolve,reject)=>execFile('python3',args,{timeout:15000,maxBuffer:256*1024},(error,stdout,stderr)=>error?reject(new Error(stderr||error.message)):resolve(stdout)));
+      const raw=await new Promise<string>((resolve,reject)=>execFile(this.settings.pythonExecutable,args,{timeout:15000,maxBuffer:256*1024},(error,stdout,stderr)=>error?reject(new Error(stderr||error.message)):resolve(stdout)));
       const modal=new Modal(this.app);modal.titleEl.setText(`${ref.table} · ${ref.id}`);modal.contentEl.createEl('pre',{text:JSON.stringify(JSON.parse(raw).record,null,2)});modal.contentEl.addClass('wh-canonical-record');modal.open();
     }catch(e){new Notice(`Could not open canonical record: ${String(e)}`,10000)}
   }
@@ -80,7 +80,7 @@ class DashboardSettings extends PluginSettingTab {
   constructor(app:App,plugin:HistorianPlugin){super(app,plugin);this.plugin=plugin}
   display(){
     const el=this.containerEl;el.empty();el.createEl('h2',{text:'World Historian Dashboard'});
-    for(const [key,label] of [['database','Chronicle SQLite file'],['output','Dashboard read model directory'],['projector','Projector script'],['noteIndex','Obsidian thread note index'],['locationRegistry','Location registry JSON (optional)']] as const){
+    for(const [key,label] of [['database','Chronicle SQLite file'],['output','Dashboard read model directory'],['projector','Projector script'],['pythonExecutable','Python executable'],['noteIndex','Obsidian thread note index'],['locationRegistry','Location registry JSON (optional)']] as const){
       new Setting(el).setName(label).addText(text=>text.setValue(this.plugin.settings[key]).onChange(async value=>{this.plugin.settings[key]=value;await this.plugin.saveData(this.plugin.settings)}));
     }
     new Setting(el).setName('Refresh').addButton(button=>button.setButtonText('Build read model').onClick(()=>void this.plugin.refreshAndRender()));

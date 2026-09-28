@@ -9383,7 +9383,7 @@ var Repository = class _Repository {
 
 // src/main.ts
 var VIEW_TYPE = "world-historian-dashboard";
-var defaults = { database: "", output: "", projector: "", noteIndex: "", locationRegistry: "" };
+var defaults = { database: "", output: "", projector: "", pythonExecutable: process.platform === "win32" ? "python" : "python3", noteIndex: "", locationRegistry: "" };
 var DashboardView = class extends import_obsidian.ItemView {
   plugin;
   component = null;
@@ -9471,7 +9471,7 @@ var HistorianPlugin = class extends import_obsidian.Plugin {
     if (this.settings.noteIndex) args.push("--note-index", this.settings.noteIndex);
     if (this.settings.locationRegistry) args.push("--location-registry", this.settings.locationRegistry);
     if (this.app.vault.adapter instanceof import_obsidian.FileSystemAdapter) args.push("--vault", this.app.vault.adapter.getBasePath());
-    await new Promise((resolve, reject) => (0, import_node_child_process.execFile)("python3", args, { timeout: 18e5, maxBuffer: 1024 * 1024 }, (error, stdout, stderr) => error ? reject(new Error(stderr || error.message)) : resolve()));
+    await new Promise((resolve, reject) => (0, import_node_child_process.execFile)(this.settings.pythonExecutable, args, { timeout: 18e5, maxBuffer: 1024 * 1024 }, (error, stdout, stderr) => error ? reject(new Error(stderr || error.message)) : resolve()));
     new import_obsidian.Notice("World Historian read model refreshed");
   }
   async refreshAndRender() {
@@ -9494,7 +9494,7 @@ var HistorianPlugin = class extends import_obsidian.Plugin {
     }
     try {
       const args = [this.settings.projector, "--db", this.settings.database, "--inspect-table", ref.table, "--inspect-id", ref.id];
-      const raw = await new Promise((resolve, reject) => (0, import_node_child_process.execFile)("python3", args, { timeout: 15e3, maxBuffer: 256 * 1024 }, (error, stdout, stderr) => error ? reject(new Error(stderr || error.message)) : resolve(stdout)));
+      const raw = await new Promise((resolve, reject) => (0, import_node_child_process.execFile)(this.settings.pythonExecutable, args, { timeout: 15e3, maxBuffer: 256 * 1024 }, (error, stdout, stderr) => error ? reject(new Error(stderr || error.message)) : resolve(stdout)));
       const modal = new import_obsidian.Modal(this.app);
       modal.titleEl.setText(`${ref.table} \xB7 ${ref.id}`);
       modal.contentEl.createEl("pre", { text: JSON.stringify(JSON.parse(raw).record, null, 2) });
@@ -9519,7 +9519,7 @@ var DashboardSettings = class extends import_obsidian.PluginSettingTab {
     const el = this.containerEl;
     el.empty();
     el.createEl("h2", { text: "World Historian Dashboard" });
-    for (const [key2, label] of [["database", "Chronicle SQLite file"], ["output", "Dashboard read model directory"], ["projector", "Projector script"], ["noteIndex", "Obsidian thread note index"], ["locationRegistry", "Location registry JSON (optional)"]]) {
+    for (const [key2, label] of [["database", "Chronicle SQLite file"], ["output", "Dashboard read model directory"], ["projector", "Projector script"], ["pythonExecutable", "Python executable"], ["noteIndex", "Obsidian thread note index"], ["locationRegistry", "Location registry JSON (optional)"]]) {
       new import_obsidian.Setting(el).setName(label).addText((text2) => text2.setValue(this.plugin.settings[key2]).onChange(async (value) => {
         this.plugin.settings[key2] = value;
         await this.plugin.saveData(this.plugin.settings);

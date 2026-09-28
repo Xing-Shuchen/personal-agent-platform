@@ -198,28 +198,81 @@ Schema migration 从 `agents/world-historian/runtime/migrations/` 顺序执行�
 - 同步索引位于 `var/world-historian/obsidian-index.json`（不进 git）。
 - 目标目录可用 `WORLD_HISTORIAN_VAULT_DIR` 覆盖，设为空字符串则完全关闭同步。
 
-### World Historian Dashboard（v0.7）
+### World Historian Dashboard（Obsidian 桌面插件）
 
-仪表盘是 Obsidian 桌面版 `ItemView`，由 Chronicle SQLite 生成可删除、可重建的本地读模型。
-源库不会被投影器修改。插件源码和安装包位于 `obsidian/world-historian-dashboard/`。
+插件位于 `obsidian/world-historian-dashboard/`；仓库已包含构建好的
+`manifest.json`、`main.js` 和 `styles.css`，普通安装无需 Node.js。
+它读取本机的 Chronicle SQLite，并在仓库的 `var/world-historian/dashboard/` 生成可重建的读模型；
+投影器以只读方式打开源库。插件只支持 Obsidian 桌面版。
+
+#### 在另一台电脑安装
+
+1. 安装 Obsidian 桌面版、Git 和 Python 3，把 PAP 仓库的 `main` 分支克隆到该电脑
+   （私有仓库需先配置 GitCode 访问凭据）：
+
+   ```bash
+   git clone --branch main https://gitcode.com/shuchen_xing/personal-agent-platform.git
+   cd personal-agent-platform
+   ```
+
+2. 从可信的 World Historian 电脑取得最新 `chronicle.sqlite` 快照，放到克隆仓库的
+   `docs/chronicle.sqlite`。数据库和读模型均不在 Git 中；仅克隆仓库不会带来历史数据。
+   传输快照时关闭源库写入，或使用 SQLite backup，避免直接复制正在写入的数据库文件。
+3. 将仓库自带的三个插件文件复制到目标 Vault 的
+   `.obsidian/plugins/world-historian-dashboard/`。下面命令中的 Vault 路径按实际位置修改。
+
+Linux / macOS（从 PAP 仓库根目录执行）：
 
 ```bash
+PAP_ROOT="$(pwd)"
+VAULT="$HOME/documents/Obsidian/Second_Brain"
+PLUGIN_DIR="$VAULT/.obsidian/plugins/world-historian-dashboard"
+mkdir -p "$PLUGIN_DIR"
+cp obsidian/world-historian-dashboard/{manifest.json,main.js,styles.css} "$PLUGIN_DIR/"
 python3 agents/world-historian/runtime/dashboard_projector.py \
-  --db docs/chronicle.sqlite \
-  --output var/world-historian/dashboard \
-  --vault "$HOME/documents/Obsidian/Second_Brain"
-cd obsidian/world-historian-dashboard
-npm ci
-npm run check
-npm run build
+  --db "$PAP_ROOT/docs/chronicle.sqlite" \
+  --output "$PAP_ROOT/var/world-historian/dashboard" \
+  --vault "$VAULT"
 ```
 
-将 `manifest.json`、`main.js`、`styles.css` 复制到 Vault 的
-`.obsidian/plugins/world-historian-dashboard/`，在社区插件中启用，命令面板运行
-`World Historian Dashboard: Open dashboard`。设置页可配置源库、读模型、投影器和可选地点注册表。
-插件的刷新命令会调用本地 Python 投影器；发布新 generation 后以 `CURRENT` 指针原子切换。
-旧 generation 在失败时继续可用。新 generation 复用未变化文件，Graph 以节点哈希分片读取。
-可删除整个读模型目录并从 Chronicle 重建。命令行可用
+Windows PowerShell（从 PAP 仓库根目录执行）：
+
+```powershell
+$PapRoot = (Get-Location).Path
+$Vault = Join-Path $HOME 'Documents\Obsidian\Second_Brain'
+$PluginDir = Join-Path $Vault '.obsidian\plugins\world-historian-dashboard'
+New-Item -ItemType Directory -Force $PluginDir | Out-Null
+@('manifest.json', 'main.js', 'styles.css') | ForEach-Object {
+  Copy-Item (Join-Path $PapRoot "obsidian/world-historian-dashboard/$_") $PluginDir
+}
+python (Join-Path $PapRoot 'agents/world-historian/runtime/dashboard_projector.py') `
+  --db (Join-Path $PapRoot 'docs/chronicle.sqlite') `
+  --output (Join-Path $PapRoot 'var/world-historian/dashboard') `
+  --vault $Vault
+```
+
+4. 在 Obsidian 中打开目标 Vault，进入「设置 → 社区插件」启用
+   **World Historian Dashboard**。若安装时 Obsidian 已经打开，先完全退出再启动，
+   以重新加载 `main.js`。按 `Ctrl+P`（macOS 为 `Cmd+P`），运行
+   `World Historian Dashboard: Open dashboard`；也可点左侧网络图标。
+5. 在「设置 → 社区插件 → World Historian Dashboard」填入本机绝对路径：
+
+   | 设置项 | 填写内容 |
+   |---|---|
+   | Chronicle SQLite file | `<PAP_ROOT>/docs/chronicle.sqlite` |
+   | Dashboard read model directory | `<PAP_ROOT>/var/world-historian/dashboard` |
+   | Projector script | `<PAP_ROOT>/agents/world-historian/runtime/dashboard_projector.py` |
+   | Python executable | Linux/macOS 通常为 `python3`，Windows 通常为 `python`；也可填 Python 可执行文件的绝对路径 |
+   | Obsidian thread note index / Location registry JSON | 可选；没有相应文件时留空 |
+
+`<PAP_ROOT>` 只是路径示意，设置中不要保留尖括号。插件的 **Refresh read model**
+命令会按这些设置重新生成读模型；换入新的 `chronicle.sqlite` 快照后也需要运行一次。
+刷新只使用本机文件，不会从另一台电脑自动同步数据库。发布新 generation 时以 `CURRENT`
+指针原子切换；刷新失败时旧 generation 仍可用。读模型可删除后重建。
+
+若要修改插件源码，再进入 `obsidian/world-historian-dashboard/` 执行 `npm ci`、
+`npm run check`、`npm run build`、`npm run smoke`，并重新复制三个插件文件。
+更新已安装插件后需重新启动 Obsidian。命令行可用
 `--inspect-table events --inspect-id <event_id>` 只读查看规范记录。
 
 ```bash

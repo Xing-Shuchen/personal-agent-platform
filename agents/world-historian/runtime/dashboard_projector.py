@@ -533,7 +533,7 @@ def publish(db_path: Path, output: Path, *, note_index: Path | None = None,
     generations.chmod(0o700)
     with tempfile.TemporaryDirectory(prefix="dashboard-snapshot-") as scratch:
         snapshot = Path(scratch) / "source.sqlite"
-        source = sqlite3.connect(f"file:{db_path.resolve()}?mode=ro", uri=True)
+        source = sqlite3.connect(f"{db_path.resolve().as_uri()}?mode=ro", uri=True)
         target = sqlite3.connect(snapshot)
         try:
             source.backup(target)
@@ -572,7 +572,7 @@ def publish(db_path: Path, output: Path, *, note_index: Path | None = None,
                             previous = candidate
                         except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError):
                             pass
-                conn = sqlite3.connect(f"file:{snapshot}?mode=ro", uri=True)
+                conn = sqlite3.connect(f"{snapshot.resolve().as_uri()}?mode=ro", uri=True)
                 conn.row_factory = sqlite3.Row
                 try:
                     registry = json.loads(location_registry.read_text(encoding="utf-8")) if location_registry else []
@@ -602,7 +602,7 @@ def inspect_canonical(db_path: Path, table: str, identifier: str) -> dict:
                "thread_current_states": "thread_id"}
     if table not in columns or not identifier or len(identifier) > 200:
         raise ValueError("unsupported canonical reference")
-    conn = sqlite3.connect(f"file:{db_path.resolve()}?mode=ro", uri=True)
+    conn = sqlite3.connect(f"{db_path.resolve().as_uri()}?mode=ro", uri=True)
     conn.row_factory = sqlite3.Row
     try:
         row = conn.execute(f"SELECT * FROM {table} WHERE {columns[table]} = ?", (identifier,)).fetchone()
