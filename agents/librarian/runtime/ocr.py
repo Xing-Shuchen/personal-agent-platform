@@ -109,36 +109,13 @@ class EpubGroundTruth:
         end = self.mapping[best_position + len(query) - 1] + 1
         return _display_text(self.raw[start:end]), best_ratio
 
-    def sentence(self, text: str, through: str | None = None) -> str | None:
-        """Expand a matched print line to its full EPUB sentence."""
-        query = _compact(text)
-        if len(query) < 12:
-            return None
-        position = self.compact.find(query)
-        if position < 0:
-            return None
-        start = self.mapping[position]
-        last = _compact(through) if through else query
-        last_position = self.compact.find(last, position)
-        if last_position < 0 or last_position - position > 600:
-            return None
-        end = self.mapping[last_position + len(last) - 1] + 1
-        left = max(self.raw.rfind(mark, max(0, start - 220), start) for mark in "。！？") + 1
-        right_candidates = [self.raw.find(mark, end, min(len(self.raw), end + 220))
-                            for mark in "。！？"]
-        right = min((item for item in right_candidates if item >= 0), default=-1)
-        if right < 0 or end - left > 700:
-            return None
-        return _display_text(self.raw[left:right + 1])
-
-
 def _box(points: list[list[float]], width: int, height: int) -> list[float]:
     xs, ys = [point[0] for point in points], [point[1] for point in points]
     return [round(max(0.0, min(xs) / width), 5), round(max(0.0, min(ys) / height), 5),
             round(min(1.0, max(xs) / width), 5), round(min(1.0, max(ys) / height), 5)]
 
 
-def _underline_score(gray, points: list[list[float]]) -> float:
+def _underline_evidence(gray, points: list[list[float]]) -> tuple[float, list[float]]:
     import cv2
     import numpy as np
 
@@ -147,7 +124,7 @@ def _underline_score(gray, points: list[list[float]]) -> float:
     height = int((np.linalg.norm(quad[3] - quad[0]) +
                   np.linalg.norm(quad[2] - quad[1])) / 2)
     if width < 150 or height < 10:
-        return 0.0
+        return 0.0, [0.0, 0.0]
     lower = quad.copy()
     lower[2] = quad[1] + (quad[2] - quad[1]) * 1.7
     lower[3] = quad[0] + (quad[3] - quad[0]) * 1.7
@@ -157,14 +134,39 @@ def _underline_score(gray, points: list[list[float]]) -> float:
                                  (width, target_height))
     ink = (warped < 120).astype(np.uint8)
     best = 0.0
+    best_span = (0, 0)
     kernel = np.ones((1, 9), np.uint8)
     for row in range(int(height * .75), min(target_height, int(height * 1.5))):
         band = ink[max(0, row - 2):min(target_height, row + 3)].max(axis=0)
         joined = cv2.morphologyEx(band.reshape(1, -1), cv2.MORPH_CLOSE, kernel)[0]
         changes = np.diff(np.r_[0, joined.astype(int), 0])
         spans = zip(np.flatnonzero(changes == 1), np.flatnonzero(changes == -1))
-        best = max(best, max((end - start for start, end in spans), default=0) / width)
-    return round(best, 4)
+        for start, end in spans:
+            score = (end - start) / width
+            if score > best:
+                best, best_span = score, (int(start), int(end))
+    return round(best, 4), [round(best_span[0] / width, 4),
+                            round(best_span[1] / width, 4)]
+
+
+def _visible_marked_text(line: dict) -> tuple[str, list[float]]:
+    """Keep the photographed sentence around the detected ink, never EPUB context."""
+    value = line["ocr_text"]
+    box = line["bbox"]
+    span = line["underline_span"]
+    if not value or span[1] <= span[0]:
+        return value, box
+    boundaries = [index + 1 for index, char in enumerate(value) if char in "。！？!?"]
+    before = [index for index in boundaries if index / len(value) < span[0] - .01]
+    after = [index for index in boundaries if index / len(value) > span[1] + .01]
+    start = max(before, default=0)
+    end = min(after, default=len(value))
+    if start >= end:
+        return value, box
+    width = box[2] - box[0]
+    clipped = [round(box[0] + width * start / len(value), 5), box[1],
+               round(box[0] + width * end / len(value), 5), box[3]]
+    return value[start:end].strip(), clipped
 
 
 def _detection(identifier: str, box: list[float], kind: str, text: str | None,
@@ -204,8 +206,7 @@ def openclaw_note_refiner(crop: bytes) -> tuple[str, dict]:
 
 def ocr_extractor(*, epub: Path, max_edge: int = 2000,
                   max_pixels: int = 2_000_000,
-                  note_refiner: Callable[[bytes], tuple[str, dict]] | None = None,
-                  preceding_page: int | None = None):
+                  note_refiner: Callable[[bytes], tuple[str, dict]] | None = None):
     """Return a reusable local extractor; only evidence on the photo is traced."""
     from rapidocr import RapidOCR
     import cv2
@@ -230,10 +231,12 @@ def ocr_extractor(*, epub: Path, max_edge: int = 2000,
             points = [[float(coord) for coord in point] for point in quad]
             box = _box(points, width, height)
             epub_text, match = groundtruth.match(str(text))
+            stroke_score, stroke_span = _underline_evidence(gray, points)
             lines.append({"id": index, "bbox": box, "quad": points, "ocr_text": str(text),
                           "ocr_score": round(float(score), 4), "epub_text": epub_text,
                           "epub_match": round(float(match), 4),
-                          "underline_score": _underline_score(gray, points)})
+                          "underline_score": stroke_score,
+                          "underline_span": stroke_span})
         body = [line for line in lines if line["epub_text"] and
                 len(_compact(line["ocr_text"])) >= 15 and
                 line["bbox"][2] - line["bbox"][0] >= .28]
@@ -306,17 +309,13 @@ def ocr_extractor(*, epub: Path, max_edge: int = 2000,
                                             "confidence": round(float(score), 4),
                                             "source": "margin_ocr"})
             markers.sort(key=lambda item: item["y"])
-            # Text above the first visible marker belongs to the prior
-            # original page only when the preceding capture supplied that
-            # exact page number; otherwise its page remains unresolved.
+            # The region above the first visible page number is unresolved.
+            # Upload order and neighboring captures are not page evidence.
             cuts = [page_box[1]] + [max(page_box[1] + .001, item["y"] - .01)
                                     for item in markers] + [page_box[3]]
             for index in range(len(cuts) - 1):
-                number = (markers[index - 1]["number"] if index else
-                          preceding_page if markers and preceding_page == markers[0]["number"] - 1
-                          else None)
-                confidence = (markers[index - 1]["confidence"] if index else
-                              .7 if number is not None else None)
+                number = markers[index - 1]["number"] if index else None
+                confidence = markers[index - 1]["confidence"] if index else None
                 page = ({"value": {"label": str(number), "number": number,
                                    "scheme": "arabic"}, "confidence": confidence,
                          "basis": "vision", "status": "resolved"} if number is not None else
@@ -339,17 +338,21 @@ def ocr_extractor(*, epub: Path, max_edge: int = 2000,
                 if not (page_box[0] <= box[0] < box[2] <= page_box[2] and
                         page_box[1] <= box[1] < box[3] <= page_box[3]):
                     continue
-                if line["underline_score"] < .075:
+                if line["underline_score"] < .065:
                     continue
                 label = f'print_{line["id"]}'
                 region_id = region_for(box)
+                visible_text, text_box = _visible_marked_text(line)
                 observation["printed_regions"].append(_detection(
-                    label, box, "printed", line["epub_text"],
-                    round(min(line["ocr_score"], line["epub_match"]), 4),
-                    basis="source_payload" if line["epub_match"] >= .85 else "vision",
+                    label, text_box, "printed", visible_text,
+                    line["ocr_score"], basis="vision",
                     page_region_id=region_id))
-                ink_box = [box[0], min(box[3] - .006, box[1] + .004),
-                           box[2], min(page_box[3], box[3] + .012)]
+                span = line["underline_span"]
+                line_width = box[2] - box[0]
+                ink_box = [max(page_box[0], box[0] + line_width * span[0] - .006),
+                           max(page_box[1], box[3] - .01),
+                           min(page_box[2], box[0] + line_width * span[1] + .006),
+                           min(page_box[3], box[3] + .012)]
                 mark_id = f'underline_{line["id"]}'
                 observation["marks"].append(_detection(
                     mark_id, ink_box, "underline", None,
@@ -366,40 +369,8 @@ def ocr_extractor(*, epub: Path, max_edge: int = 2000,
                     observation["links"].append({"from_id": prior_id,
                                                  "to_id": current_id,
                                                  "kind": "continues", "confidence": .9})
-            # A marked OCR line can end mid-sentence. Keep the photographed
-            # stroke as evidence, but use the EPUB to quote a complete sentence.
-            linked_to = {link["to_id"] for link in observation["links"]}
-            next_mark = {link["from_id"]: link["to_id"] for link in observation["links"]}
-            line_by_mark = {mark_id: line for line, mark_id in marked}
-            printed_by_id = {item["id"]: item for item in observation["printed_regions"]}
-            for line, mark_id in marked:
-                if mark_id in linked_to:
-                    continue
-                last_id = mark_id
-                while last_id in next_mark:
-                    last_id = next_mark[last_id]
-                print_id = f'print_{line["id"]}'
-                through = line_by_mark[last_id]["epub_text"] or ""
-                boundary = min((through.find(mark) for mark in "。！？"
-                                if through.find(mark) >= 0), default=-1)
-                if boundary >= 0:
-                    through = through[:boundary + 1]
-                sentence = groundtruth.sentence(line["epub_text"] or "", through)
-                if sentence and print_id in printed_by_id:
-                    printed_by_id[print_id]["text"]["text"] = sentence
-                elif print_id in printed_by_id:
-                    observation["warnings"].append(
-                        f"Underline {mark_id} may need sentence boundary review")
-            mark_by_id = {item["id"]: item for item in observation["marks"]}
-            removed_print_ids = set()
-            for link in observation["links"]:
-                if link["kind"] == "continues":
-                    source = mark_by_id[link["from_id"]]["linked_text_region_ids"][0]
-                    target = mark_by_id[link["to_id"]]
-                    removed_print_ids.update(target["linked_text_region_ids"])
-                    target["linked_text_region_ids"] = [source]
-            observation["printed_regions"] = [item for item in observation["printed_regions"]
-                                                if item["id"] not in removed_print_ids]
+            # Preserve one positioned print region per visible OCR line. EPUB
+            # matching helps classify print but cannot enlarge photographed text.
             short_margin = [line for line in lines if
                             3 <= len(_compact(line["ocr_text"])) < 15 and
                             line["bbox"][0] > right - .025 and

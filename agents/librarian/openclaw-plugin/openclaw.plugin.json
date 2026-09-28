@@ -10,10 +10,12 @@
       "repoRoot": {"type": "string", "minLength": 1},
       "stateRoot": {"type": "string", "minLength": 1},
       "vaultRoot": {"type": "string", "minLength": 1},
+      "visionModel": {"type": "string", "minLength": 1},
       "python": {"type": "string", "minLength": 1},
       "digitalSources": {
         "type": "object",
         "properties": {
+          "ownerId": {"type": "string", "minLength": 1},
           "koodo": {
             "type": "object",
             "properties": {
@@ -35,6 +37,7 @@
             "additionalProperties": false
           }
         },
+        "required": ["ownerId"],
         "additionalProperties": false
       },
       "ownerMappings": {
@@ -52,7 +55,7 @@
         }
       }
     },
-    "required": ["repoRoot", "stateRoot", "vaultRoot", "ownerMappings"],
+    "required": ["repoRoot", "stateRoot", "ownerMappings"],
     "additionalProperties": false
   }
 }

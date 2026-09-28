@@ -213,3 +213,53 @@ run. No `release-v0.8` branch or tag should be cut from this state.
 
 Do not use the synthetic photo tests or fixture counts as proof of visual
 recognition accuracy or a finished release.
+
+## 2026-09-28 audit remediation update
+
+The independent audit is in `docs/audits/LIBRARIAN_AUDIT_2026-09-28.md`.
+Its findings describe the prior implementation; this section records the
+subsequent code and production checks without treating the audit as passed.
+
+- F01: the worker now scans all photos for an EPUB identity, then uses the
+  configured OpenClaw image model when none is found. An accepted interior
+  photo with unknown book/page persists a partial observation and trace even
+  without a Vault. The generic route has a synthetic test; a real incoming
+  interior-only batch remains unverified.
+- F02/F03: cross-photo page inference and EPUB sentence expansion were
+  removed. OCR v5 stores photographed text regions and keeps the EPUB hash in
+  its version identity. The first-book production worker reprocessed all five
+  captures through normal versioned reconciliation: 10 active physical
+  traces, three with unresolved pages. The p.39 first underline now begins
+  “正是帕森斯” and ends at “社会学思想的核心构成部分。”
+  OCR remains incomplete on some other underlines, especially pp.40 and 44;
+  their Vault entries are marked for review. This is not a visual accuracy
+  acceptance claim.
+- F04: automatic catalog recognition now records soft affinity instead of
+  selected session state. A narrowly scoped worker migration demoted the one
+  legacy production scope and recorded it in `legacy_affinity_repairs`.
+- F05: digital source config is bound to one owner. The plugin fails closed
+  for multiple distinct configured owners until per-owner storage and routing
+  exist. The local single-owner config validates.
+- F06: batch faults are isolated in per-batch status files; physical and
+  digital work run with separate nonblocking locks and distinct schedules.
+  Bad-first/good-second and mode separation tests pass. Live slow-source and
+  repeated-trigger timing still need observation.
+- F07/F08: automatic reconciliation rejects user-corrected, knowledge-bound,
+  split/merged groups and nondefault normalizer configs. A unique group may
+  gain a newly detected mark. Trace/observation/outbox commits precede index
+  projection; index faults leave durable evidence and retry repairs the index
+  without rerunning extraction. Wider correction and digital projection
+  paths still need fault-injection review.
+- The first-book Vault note now follows the existing WeRead Notes layout:
+  metadata, page-grouped `# 高亮划线`, `# 读书笔记`, 📌/💭 entries and timestamps.
+  It remains in `2Area/40 学习与阅读/阅读笔记/`; original images remain in the
+  Librarian store. Existing generated text is upgraded only after an exact
+  unchanged-content comparison. Hidden HTML spans retain trace IDs.
+
+Verification after these changes: 78 Python Librarian tests, five Node plugin
+tests and the 77-definition contract validator passed. Gateway configuration
+validated and the restarted service was active. The separate pp.159/166/171/184
+acceptance photos and `source-design.txt` remain deferred by the user; no
+release branch or tag was created. Session command integration, authorized
+evidence opening, real inbound search-tool usage, and app-driven digital sync
+changes remain outside the verified set.

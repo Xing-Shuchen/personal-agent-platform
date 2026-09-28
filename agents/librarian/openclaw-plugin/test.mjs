@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { acceptMessage, librarianSearchTool } from "./index.js";
+import { acceptMessage, librarianSearchTool, workerArgs } from "./index.js";
 
 const config = { ownerMappings: [{ channelId: "telegram", accountId: "bot",
   senderId: "person", ownerId: "owner_fixture" }] };
@@ -72,4 +72,27 @@ test("search tool requires exact trusted sender, account, channel and agent", as
   assert.equal(librarianSearchTool({ ownerMappings: [] }, trusted, bridge), null);
   assert.equal(librarianSearchTool({ ownerMappings: [...config.ownerMappings,
     ...config.ownerMappings] }, trusted, bridge), null);
+});
+
+test("a second owner cannot inherit a shared digital source or Vault", async () => {
+  const one = { ...config, stateRoot: "/state", vaultRoot: "/vault",
+    digitalSources: { ownerId: "owner_fixture", koodo: {
+      sourceId: "koodo", booksDb: "/private/books.db", notesDb: "/private/notes.db" } } };
+  assert.ok(workerArgs(one, "owner_fixture").includes("--koodo-books-db"));
+  const two = { ...one, ownerMappings: [...one.ownerMappings,
+    { channelId: "telegram", accountId: "bot", senderId: "another", ownerId: "owner_b" }] };
+  assert.equal(workerArgs(two, "owner_fixture"), null);
+  assert.equal(workerArgs(two, "owner_b"), null);
+  assert.equal(librarianSearchTool(two, { agentId: "librarian", requesterSenderId: "another",
+    messageChannel: "telegram", agentAccountId: "bot" }), null);
+  assert.equal(await acceptMessage(two, { senderId: "another", messageId: "m",
+    media: [] }, ctx, () => { throw new Error("bridge must remain closed"); }), null);
+});
+
+test("worker runs without a Vault and binds a configurable vision model", () => {
+  const args = workerArgs({ ...config, stateRoot: "/state", visionModel: "fixture/vision" },
+    "owner_fixture");
+  assert.ok(args);
+  assert.ok(!args.includes("--vault"));
+  assert.equal(args[args.indexOf("--vision-model") + 1], "fixture/vision");
 });

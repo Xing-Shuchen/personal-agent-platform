@@ -5,7 +5,11 @@ import { delimiter, isAbsolute } from "node:path";
 const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
 const MAX_BATCH_BYTES = 100 * 1024 * 1024;
 
+const configuredOwnerIds = (config) =>
+  [...new Set((config.ownerMappings ?? []).map((entry) => entry.ownerId))];
+
 function ownerFor(config, event, ctx) {
+  if (configuredOwnerIds(config).length !== 1) return null;
   if (!ctx?.channelId || !ctx?.accountId || !event?.senderId) return null;
   const matches = (config.ownerMappings ?? []).filter((entry) =>
     entry.channelId === ctx.channelId && entry.accountId === ctx.accountId &&
@@ -54,18 +58,28 @@ const runBridge = (config, message) => runPythonBridge(
 const runSearchBridge = (config, message) => runPythonBridge(
   config, "agents.librarian.runtime.gateway_search", message);
 
-function startWorker(config, ownerId) {
-  if (!config.vaultRoot || !ownerId) return;
+export function workerArgs(config, ownerId) {
+  if (!ownerId || configuredOwnerIds(config).length !== 1 ||
+      configuredOwnerIds(config)[0] !== ownerId) return null;
   const args = ["-m", "agents.librarian.runtime.worker",
-    "--root", config.stateRoot, "--vault", config.vaultRoot, "--owner", ownerId];
+    "--root", config.stateRoot, "--owner", ownerId,
+    "--vision-model", config.visionModel ?? "zai/glm-5.3-flash"];
+  if (config.vaultRoot) args.push("--vault", config.vaultRoot);
   const digital = config.digitalSources ?? {};
-  if (digital.koodo) args.push("--koodo-source-id", digital.koodo.sourceId,
+  if (digital.ownerId === ownerId && digital.koodo) args.push("--koodo-source-id", digital.koodo.sourceId,
     "--koodo-books-db", digital.koodo.booksDb, "--koodo-notes-db", digital.koodo.notesDb);
-  if (digital.weread) {
+  if (digital.ownerId === ownerId && digital.weread) {
     args.push("--weread-source-id", digital.weread.sourceId,
       "--weread-plugin-data", digital.weread.pluginData);
     for (const bookId of digital.weread.bookIds) args.push("--weread-book-id", bookId);
   }
+  return args;
+}
+
+function startWorker(config, ownerId, mode = "physical") {
+  const args = workerArgs(config, ownerId);
+  if (!args) return;
+  args.push(mode === "digital" ? "--digital-only" : "--physical-only");
   const child = spawn(config.python ?? "python3", args, {
     cwd: config.repoRoot,
     env: { ...process.env, PYTHONPATH: [config.repoRoot, process.env.PYTHONPATH ?? ""].join(delimiter) },
@@ -136,8 +150,11 @@ export default {
       { name: "librarian_search" });
     api.registerService({ id: "pap-librarian-worker", start: () => {
       const recover = () => {
-        for (const ownerId of new Set((config.ownerMappings ?? []).map((entry) => entry.ownerId))) {
-          startWorker(config, ownerId);
+        for (const ownerId of configuredOwnerIds(config)) {
+          startWorker(config, ownerId, "physical");
+          if (config.digitalSources?.ownerId === ownerId) {
+            startWorker(config, ownerId, "digital");
+          }
         }
       };
       recover();

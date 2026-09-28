@@ -8,7 +8,8 @@ import pytest
 from PIL import Image
 
 from agents.librarian.runtime.digital import ingest_export
-from agents.librarian.runtime.pipeline import correct_trace, process_capture, rebuild_index, render_trace_crop, resolve_capture, search, search_response
+from agents.librarian.runtime.pipeline import correct_trace, process_capture, reconcile_extraction, rebuild_index, render_trace_crop, resolve_capture, search, search_response
+from agents.librarian.runtime.knowledge import create_candidate, decide_candidate, promote_candidate
 from agents.librarian.runtime.review import review_queues
 from agents.librarian.runtime.store import Library, LibrarianError, validate
 
@@ -50,6 +51,90 @@ def _rotated_photo() -> bytes:
     exif[274] = 6  # EXIF rotation swaps the display dimensions.
     Image.new("RGB", (1000, 1400), "white").save(stream, format="JPEG", exif=exif)
     return stream.getvalue()
+
+
+def test_reextract_keeps_promoted_knowledge_source_active(tmp_path: Path) -> None:
+    with Library(tmp_path) as lib:
+        receipt = lib.ingest("owner_a", transport="gateway", account_id="account",
+                             conversation_id="chat", source_event_id="message-1",
+                             attachments=[{"source_item_id": "image-1", "mime_type": "image/png",
+                                           "data": _photo()}], idempotency_key="command-1")
+        capture_id = receipt["capture_ids"][0]
+        old = process_capture(lib, "owner_a", capture_id, lambda _: _output(), extractor_version="v1")
+        candidate = create_candidate(lib, "owner_a", [{"trace_id": old[0]["id"], "revision": 1}],
+                                     candidate_type="concept", correlation_id="test",
+                                     content={"text": None, "confidence": None, "basis": "unknown"})
+        decide_candidate(lib, "owner_a", candidate["id"], 1, approve=True)
+        promote_candidate(lib, "owner_a", candidate["id"], 2, lambda *_: "knowledge_test")
+        with pytest.raises(LibrarianError, match="awaits reconciliation"):
+            process_capture(lib, "owner_a", capture_id, lambda _: _output(), extractor_version="v2")
+        with pytest.raises(LibrarianError) as error:
+            reconcile_extraction(lib, "owner_a", capture_id, "v2")
+        assert error.value.code == "RECONCILIATION_REQUIRED"
+        assert lib.get("owner_a", "ReadingTrace", old[0]["id"])["status"] == "active"
+        assert lib.get("owner_a", "KnowledgeCandidate", candidate["id"])["status"] == "promoted"
+
+
+def test_initial_index_failure_preserves_observation_and_retries_projection(tmp_path: Path,
+                                                                             monkeypatch) -> None:
+    from agents.librarian.runtime import pipeline
+
+    with Library(tmp_path) as lib:
+        receipt = lib.ingest("owner_a", transport="gateway", account_id="account",
+                             conversation_id="chat", source_event_id="message-1",
+                             attachments=[{"source_item_id": "image-1", "mime_type": "image/png",
+                                           "data": _photo()}], idempotency_key="command-1")
+        capture_id = receipt["capture_ids"][0]
+        calls = []
+        def extract(_raw):
+            calls.append(1)
+            return _output()
+
+        real_index = pipeline._index_trace
+        monkeypatch.setattr(pipeline, "_index_trace", lambda *_: (_ for _ in ()).throw(
+            RuntimeError("index unavailable")))
+        traces = process_capture(lib, "owner_a", capture_id, extract)
+        assert len(traces) == 2
+        assert lib.db.execute("SELECT COUNT(*) FROM trace_index").fetchone()[0] == 0
+        assert lib.db.execute("SELECT COUNT(*) FROM records WHERE model='PageObservation'").fetchone()[0] == 1
+        assert lib.db.execute("SELECT COUNT(*) FROM records WHERE model='ProcessingRun'").fetchone()[0] == 1
+        monkeypatch.setattr(pipeline, "_index_trace", real_index)
+        assert len(process_capture(lib, "owner_a", capture_id, extract)) == 2
+        assert len(calls) == 1
+        assert lib.db.execute("SELECT COUNT(*) FROM trace_index").fetchone()[0] == 2
+
+
+def test_reconciliation_index_failure_never_serves_superseded_trace(tmp_path: Path,
+                                                                     monkeypatch) -> None:
+    from agents.librarian.runtime import pipeline
+
+    with Library(tmp_path) as lib:
+        receipt = lib.ingest("owner_a", transport="gateway", account_id="account",
+                             conversation_id="chat", source_event_id="message-1",
+                             attachments=[{"source_item_id": "image-1", "mime_type": "image/png",
+                                           "data": _photo()}], idempotency_key="command-1")
+        capture_id = receipt["capture_ids"][0]
+        old = process_capture(lib, "owner_a", capture_id, lambda _: _output(),
+                              extractor_version="v1")
+        with pytest.raises(LibrarianError, match="awaits reconciliation"):
+            process_capture(lib, "owner_a", capture_id, lambda _: _output(),
+                            extractor_version="v2")
+        index = pipeline._index_trace
+        monkeypatch.setattr(pipeline, "_index_trace", lambda *_: (_ for _ in ()).throw(
+            RuntimeError("index unavailable")))
+        new = reconcile_extraction(lib, "owner_a", capture_id, "v2")
+        assert len(new) == 2
+        assert all(lib.get("owner_a", "ReadingTrace", item["id"])["status"] == "superseded"
+                   for item in old)
+        assert search(lib, "owner_a", "Weber", include_unresolved=True) == []
+        monkeypatch.setattr(pipeline, "_index_trace", index)
+        assert len(process_capture(lib, "owner_a", capture_id,
+                                   lambda _: pytest.fail("extractor reran"),
+                                   extractor_version="v2")) == 2
+        assert {item["id"] for item in search(lib, "owner_a", "Weber",
+                                               include_unresolved=True)} == {
+                                                   item["id"] for item in new if
+                                                   item["content"]["printed_text"]["text"]}
 
 
 def test_synthetic_observation_to_provenance_search_and_rebuild(tmp_path: Path):

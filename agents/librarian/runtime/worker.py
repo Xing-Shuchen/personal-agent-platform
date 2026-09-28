@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import fcntl
+import hashlib
 import io
 import json
 import os
@@ -15,7 +16,9 @@ import re
 import shutil
 import subprocess
 import tempfile
+from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 from zipfile import ZipFile
 from xml.etree import ElementTree as ET
 
@@ -23,13 +26,14 @@ from PIL import Image, ImageOps
 
 from .ocr import ocr_extractor, openclaw_note_refiner
 from .pipeline import process_capture, reconcile_extraction
+from .vision import openclaw_extractor
 from .store import Library, LibrarianError, _now, _unknown_time
 from .koodo_native import sync_koodo_sqlite
 from .weread_native import fetch_weread_book, sync_weread_book
 
 
 def _current(lib: Library, owner: str, model: str) -> list[dict]:
-    rows = lib.db.execute("SELECT body FROM records WHERE owner_id=? AND model=? AND current=1",
+    rows = lib.db.execute("SELECT body FROM records WHERE owner_id=? AND model=? AND current=1 ORDER BY rowid",
                           (owner, model)).fetchall()
     return [json.loads(row["body"]) for row in rows]
 
@@ -95,12 +99,8 @@ def _catalog(lib: Library, owner: str, isbn: str, epub: Path, batch: dict) -> st
         (owner, *batch["capture_ids"])).fetchall()
     if len(assigned) > 1:
         raise LibrarianError("CONTEXT_CONFLICT", "batch captures have different sessions")
-    selected = lib.db.execute(
-        "SELECT session_id FROM session_scope WHERE owner_id=? AND transport=? AND account_id=? "
-        "AND conversation_id=? AND selected=1", (owner, *scope)).fetchall()
-    if len(selected) > 1:
-        raise LibrarianError("CONTEXT_CONFLICT", "conversation has multiple selected sessions")
-    chosen_id = assigned[0]["session_id"] if assigned else (selected[0]["session_id"] if selected else None)
+    affinity_id, _ = lib._choose_session((owner, *scope), None)
+    chosen_id = assigned[0]["session_id"] if assigned else affinity_id
     chosen = lib.get(owner, "ReadingSession", chosen_id) if chosen_id else None
     if chosen and chosen["edition_id"] != edition_id:
         raise LibrarianError("CONTEXT_CONFLICT", "selected session conflicts with photographed ISBN")
@@ -125,12 +125,59 @@ def _catalog(lib: Library, owner: str, isbn: str, epub: Path, batch: dict) -> st
                                  "physical": {"qr_id": None, "shelf": None},
                                  "reading_status": {"state": "unknown", "current_page": None,
                                                     "progress_evidence_ref": None}})
-    session = chosen or lib.start_session(owner, instance_id, scope=scope)
+    if chosen:
+        session = chosen
+    else:
+        session = lib.start_session(owner, instance_id)
+        received_at = batch["received_at"]
+        with lib.transaction():
+            lib._remember_session((owner, *scope), session["id"], received_at, False)
     with lib.transaction():
         for capture_id in batch["capture_ids"]:
             lib.db.execute("INSERT OR IGNORE INTO capture_context VALUES(?,?,?,?)",
                            (owner, capture_id, session["id"], "edition_fingerprint"))
     return title
+
+
+def _repair_legacy_auto_affinity(lib: Library, owner: str) -> int:
+    """Demote only legacy worker selections proven by edition-fingerprint captures."""
+    lib.db.execute(
+        "CREATE TABLE IF NOT EXISTS legacy_affinity_repairs ("
+        "owner_id TEXT NOT NULL, transport TEXT NOT NULL, account_id TEXT NOT NULL, "
+        "conversation_id TEXT NOT NULL, session_id TEXT NOT NULL, "
+        "last_assigned_at TEXT NOT NULL, repaired_at TEXT NOT NULL, "
+        "PRIMARY KEY(owner_id,transport,account_id,conversation_id,session_id))")
+    rows = lib.db.execute(
+        "SELECT transport,account_id,conversation_id,session_id FROM session_scope "
+        "WHERE owner_id=? AND selected=1 AND last_assigned_at IS NULL", (owner,)).fetchall()
+    repaired = 0
+    for row in rows:
+        scope = (row["transport"], row["account_id"], row["conversation_id"])
+        captures = []
+        for context in lib.db.execute(
+                "SELECT capture_id,basis FROM capture_context WHERE owner_id=? AND session_id=?",
+                (owner, row["session_id"])):
+            if context["basis"] != "edition_fingerprint":
+                captures = []
+                break
+            capture = lib.get(owner, "PageCapture", context["capture_id"])
+            origin = capture["origin"]
+            if (origin["transport"], origin["account_id"], origin["conversation_id"]) == scope:
+                captures.append(capture)
+        if not captures:
+            continue
+        received_at = max(item["received_at"] for item in captures)
+        with lib.transaction():
+            updated = lib.db.execute(
+                "UPDATE session_scope SET selected=0,last_assigned_at=? "
+                "WHERE owner_id=? AND transport=? AND account_id=? AND conversation_id=? "
+                "AND session_id=? AND selected=1 AND last_assigned_at IS NULL",
+                (received_at, owner, *scope, row["session_id"])).rowcount
+            if updated:
+                lib.db.execute("INSERT INTO legacy_affinity_repairs VALUES(?,?,?,?,?,?,?)",
+                               (owner, *scope, row["session_id"], received_at, _now()))
+                repaired += 1
+    return repaired
 
 
 def _atomic_write(path: Path, data: bytes) -> None:
@@ -180,8 +227,8 @@ def _hide_vault_markers(vault: Path, batch: dict) -> bool:
     return changed
 
 
-def _render_batch_note(batch: dict, title: str, traces: list[dict], *,
-                       created: str, spatial_order: bool = True) -> str:
+def _render_batch_note_legacy(batch: dict, title: str, traces: list[dict], *,
+                              created: str, spatial_order: bool = True) -> str:
     traces = list(traces)
     if spatial_order:
         traces.sort(key=lambda item: ((item["location"]["page"] or {}).get("number", 0),
@@ -210,12 +257,81 @@ def _render_batch_note(batch: dict, title: str, traces: list[dict], *,
     return "\n".join(lines).rstrip() + "\n\n" + _batch_marker(batch["id"]) + "\n"
 
 
+def _render_batch_note(batch: dict, title: str, traces: list[dict], *,
+                       created: str, spatial_order: bool = True,
+                       presentation_version: int = 3) -> str:
+    if not traces:
+        raise LibrarianError("NO_MARKS", "no reading marks found in batch")
+    traces = sorted(traces, key=lambda item: (
+        (item["location"]["page"] or {}).get("number") or
+        (0 if presentation_version == 1 else 10**9),
+        item["location"]["bbox"][1]))
+    notes = [trace for trace in traces if trace["content"]["annotation"]["text"]]
+    highlights = [trace for trace in traces if trace["content"]["printed_text"]["text"]
+                  and trace not in notes]
+    lines = ["---", "doc_type: physical-highlights-notes", "type: reference",
+             "area: reading", "status: review", f"created: {created}",
+             f"updated: {created}", f"isbn: '{batch.get('isbn', '')}'",
+             f"noteCount: {len(highlights)}", f"reviewCount: {len(notes)}",
+             "---", "", "# 元数据", f"> [!abstract] {title}",
+             f"> - 书名： {title}", f"> - ISBN： {batch.get('isbn', '待核对')}",
+             "> - 来源： 飞书图书专员 · 纸质书照片",
+             "> - 状态： 待人工 review", ""]
+
+    def render_section(heading: str, entries: list[dict]) -> None:
+        if not entries:
+            return
+        lines.extend([f"# {heading}", ""])
+        last_page = None
+        for trace in entries:
+            page = trace["location"]["page"]
+            label = page["label"] if page else "页码待核对"
+            if label != last_page:
+                lines.extend([f"## 第 {label} 页" if page else "## 页码待核对", ""])
+                last_page = label
+            printed = trace["content"]["printed_text"]["text"]
+            annotation = trace["content"]["annotation"]["text"]
+            if heading == "读书笔记":
+                lines.extend(["### 划线评论" if printed else "### 手写笔记（待核对）", ""])
+            if printed:
+                flattened = printed
+                if presentation_version == 2:
+                    flattened = re.sub(r"(?<=[A-Za-z0-9])\n(?=[A-Za-z0-9])", " ", printed)
+                    flattened = flattened.replace("\n", "")
+                if presentation_version == 3:
+                    quote_lines = flattened.splitlines()
+                    for index, quote_line in enumerate(quote_lines):
+                        prefix = "> 📌 " if index == 0 else "> "
+                        suffix = f" ^{trace['id']}" if index == len(quote_lines) - 1 else ""
+                        lines.append(prefix + quote_line + suffix)
+                else:
+                    lines.append(f"> 📌 {flattened} ^{trace['id']}")
+                if presentation_version != 1 and not flattened.rstrip().endswith(("。", "！", "？", "!", "?")):
+                    lines.append("> ⚠️ 转录可能不完整，待核对")
+            if annotation:
+                rendered_note = annotation if presentation_version == 1 else annotation.replace("\n", " / ")
+                lines.append(f"> 💭 {rendered_note}（手写待核对）")
+            try:
+                stamp = datetime.fromisoformat(trace["created_at"]).astimezone(
+                    ZoneInfo("Asia/Shanghai")).strftime("%Y-%m-%d %H:%M:%S")
+            except (KeyError, ValueError):
+                stamp = created
+            lines.extend([f"> ⏱ {stamp}",
+                          f"> 原图证据：`{trace['source']['capture_id']}`",
+                          _trace_marker(trace["id"], trace["revision"]), ""])
+
+    render_section("高亮划线", highlights)
+    render_section("读书笔记", notes)
+    lines.append(_batch_marker(batch["id"]))
+    return "\n".join(lines).rstrip() + "\n"
+
+
 def _export(lib: Library, owner: str, batch: dict, title: str, vault: Path) -> Path:
     folder = vault / "2Area" / "40 学习与阅读" / "阅读笔记"
     note = folder / f"{title}.md"
     traces = [trace for trace in _current(lib, owner, "ReadingTrace")
               if trace["status"] == "active" and
-              trace["source"]["capture_id"] in batch["capture_ids"]]
+              trace["source"].get("capture_id") in batch["capture_ids"]]
     block = _render_batch_note(batch, title, traces, created=_now()[:10])
     if note.exists():
         old = note.read_text(encoding="utf-8")
@@ -232,11 +348,19 @@ def _refresh_generated_note(vault: Path, batch: dict, title: str,
     note = vault / "2Area" / "40 学习与阅读" / "阅读笔记" / f"{title}.md"
     old = note.read_text(encoding="utf-8")
     match = re.search(r"(?m)^created: (\d{4}-\d{2}-\d{2})$", old)
-    if not match or old != _render_batch_note(batch, title, old_traces,
-                                               created=match.group(1), spatial_order=False):
+    if not match or old not in (
+            _render_batch_note(batch, title, old_traces, created=match.group(1)),
+            _render_batch_note(batch, title, old_traces, created=match.group(1),
+                               presentation_version=1),
+            _render_batch_note(batch, title, old_traces, created=match.group(1),
+                               presentation_version=2),
+            _render_batch_note_legacy(batch, title, old_traces, created=match.group(1)),
+            _render_batch_note_legacy(batch, title, old_traces,
+                                      created=match.group(1), spatial_order=False)):
         raise LibrarianError("REVIEW_EDIT_CONFLICT", "Vault review note has edits; preserve it for manual reconciliation")
     revised = _render_batch_note(batch, title, new_traces, created=match.group(1))
-    _atomic_write(note, revised.encode("utf-8"))
+    if revised != old:
+        _atomic_write(note, revised.encode("utf-8"))
     return note
 
 
@@ -266,7 +390,8 @@ def _notify(root: Path, batch: dict, note: Path, count: int) -> None:
     marker = root / "notifications" / f"{batch['id']}.json"
     if marker.exists():
         return
-    message = (f"《{note.stem}》已完成照片识别、EPUB 对齐，并写入图书专员数据库和 Obsidian。"
+    alignment = "、EPUB 辅助核对" if batch.get("isbn") else ""
+    message = (f"《{note.stem}》已完成照片识别{alignment}，并写入图书专员数据库和 Obsidian。"
                f"共识别 {count} 条画线/笔记。请在「2Area/40 学习与阅读/阅读笔记/{note.name}」review；"
                "手写文字标为待核对。")
     command = ["openclaw", "message", "send", "--channel", "feishu", "--account", "librarian",
@@ -335,87 +460,159 @@ def _sync_digital(lib: Library, root: Path, owner: str, *,
     return results
 
 
-def run(root: Path, vault: Path, owner: str, *,
-        koodo: tuple[str, Path, Path] | None = None,
-        weread: tuple[str, Path, list[str]] | None = None) -> list[dict]:
-    root.mkdir(parents=True, exist_ok=True)
-    with (root / "worker.lock").open("w") as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX)
-        results = []
-        with Library(root) as lib:
-            results.extend(_sync_digital(lib, root, owner, koodo=koodo, weread=weread))
-            for batch in _current(lib, owner, "CaptureBatch"):
-                if batch["origin"]["transport"] != "feishu":
-                    continue
-                if _remove_vault_images(vault, batch):
-                    results.append({"batch_id": batch["id"], "vault_images_removed": True})
-                if _hide_vault_markers(vault, batch):
-                    results.append({"batch_id": batch["id"], "vault_markers_hidden": True})
-                notified = (root / "notifications" / f"{batch['id']}.json").exists()
-                cover = lib.read_original(owner, batch["capture_ids"][0])
-                match = _book_for_cover(root, cover)
-                if not match:
-                    continue
-                isbn, epub = match
-                title = _catalog(lib, owner, isbn, epub, batch)
-                batch["isbn"] = isbn
-                version = f"rapidocr-epub-notes-v3:{isbn}"
-                runs = [run for run in _current(lib, owner, "ProcessingRun")
-                        if run["capture_id"] in batch["capture_ids"] and
-                        run["extractor_version"] == version and
-                        run["outcome"] in {"success", "partial"}]
-                revised_notice = (root / "notifications" / f"{batch['id']}-revision.json").exists()
-                if notified and revised_notice and len({run["capture_id"] for run in runs}) == len(batch["capture_ids"]):
-                    continue
-                snapshot = root / "reconciliations" / f"{batch['id']}.json"
-                if notified:
-                    if snapshot.exists():
-                        old_traces = json.loads(snapshot.read_text(encoding="utf-8"))
-                    else:
-                        old_traces = [trace for trace in _current(lib, owner, "ReadingTrace")
-                                      if trace["status"] == "active" and
-                                      trace["source"]["capture_id"] in batch["capture_ids"]]
-                        _atomic_write(snapshot, json.dumps(old_traces, ensure_ascii=False).encode())
-                preceding_page = None
-                for capture_id in batch["capture_ids"]:
-                    extractor = ocr_extractor(epub=epub, note_refiner=openclaw_note_refiner,
-                                              preceding_page=preceding_page)
-                    try:
-                        process_capture(lib, owner, capture_id, extractor,
-                                        extractor_version=version)
-                    except LibrarianError as error:
-                        if error.code != "RECONCILIATION_REQUIRED":
-                            raise
-                        reconcile_extraction(lib, owner, capture_id, version)
-                    observations = [item for item in _current(lib, owner, "PageObservation")
-                                    if item["capture_id"] == capture_id and
-                                    item["extractor"] == version]
-                    if observations:
-                        numbers = [page["page"]["value"]["number"] for page in
-                                   observations[-1]["pages"] if page["page"]["value"]]
-                        preceding_page = numbers[-1] if numbers else None
-                traces = [trace for trace in _current(lib, owner, "ReadingTrace")
+def _process_batch(lib: Library, root: Path, vault: Path | None, owner: str,
+                   batch: dict, vision_model: str) -> dict:
+    if vault:
+        _remove_vault_images(vault, batch)
+        _hide_vault_markers(vault, batch)
+    notified = (root / "notifications" / f"{batch['id']}.json").exists()
+    match = None
+    for capture_id in batch["capture_ids"]:
+        try:
+            match = _book_for_cover(root, lib.read_original(owner, capture_id))
+        except Exception:
+            match = None
+        if match:
+            break
+    if match:
+        isbn, epub = match
+        try:
+            title = _catalog(lib, owner, isbn, epub, batch)
+        except LibrarianError as error:
+            if error.code != "CONTEXT_CONFLICT":
+                raise
+            match = None
+    if match:
+        batch["isbn"] = isbn
+        epub_hash = hashlib.sha256(epub.read_bytes()).hexdigest()[:16]
+        version = f"rapidocr-epub-notes-v5:{isbn}:{epub_hash}"
+        extractor = ocr_extractor(epub=epub, note_refiner=openclaw_note_refiner)
+    else:
+        title = "待确认书籍"
+        version = f"openclaw-physical-v1:{vision_model}"
+        extractor = openclaw_extractor(model=vision_model)
+    runs = [run for run in _current(lib, owner, "ProcessingRun")
+            if run["capture_id"] in batch["capture_ids"] and
+            run["extractor_version"] == version and
+            run["outcome"] in {"success", "partial"}]
+    revised_notice = (root / "notifications" / f"{batch['id']}-revision.json").exists()
+    if notified and revised_notice and len({run["capture_id"] for run in runs}) == len(batch["capture_ids"]):
+        existing = [trace for trace in _current(lib, owner, "ReadingTrace")
+                    if trace["status"] == "active" and
+                    trace["source"].get("capture_id") in batch["capture_ids"]]
+        if vault:
+            _refresh_generated_note(vault, batch, title, existing, existing)
+        unresolved = sum(trace["location"]["page"] is None for trace in existing)
+        return ({"batch_id": batch["id"], "status": "partial",
+                 "traces": len(existing), "unresolved_pages": unresolved,
+                 "note": str(vault / "2Area" / "40 学习与阅读" / "阅读笔记" / f"{title}.md")
+                 if vault else None} if unresolved else
+                {"batch_id": batch["id"], "status": "unchanged"})
+    snapshot = root / "reconciliations" / f"{batch['id']}.json"
+    if notified:
+        if snapshot.exists():
+            old_traces = json.loads(snapshot.read_text(encoding="utf-8"))
+        else:
+            old_traces = [trace for trace in _current(lib, owner, "ReadingTrace")
                           if trace["status"] == "active" and
-                          trace["source"]["capture_id"] in batch["capture_ids"]]
-                if any(trace["location"]["page"] is None for trace in traces):
-                    raise LibrarianError("NEEDS_PAGE_RESOLUTION", "a marked page lacks a visible page number")
-                if notified:
-                    note = _refresh_generated_note(vault, batch, title, old_traces, traces)
-                    _notify_correction(root, batch, note, len(traces))
-                    snapshot.unlink(missing_ok=True)
-                else:
-                    note = _export(lib, owner, batch, title, vault)
-                    _notify(root, batch, note, len(traces))
-                results.append({"batch_id": batch["id"], "traces": len(traces),
-                                "note": str(note)})
-        return results
+                          trace["source"].get("capture_id") in batch["capture_ids"]]
+            _atomic_write(snapshot, json.dumps(old_traces, ensure_ascii=False).encode())
+    for capture_id in batch["capture_ids"]:
+        try:
+            process_capture(lib, owner, capture_id, extractor,
+                            extractor_version=version)
+        except LibrarianError as error:
+            if error.code != "RECONCILIATION_REQUIRED":
+                raise
+            reconcile_extraction(lib, owner, capture_id, version)
+    traces = [trace for trace in _current(lib, owner, "ReadingTrace")
+              if trace["status"] == "active" and
+              trace["source"].get("capture_id") in batch["capture_ids"]]
+    if not match:
+        work_ids = {trace["work_id"] for trace in traces if trace["work_id"]}
+        if len(work_ids) == 1:
+            title = lib.get(owner, "Work", next(iter(work_ids)))["title"]
+    if not vault:
+        unresolved = sum(trace["location"]["page"] is None for trace in traces)
+        return {"batch_id": batch["id"],
+                "status": "partial" if not match or unresolved or not traces else "processed",
+                "traces": len(traces), "unresolved_pages": unresolved,
+                "vault_status": "unconfigured",
+                "issues": (["NEEDS_BOOK_RESOLUTION"] if not match else []) +
+                          (["NEEDS_PAGE_RESOLUTION"] if unresolved else []) +
+                          (["NO_MARKS"] if not traces else [])}
+    if not traces:
+        return {"batch_id": batch["id"], "status": "partial", "traces": 0,
+                "code": "NO_MARKS"}
+    if title == "待确认书籍":
+        return {"batch_id": batch["id"], "status": "partial", "traces": len(traces),
+                "code": "NEEDS_BOOK_RESOLUTION"}
+    if notified:
+        note = _refresh_generated_note(vault, batch, title, old_traces, traces)
+        _notify_correction(root, batch, note, len(traces))
+        snapshot.unlink(missing_ok=True)
+    else:
+        note = _export(lib, owner, batch, title, vault)
+        _notify(root, batch, note, len(traces))
+    unresolved = sum(trace["location"]["page"] is None for trace in traces)
+    return {"batch_id": batch["id"],
+            "status": "partial" if unresolved else "processed", "traces": len(traces),
+            "unresolved_pages": unresolved, "note": str(note)}
+
+
+def run(root: Path, vault: Path | None, owner: str, *,
+        vision_model: str = "zai/glm-5.3-flash",
+        koodo: tuple[str, Path, Path] | None = None,
+        weread: tuple[str, Path, list[str]] | None = None,
+        physical_only: bool = False, digital_only: bool = False) -> list[dict]:
+    if physical_only and digital_only:
+        raise ValueError("worker modes are mutually exclusive")
+    root.mkdir(parents=True, exist_ok=True)
+    results = []
+    if not digital_only:
+        with (root / "physical-worker.lock").open("w") as lock:
+            try:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                results.append({"source": "physical", "status": "already_running"})
+            else:
+                with Library(root) as lib:
+                    _repair_legacy_auto_affinity(lib, owner)
+                    for batch in _current(lib, owner, "CaptureBatch"):
+                        if batch["origin"]["transport"] != "feishu":
+                            continue
+                        status_file = root / "batch-status" / f"{batch['id']}.json"
+                        try:
+                            outcome = _process_batch(lib, root, vault, owner, batch, vision_model)
+                            if outcome["status"] != "unchanged":
+                                _atomic_write(status_file, json.dumps({"at": _now(), **outcome}).encode())
+                                results.append(outcome)
+                        except Exception as error:
+                            outcome = {"batch_id": batch["id"], "status": "error",
+                                       "code": error.code if isinstance(error, LibrarianError) else "WORKER_FAILED"}
+                            _atomic_write(status_file, json.dumps({"at": _now(), **outcome}).encode())
+                            results.append(outcome)
+    if not physical_only and (koodo or weread):
+        with (root / "digital-worker.lock").open("w") as lock:
+            try:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                results.append({"source": "digital", "status": "already_running"})
+            else:
+                with Library(root) as lib:
+                    results.extend(_sync_digital(lib, root, owner, koodo=koodo, weread=weread))
+    return results
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--root", type=Path, required=True)
-    parser.add_argument("--vault", type=Path, required=True)
+    parser.add_argument("--vault", type=Path)
     parser.add_argument("--owner", required=True)
+    parser.add_argument("--vision-model", default="zai/glm-5.3-flash")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--physical-only", action="store_true")
+    mode.add_argument("--digital-only", action="store_true")
     parser.add_argument("--koodo-source-id")
     parser.add_argument("--koodo-books-db", type=Path)
     parser.add_argument("--koodo-notes-db", type=Path)
@@ -429,9 +626,10 @@ def main() -> None:
         parser.error("Koodo source ID and both database paths are required together")
     if (any(value is not None for value in weread_args[:2]) or weread_args[2]) and not all(weread_args):
         parser.error("WeRead source ID, plugin data and book IDs are required together")
-    print(json.dumps(run(args.root, args.vault, args.owner,
+    print(json.dumps(run(args.root, args.vault, args.owner, vision_model=args.vision_model,
                          koodo=koodo_args if all(koodo_args) else None,
-                         weread=weread_args if all(weread_args) else None),
+                         weread=weread_args if all(weread_args) else None,
+                         physical_only=args.physical_only, digital_only=args.digital_only),
                      ensure_ascii=False))
 
 

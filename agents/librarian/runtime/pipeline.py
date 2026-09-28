@@ -157,7 +157,9 @@ def process_capture(lib: Library, owner_id: str, capture_id: str,
     completed = [run for run in runs if run["outcome"] in {"success", "partial"}]
     for run in completed:
         if run["extractor_version"] == extractor_version and run["normalizer_version"] == normalizer_version:
-            return _traces_for_capture(lib, owner_id, capture_id)
+            traces = _traces_for_capture(lib, owner_id, capture_id)
+            _repair_trace_index_best_effort(lib, owner_id)
+            return traces
     if any(run["outcome"] == "pending" and "RECONCILIATION_REQUIRED" in run["issues"]
            and run["extractor_version"] == extractor_version
            and run["normalizer_version"] == normalizer_version for run in runs):
@@ -350,7 +352,6 @@ def process_capture(lib: Library, owner_id: str, capture_id: str,
                        (owner_id, capture_id, run_id, _json(raw_asset), "success", None))
         for trace in traces:
             lib._put(trace)
-            _index_trace(lib, trace)
             lib._event(owner_id, "reading.trace.created", "reading_trace", trace["id"], 1,
                        {"trace_id": trace["id"], "revision": 1, "medium": "physical",
                         "book_instance_id": trace["book_instance_id"]}, run_id)
@@ -365,6 +366,7 @@ def process_capture(lib: Library, owner_id: str, capture_id: str,
                     "outcome": run["outcome"], "trace_refs":
                     [{"trace_id": t["id"], "revision": 1} for t in traces],
                     "issues": run["issues"]}, run_id)
+    _project_trace_index_best_effort(lib, traces)
     return traces
 
 
@@ -489,6 +491,46 @@ def _index_trace(lib: Library, trace: dict[str, Any]) -> None:
                     _json(trace["trace_types"])))
 
 
+def _project_trace_index_best_effort(lib: Library, traces: list[dict[str, Any]]) -> None:
+    """Keep durable trace/outbox commits independent of the rebuildable index."""
+    try:
+        with lib.transaction():
+            for trace in traces:
+                if trace["status"] == "active":
+                    _index_trace(lib, trace)
+    except Exception:
+        # SearchResponse reports index_state=lagging. The next worker retry
+        # projects these stored traces without rerunning the extractor.
+        pass
+
+
+def _project_reconciled_index_best_effort(lib: Library, owner_id: str,
+                                          old_traces: list[dict[str, Any]],
+                                          new_traces: list[dict[str, Any]]) -> None:
+    try:
+        with lib.transaction():
+            for trace in old_traces:
+                lib.db.execute("DELETE FROM trace_index WHERE owner_id=? AND trace_id=?",
+                               (owner_id, trace["id"]))
+            for trace in new_traces:
+                _index_trace(lib, trace)
+    except Exception:
+        pass
+
+
+def _repair_trace_index_best_effort(lib: Library, owner_id: str) -> None:
+    try:
+        active = {(row["id"], row["revision"]) for row in lib.db.execute(
+            "SELECT id,revision FROM records WHERE owner_id=? AND model='ReadingTrace' "
+            "AND current=1 AND json_extract(body,'$.status')='active'", (owner_id,))}
+        indexed = {(row["trace_id"], row["revision"]) for row in lib.db.execute(
+            "SELECT trace_id,revision FROM trace_index WHERE owner_id=?", (owner_id,))}
+        if active != indexed:
+            rebuild_index(lib, owner_id)
+    except Exception:
+        pass
+
+
 def _traces_for_capture(lib: Library, owner_id: str, capture_id: str) -> list[dict[str, Any]]:
     rows = lib.db.execute("SELECT body FROM records WHERE owner_id=? AND model='ReadingTrace' AND current=1 ORDER BY rowid",
                           (owner_id,)).fetchall()
@@ -530,6 +572,8 @@ def reconcile_extraction(lib: Library, owner_id: str, capture_id: str,
                          (owner_id, capture_id)).fetchone()
     if row is None:
         raise LibrarianError("RECONCILIATION_REQUIRED", "capture resolution missing")
+    if run["normalizer_version"] != "physical-v1":
+        raise LibrarianError("RECONCILIATION_REQUIRED", "normalizer configuration requires explicit reconciliation")
     prior = json.loads(row["body"])
     resolution = json.loads(_json(prior))
     resolution.update({"created_at": _now(), "pages": observation["pages"],
@@ -539,6 +583,28 @@ def reconcile_extraction(lib: Library, owner_id: str, capture_id: str,
     state = "resolved" if all(resolution[key]["value"] for key in
                               ("session", "work", "edition", "book_instance")) else "unresolved"
     traces = normalize(capture, observation, resolution, state, run["normalizer_version"])
+    def groups(items: list[dict[str, Any]], mark_ids: set[str]) -> list[tuple[str, ...]]:
+        return sorted(tuple(sorted(set(item["source"]["detection_ids"]) & mark_ids))
+                      for item in items)
+
+    old_mark_ids = set()
+    for trace in old_traces:
+        source_observation = lib.get(owner_id, "PageObservation", trace["source"]["observation_id"])
+        old_mark_ids.update(item["id"] for item in
+                            source_observation["marks"] + source_observation["annotations"] +
+                            source_observation["symbols"])
+    new_mark_ids = {item["id"] for item in observation["marks"] +
+                    observation["annotations"] + observation["symbols"]}
+    old_groups = [set(group) for group in groups(old_traces, old_mark_ids)]
+    new_groups = [set(group) for group in groups(traces, new_mark_ids)]
+    # A single group may gain newly detected ink. A split, merge, loss, or
+    # replacement cannot be mapped without a person's review.
+    if (len(old_groups) != len(new_groups) or
+            any(len([group for group in new_groups if old <= group]) != 1
+                for old in old_groups) or
+            any(len([old for old in old_groups if old <= new]) != 1
+                for new in new_groups)):
+        raise LibrarianError("RECONCILIATION_REQUIRED", "mark grouping changed between extractions")
     revised_run = json.loads(_json(run))
     revised_run.update({"created_at": _now(), "checkpoint": "NORMALIZED",
                         "outcome": "success" if state == "resolved" and
@@ -555,6 +621,18 @@ def reconcile_extraction(lib: Library, owner_id: str, capture_id: str,
         revised_run["outcome"] = "partial"
     validate("ProcessingRun", revised_run)
     with lib.transaction():
+        current = _traces_for_capture(lib, owner_id, capture_id)
+        if {(item["id"], item["revision"]) for item in current} != {
+                (item["id"], item["revision"]) for item in old_traces}:
+            raise LibrarianError("REVISION_CONFLICT", "current traces changed during reconciliation")
+        source_refs = {(item["id"], item["revision"]) for item in old_traces}
+        for row in lib.db.execute("SELECT body FROM records WHERE owner_id=? "
+                                  "AND model='KnowledgeCandidate' AND current=1", (owner_id,)):
+            candidate = json.loads(row["body"])
+            if candidate["status"] in {"pending", "approved", "promoted"} and any(
+                    (ref["trace_id"], ref["revision"]) in source_refs
+                    for ref in candidate["source_trace_refs"]):
+                raise LibrarianError("RECONCILIATION_REQUIRED", "knowledge candidate depends on current trace")
         lib._put(resolution)
         for trace in old_traces:
             superseded = json.loads(_json(trace))
@@ -562,8 +640,6 @@ def reconcile_extraction(lib: Library, owner_id: str, capture_id: str,
                                "revision": trace["revision"] + 1,
                                "supersedes_revision": trace["revision"]})
             lib._put(superseded)
-            lib.db.execute("DELETE FROM trace_index WHERE owner_id=? AND trace_id=?",
-                           (owner_id, trace["id"]))
             lib._event(owner_id, "reading.trace.corrected", "reading_trace", trace["id"],
                        superseded["revision"], {"trace_id": trace["id"],
                        "previous_revision": trace["revision"],
@@ -571,7 +647,6 @@ def reconcile_extraction(lib: Library, owner_id: str, capture_id: str,
                        "reason": "extractor reconciliation"}, run["id"])
         for trace in traces:
             lib._put(trace)
-            _index_trace(lib, trace)
             lib._event(owner_id, "reading.trace.created", "reading_trace", trace["id"], 1,
                        {"trace_id": trace["id"], "revision": 1, "medium": "physical",
                         "book_instance_id": trace["book_instance_id"]}, run["id"])
@@ -584,6 +659,7 @@ def reconcile_extraction(lib: Library, owner_id: str, capture_id: str,
                    "processing_run_id": run["id"], "outcome": revised_run["outcome"],
                    "trace_refs": [{"trace_id": item["id"], "revision": 1} for item in traces],
                    "issues": revised_run["issues"]}, run["id"])
+    _project_reconciled_index_best_effort(lib, owner_id, old_traces, traces)
     return traces
 
 
@@ -798,7 +874,7 @@ def search(lib: Library, owner_id: str, query: str, *, include_unresolved: bool 
     if not owner_id or not query.strip() or not 1 <= limit <= 100:
         raise LibrarianError("VALIDATION_FAILED", "owner, query and limit required")
     escaped = query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-    rows = lib.db.execute("SELECT trace_id,revision FROM trace_index WHERE owner_id=? AND (? OR context_state='resolved') AND (? IS NULL OR work_id=?) AND (printed_text LIKE ? ESCAPE '\\' OR annotation LIKE ? ESCAPE '\\') ORDER BY rowid DESC LIMIT ?",
+    rows = lib.db.execute("SELECT trace_id,revision FROM trace_index WHERE owner_id=? AND (? OR context_state='resolved') AND (? IS NULL OR work_id=?) AND (printed_text LIKE ? ESCAPE '\\' OR annotation LIKE ? ESCAPE '\\') AND EXISTS (SELECT 1 FROM records r WHERE r.owner_id=trace_index.owner_id AND r.model='ReadingTrace' AND r.id=trace_index.trace_id AND r.revision=trace_index.revision AND r.current=1 AND json_extract(r.body,'$.status')='active') ORDER BY rowid DESC LIMIT ?",
                           (owner_id, include_unresolved, work_id, work_id,
                            f"%{escaped}%", f"%{escaped}%", limit)).fetchall()
     return [lib.get(owner_id, "ReadingTrace", row["trace_id"]) for row in rows]
@@ -814,7 +890,7 @@ def search_response(lib: Library, request: dict[str, Any], *, trusted_owner_id: 
     if cursor is not None and (not cursor.isdecimal() or int(cursor) > 1_000_000):
         raise LibrarianError("VALIDATION_FAILED", "invalid search cursor")
     offset = int(cursor or 0)
-    terms = ["owner_id=?"]
+    terms = ["owner_id=?", "EXISTS (SELECT 1 FROM records r WHERE r.owner_id=trace_index.owner_id AND r.model='ReadingTrace' AND r.id=trace_index.trace_id AND r.revision=trace_index.revision AND r.current=1 AND json_extract(r.body,'$.status')='active')"]
     params: list[Any] = [trusted_owner_id]
     lexical = bool(request["query"].strip())
     if lexical:
