@@ -104,6 +104,41 @@ def test_initial_index_failure_preserves_observation_and_retries_projection(tmp_
         assert lib.db.execute("SELECT COUNT(*) FROM trace_index").fetchone()[0] == 2
 
 
+def test_index_failure_recovers_after_reopen_without_reextracting(tmp_path: Path,
+                                                                  monkeypatch) -> None:
+    from agents.librarian.runtime import pipeline
+
+    with Library(tmp_path) as lib:
+        receipt = lib.ingest("owner_a", transport="gateway", account_id="account",
+                             conversation_id="chat", source_event_id="message-1",
+                             attachments=[{"source_item_id": "image-1", "mime_type": "image/png",
+                                           "data": _photo()}], idempotency_key="command-1")
+        capture_id = receipt["capture_ids"][0]
+        real_index = pipeline._index_trace
+        monkeypatch.setattr(pipeline, "_index_trace", lambda *_: (_ for _ in ()).throw(
+            RuntimeError("index unavailable")))
+        traces = process_capture(lib, "owner_a", capture_id, lambda _: _output())
+        event_ids = [row[0] for row in lib.db.execute(
+            "SELECT event_id FROM outbox WHERE owner_id='owner_a' ORDER BY rowid")]
+        assert len(traces) == 2
+        assert len(event_ids) >= 3
+    monkeypatch.setattr(pipeline, "_index_trace", real_index)
+    with Library(tmp_path) as lib:
+        request = {"owner_id": "owner_a", "query": "Weber",
+                   "filters": {"work_id": None, "edition_id": None,
+                               "book_instance_id": None, "session_id": None,
+                               "medium": None, "trace_types": [],
+                               "include_unresolved": True},
+                   "limit": 10, "cursor": None}
+        assert search_response(lib, request, trusted_owner_id="owner_a")["index_state"] == "lagging"
+        recovered = process_capture(lib, "owner_a", capture_id,
+                                    lambda _: pytest.fail("extractor reran after restart"))
+        assert [item["id"] for item in recovered] == [item["id"] for item in traces]
+        assert search_response(lib, request, trusted_owner_id="owner_a")["index_state"] == "ready"
+        assert [row[0] for row in lib.db.execute(
+            "SELECT event_id FROM outbox WHERE owner_id='owner_a' ORDER BY rowid")] == event_ids
+
+
 def test_reconciliation_index_failure_never_serves_superseded_trace(tmp_path: Path,
                                                                      monkeypatch) -> None:
     from agents.librarian.runtime import pipeline

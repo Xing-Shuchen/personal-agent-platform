@@ -10,8 +10,9 @@ import tempfile
 import time
 from pathlib import Path
 
-from PIL import Image, ImageOps
+from PIL import Image
 
+from .pipeline import render_trace_crop
 from .store import Library, LibrarianError
 
 MAX_INPUT_BYTES = 8192
@@ -23,26 +24,9 @@ def prepare_evidence(lib: Library, owner: str, trace_id: str, directory: Path) -
     trace = lib.get(owner, "ReadingTrace", trace_id)
     if trace.get("medium") != "physical" or trace.get("location", {}).get("kind") != "physical":
         raise LibrarianError("VALIDATION_FAILED", "photo evidence requires a physical trace")
-    original, _ = lib.read_trace_evidence(owner, trace_id)
-    bbox = trace["location"]["bbox"]
-    if (not isinstance(bbox, list) or len(bbox) != 4 or
-            any(not isinstance(value, (int, float)) or isinstance(value, bool) or
-                not 0 <= value <= 1 for value in bbox) or
-            bbox[0] >= bbox[2] or bbox[1] >= bbox[3]):
-        raise LibrarianError("VALIDATION_FAILED", "trace has invalid evidence bounds")
-    with Image.open(io.BytesIO(original)) as source:
-        image = ImageOps.exif_transpose(source).convert("RGB")
-        width, height = image.size
-        x1, y1, x2, y2 = bbox
-        pad_x = max(.07, (x2 - x1) * .4)
-        pad_y = max(.06, (y2 - y1) * .7)
-        left = max(0, int((x1 - pad_x) * width))
-        top = max(0, int((y1 - pad_y) * height))
-        right = min(width, int((x2 + pad_x) * width))
-        bottom = min(height, int((y2 + pad_y) * height))
-        if right <= left or bottom <= top:
-            raise LibrarianError("VALIDATION_FAILED", "trace has invalid evidence bounds")
-        crop = image.crop((left, top, right, bottom))
+    crop_bytes = render_trace_crop(lib, owner, trace_id, context=.2)
+    with Image.open(io.BytesIO(crop_bytes)) as source:
+        crop = source.convert("RGB")
         crop.thumbnail((2200, 2200))
         directory.mkdir(parents=True, exist_ok=True, mode=0o700)
         for old in directory.glob("evidence-*.jpg"):

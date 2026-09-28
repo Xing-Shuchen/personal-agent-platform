@@ -25,7 +25,7 @@ from xml.etree import ElementTree as ET
 from PIL import Image, ImageOps
 
 from .ocr import ocr_extractor, openclaw_note_refiner
-from .pipeline import process_capture, reconcile_extraction
+from .pipeline import process_capture, reconcile_extraction, _repair_trace_index_best_effort
 from .vision import openclaw_extractor
 from .store import Library, LibrarianError, _now, _unknown_time
 from .koodo_native import sync_koodo_sqlite
@@ -796,6 +796,7 @@ def run(root: Path, vault: Path | None, owner: str, *,
             else:
                 with Library(root) as lib:
                     _repair_legacy_auto_affinity(lib, owner)
+                    _repair_trace_index_best_effort(lib, owner)
                     for batch in _processing_batches(_current(lib, owner, "CaptureBatch")):
                         if batch["origin"]["transport"] != "feishu":
                             continue

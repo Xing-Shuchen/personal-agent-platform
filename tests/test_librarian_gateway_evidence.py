@@ -17,12 +17,12 @@ def test_prepare_evidence_crops_original_in_private_delivery_dir(tmp_path: Path)
         def get(self, owner, model, trace_id):
             assert (owner, model, trace_id) == ("owner", "ReadingTrace", "rt_one")
             return {"medium": "physical", "location": {"kind": "physical",
-                    "bbox": [.3, .4, .7, .5]},
+                    "bbox": [.3, .4, .7, .5], "page_bbox": [0, 0, .8, 1]},
                     "source": {"capture_id": "capture_one"}}
 
-        def read_trace_evidence(self, owner, trace_id):
-            assert (owner, trace_id) == ("owner", "rt_one")
-            return source.getvalue(), "image/png"
+        def read_original(self, owner, capture_id):
+            assert (owner, capture_id) == ("owner", "capture_one")
+            return source.getvalue()
 
     result = prepare_evidence(FakeLibrary(), "owner", "rt_one", tmp_path / "delivery-evidence")
     media = Path(result["media_path"])
@@ -30,7 +30,7 @@ def test_prepare_evidence_crops_original_in_private_delivery_dir(tmp_path: Path)
     assert result["capture_id"] == "capture_one"
     assert media.stat().st_mode & 0o777 == 0o600
     with Image.open(media) as crop:
-        assert crop.width < 1000 and crop.height < 800
+        assert crop.width < 800 and crop.height < 800
     assert source.getvalue().startswith(b"\x89PNG")
 
 

@@ -80,3 +80,33 @@ def test_failed_consumer_handler_does_not_advance_cursor(tmp_path: Path):
         wrong = {**message, "aggregate": {**message["aggregate"], "id": "another-session"}}
         with pytest.raises(LibrarianError, match="aggregate and payload disagree"):
             validate("Event", wrong)
+
+
+def test_trace_index_consumer_failure_retries_same_event_after_reopen(tmp_path: Path,
+                                                                     monkeypatch) -> None:
+    from agents.librarian.runtime import events
+
+    with Library(tmp_path) as lib:
+        trace = ingest_export(lib, "owner_a", "weread", "export.md", EXPORT)[0]
+        event = next(item for item in lib.pending_events("owner_a")
+                     if item["event"] == "reading.trace.created")
+        lib.db.execute("DELETE FROM trace_index WHERE owner_id=? AND trace_id=?",
+                       ("owner_a", trace["id"]))
+        lib.db.commit()
+        real_index = events._index_trace
+        monkeypatch.setattr(events, "_index_trace", lambda *_: (_ for _ in ()).throw(
+            RuntimeError("index unavailable")))
+        with pytest.raises(RuntimeError, match="index unavailable"):
+            consume_event(lib, "search-v2", event, trusted_owner_id="owner_a",
+                          handler=lambda item: project_trace_event(lib, item))
+        assert lib.db.execute("SELECT COUNT(*) FROM consumer_events WHERE event_id=?",
+                              (event["event_id"],)).fetchone()[0] == 0
+    monkeypatch.setattr(events, "_index_trace", real_index)
+    with Library(tmp_path) as lib:
+        assert consume_event(lib, "search-v2", event, trusted_owner_id="owner_a",
+                             handler=lambda item: project_trace_event(lib, item))
+        assert not consume_event(lib, "search-v2", event, trusted_owner_id="owner_a",
+                                 handler=lambda item: project_trace_event(lib, item))
+        indexed = lib.db.execute("SELECT revision FROM trace_index WHERE trace_id=?",
+                                 (trace["id"],)).fetchone()
+        assert indexed["revision"] == trace["revision"]

@@ -240,3 +240,5 @@ M0：基础已具备，F08 修复并经故障恢复验证后再称验收完成�
 F06 后续增量：worker 现将模型不可用、提取格式错误及未分类 worker 失败写为脱敏批次状态，持久化 `retry_attempts`、`next_retry_at` 和 `retry_exhausted`。同一批最多自动尝试三次，间隔先后为 5 分钟和 30 分钟；Gateway 重启后仍遵守状态，成功后清零。坏批次与其他批次隔离、物理与数字 worker 分锁已有本地测试；新增退避和成功复位测试通过。未验项目仍有真实慢源/重启恢复及反复 timer 触发下的进程数量上界，故 F06 暂不关闭。
 
 授权原图取证入口后续增量：新增 `librarian_evidence`，只在受信发送者、账户、频道和当前路由匹配且 Gateway 提供绑定投送能力时暴露。桥接按 owner 读取 physical trace 的不可变原图证据，在私有目录生成短期局部 JPEG；投送后删除，Vault 不存图。插件能力已重新登记、工具白名单已更新、Gateway 重启后 active。本地插件投送替身及真实对象库的只读取图成功；**飞书真实消息投送尚未验收**，所以该集成缺口仍为局部完成。
+
+F08 后续验证：索引 insert 故障后，PageObservation、ProcessingRun、ReadingTrace 和稳定 outbox event 已提交；重开数据库显示 `index_state=lagging`，复用已有 run 补建索引时 extractor 不再调用且 event ID 不变。真实 trace 事件消费者写索引失败时 dedup 游标不前进，重启后用同一事件恢复。worker 启动恢复现在也检查并补建缺失索引，即使没有新照片也能修复数字 trace 投影。上述为本地故障注入与恢复证据；真实 Gateway 重启和外部事件投递仍需观察，F08 的本地缺陷已修，整体放行仍未完成。

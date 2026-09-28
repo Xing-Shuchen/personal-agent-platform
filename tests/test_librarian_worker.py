@@ -286,6 +286,31 @@ def test_physical_processing_is_independent_of_slow_digital_sync(tmp_path: Path,
     assert seen == ["digital"]
 
 
+def test_worker_recovers_lagging_index_without_a_new_photo(tmp_path: Path) -> None:
+    from agents.librarian.runtime import worker
+    from agents.librarian.runtime.digital import ingest_export
+
+    state = tmp_path / "state"
+    export = '''---
+bookId: "book-1"
+---
+> [!abstract] Test book
+# 高亮划线
+## One
+> 📌 Weber and Parsons
+> ⏱ 2024-01-01 12:00:00 ^book-1-mark-1
+'''.encode()
+    with Library(state) as lib:
+        trace = ingest_export(lib, "owner", "weread", "export.md", export)[0]
+        lib.db.execute("DELETE FROM trace_index WHERE owner_id='owner'")
+        lib.db.commit()
+    assert worker.run(state, None, "owner", physical_only=True) == []
+    with Library(state) as lib:
+        row = lib.db.execute("SELECT revision FROM trace_index WHERE owner_id='owner' AND trace_id=?",
+                             (trace["id"],)).fetchone()
+        assert row["revision"] == trace["revision"]
+
+
 def test_physical_note_uses_weread_layout_and_upgrades_unchanged_legacy(tmp_path: Path) -> None:
     batch = {"id": "batch_fixture", "isbn": "9787208171411"}
     trace = {"id": "rt_fixture", "revision": 1,
