@@ -93,6 +93,7 @@ def test_invalid_extraction_keeps_raw_output_without_trace(tmp_path: Path):
         with pytest.raises(LibrarianError) as err:
             process_capture(lib, "owner_a", receipt["capture_ids"][0], lambda _: b"{broken")
         assert err.value.code == "EXTRACTION_SCHEMA_INVALID"
+        assert review_queues(lib, "owner_a") == {"resolution": [], "content": []}
         row = lib.db.execute("SELECT raw_asset,error_code FROM extractor_attempts").fetchone()
         assert row["error_code"] == "EXTRACTION_SCHEMA_INVALID"
         ref = json.loads(row["raw_asset"])

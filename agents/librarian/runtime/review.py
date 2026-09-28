@@ -31,7 +31,8 @@ def review_queues(lib: Library, owner_id: str, *, limit: int = 100) -> dict[str,
             case "CaptureResolution":
                 resolutions[record["capture_id"]] = record
             case "ProcessingRun":
-                runs[record["capture_id"]] = record
+                if record["outcome"] in {"success", "partial"} or "CONTEXT_CONFLICT" in record["issues"]:
+                    runs[record["capture_id"]] = record
             case "ReadingTrace":
                 traces.append(record)
 
