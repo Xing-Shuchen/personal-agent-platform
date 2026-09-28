@@ -20,6 +20,9 @@ agents/*/profile/var/
 .env.*
 *.sqlite
 *.sqlite3
+*.sqlite-wal
+*.sqlite-shm
+/obsidian/world-historian-dashboard/node_modules/
 .DS_Store
 
 # Generated run artifacts

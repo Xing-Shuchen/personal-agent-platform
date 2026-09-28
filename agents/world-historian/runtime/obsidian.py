@@ -215,6 +215,19 @@ def render_snapshot(snapshot: dict[str, Any], synced_at: str,
         lines.append(f"- **实体**：{names}")
     lines.append("")
 
+    current_state = snapshot.get("current_state")
+    if current_state:
+        lines.append("# 当前状态\n")
+        lines.append(_escape_tags(str(current_state["body"])))
+        lines.append("")
+        lines.append(
+            f"- **来源类型**：`{current_state['provenance']}` · "
+            f"**更新**：{_fmt(current_state.get('updated_at'))}"
+        )
+        if current_state.get("revision"):
+            lines.append(f"- **修订**：`{current_state['revision']}`")
+        lines.append("")
+
     events = snapshot.get("events", [])
     labels = {e["id"]: _event_heading(e) for e in events}
     lines.append("# 时间线\n")

@@ -1,0 +1,121 @@
+import { JSDOM } from 'jsdom';
+import esbuild from 'esbuild';
+import { compile } from 'svelte/compiler';
+import { readFileSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
+import assert from 'node:assert/strict';
+
+const dom = new JSDOM('<!doctype html><div id="app"></div>', { url: 'http://localhost/' });
+for (const key of ['window', 'document', 'navigator', 'Element', 'HTMLElement', 'HTMLInputElement', 'HTMLSelectElement', 'HTMLTextAreaElement', 'Node', 'Text', 'Comment', 'Document', 'SVGElement', 'MutationObserver', 'getComputedStyle']) {
+  Object.defineProperty(globalThis, key, { configurable: true, value: key === 'getComputedStyle' ? dom.window.getComputedStyle.bind(dom.window) : dom.window[key] });
+}
+for (const key of Object.getOwnPropertyNames(dom.window).filter(key => key.startsWith('HTML') || key.startsWith('SVG'))) {
+  if (!(key in globalThis)) Object.defineProperty(globalThis, key, { configurable: true, value: dom.window[key] });
+}
+globalThis.requestAnimationFrame = callback => setTimeout(callback, 0);
+globalThis.cancelAnimationFrame = clearTimeout;
+
+const directory = mkdtempSync(join(tmpdir(), 'wh-dashboard-smoke-'));
+try {
+  const output = join(directory, 'bundle.mjs');
+  await esbuild.build({ stdin: { contents: `import {mount,flushSync} from 'svelte'; import Dashboard from ${JSON.stringify(resolve('src/Dashboard.svelte'))}; import {Repository} from ${JSON.stringify(resolve('src/model.ts'))}; export {mount,flushSync,Dashboard,Repository};`, resolveDir: process.cwd(), sourcefile: 'entry.js' }, outfile: output, bundle: true, platform: 'node', conditions: ['browser'], format: 'esm', target: 'es2022', plugins: [{ name: 'svelte', setup(build) { build.onLoad({ filter: /\.svelte$/ }, ({ path }) => ({ contents: compile(readFileSync(path, 'utf8'), { filename: path, generate: 'client', css: 'injected' }).js.code, loader: 'js' })); } }] });
+  const { mount, flushSync, Dashboard, Repository } = await import(output);
+  const repo = new Repository(process.argv[2]);
+  const lazyThread = repo.thread(repo.threads[0].thread_id);
+  assert.ok(lazyThread.event_summaries?.length > 0);
+  assert.equal(repo.loadedPartitions.size, 0, 'Thread detail should not load global timeline partitions');
+  const fallback=join(directory,'fallback');
+  const {mkdirSync}=await import('node:fs');mkdirSync(fallback);
+  symlinkSync(resolve(process.argv[2], 'generations'),join(fallback,'generations'));
+  writeFileSync(join(fallback,'CURRENT'),'invalid-generation\n');
+  assert.ok(Repository.open(fallback).warning.includes('Current generation invalid'));
+  mount(Dashboard, { target: document.getElementById('app'), props: { repository: repo, error: '', refresh: () => {}, openNote: () => {}, openCanonical: () => {}, settings: () => {} } });
+  flushSync();
+  assert.match(document.body.textContent, /World Historian/);
+  assert.match(document.body.textContent, /Recently Changed/);
+  assert.ok(document.querySelectorAll('.wh-row').length > 0);
+  assert.equal(repo._timeline, undefined, 'Threads first render should not load the timeline');
+  assert.equal(repo.graphBuckets.size, 0, 'Threads first render should not load graph adjacency');
+  document.querySelector('.wh-app').focus();
+  document.querySelector('.wh-app').dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'/',bubbles:true}));flushSync();
+  assert.equal(document.activeElement,document.querySelector('.wh-search input'));
+  const search = document.querySelector('.wh-search input');
+  search.focus(); search.value = repo.threads[0].title;
+  search.dispatchEvent(new dom.window.Event('input', { bubbles: true })); flushSync();
+  assert.ok(document.querySelectorAll('.wh-search-results button').length > 0);
+  document.querySelector('.wh-search-results button').dispatchEvent(new dom.window.MouseEvent('mousedown',{bubbles:true}));flushSync();
+  assert.ok(document.querySelector('.wh-detail'));
+  [...document.querySelectorAll('nav button')].find(button=>button.textContent==='Threads').click();flushSync();
+  search.value = ''; search.dispatchEvent(new dom.window.Event('input', { bubbles: true })); flushSync();
+  document.querySelector('.wh-app').focus();
+  document.querySelector('.wh-app').dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'j',bubbles:true}));flushSync();
+  assert.ok(document.querySelector('.wh-inspector'));
+  document.querySelector('.wh-app').dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Escape',bubbles:true}));flushSync();
+  assert.equal(document.querySelector('.wh-inspector'),null);
+  document.querySelector('.wh-row').dispatchEvent(new dom.window.MouseEvent('dblclick', { bubbles: true })); flushSync();
+  assert.ok(document.body.textContent.includes('Current State'));
+  let detailLoads=0;const originalEvent=repo.event.bind(repo);repo.event=id=>{detailLoads++;return originalEvent(id)};
+  const threadTimeline = [...document.querySelectorAll('.wh-tabs button')].find(button => button.textContent === 'Timeline');
+  threadTimeline.click(); flushSync();
+  assert.ok(document.querySelectorAll('.wh-event-card').length > 0);
+  assert.equal(detailLoads,0,'collapsed Thread timeline should not read Claim and Source details');
+  document.querySelector('.wh-event-card details').open = true;
+  document.querySelector('.wh-event-card details').dispatchEvent(new dom.window.Event('toggle',{bubbles:false}));flushSync();
+  assert.ok(document.querySelectorAll('.wh-claim').length > 0);
+  assert.ok(detailLoads>0);
+  [...document.querySelectorAll('.wh-toolbar button')].find(button => button.textContent.startsWith('筛选')).click(); flushSync();
+  const threadFilter=[...document.querySelectorAll('.wh-filters label')].find(label=>label.textContent.startsWith('Thread')).querySelector('select');
+  threadFilter.value=repo.threads[0].thread_id;threadFilter.dispatchEvent(new dom.window.Event('change',{bubbles:true}));flushSync();
+  assert.ok(document.querySelector('.wh-scope').textContent.includes(repo.threads[0].title));
+  const timeline = [...document.querySelectorAll('nav button')].find(button => button.textContent === 'Timeline');
+  timeline.click(); flushSync();
+  assert.ok(document.querySelectorAll('.wh-timeline-row').length > 0);
+  const scopedLabel=document.querySelector('.wh-scope').textContent;
+  const mapScoped=[...document.querySelectorAll('nav button')].find(button=>button.textContent==='Map');mapScoped.click();flushSync();
+  assert.equal(document.querySelector('.wh-scope').textContent,scopedLabel);
+  const graphScoped=[...document.querySelectorAll('nav button')].find(button=>button.textContent==='Graph');graphScoped.click();flushSync();
+  assert.equal(document.querySelector('.wh-scope').textContent,scopedLabel);
+  [...document.querySelectorAll('.wh-toolbar button')].find(button=>button.textContent==='清除范围').click();flushSync();
+  const entities = [...document.querySelectorAll('nav button')].find(button => button.textContent === 'Entities');
+  entities.click(); flushSync();
+  assert.ok(document.querySelectorAll('.wh-entity-row').length > 0);
+  document.querySelector('.wh-entity-row').click(); flushSync();
+  assert.ok(document.body.textContent.includes('Event Activity'));
+  const map = [...document.querySelectorAll('nav button')].find(button => button.textContent === 'Map');
+  map.click(); flushSync();
+  assert.match(document.body.textContent, /没有已地理编码的 Event/);
+  const mapEvent=repo.timeline.find(event=>event.thread_ids.length);
+  const mockLocation={location_id:'smoke_location',name:'Test port',country_code:'XY',lat:12.5,lon:43.3,geo_precision:'city',event_ids:[mapEvent.event_id],thread_ids:mapEvent.thread_ids,canonical_source_ref:{kind:'fixture',id:'smoke_location'}};
+  const secondLocation={...mockLocation,location_id:'smoke_second',name:'Second port',lon:55};
+  for(const location of [mockLocation,secondLocation]){repo.locations.push(location);repo.locationById.set(location.location_id,location);mapEvent.location_ids.push(location.location_id)}
+  entities.click();flushSync();map.click();flushSync();
+  assert.equal(document.querySelectorAll('.wh-map-marker').length,1,'country locations cluster at low zoom');
+  document.querySelector('.wh-map-marker').dispatchEvent(new dom.window.MouseEvent('click',{bubbles:true}));flushSync();
+  assert.ok(document.body.textContent.includes('2 个地点'));
+  for(let i=0;i<3;i++){[...document.querySelectorAll('.wh-section-bar button')].find(button=>button.textContent==='＋').click();flushSync()}
+  assert.equal(document.querySelectorAll('.wh-map-marker').length,2,'high zoom separates locations');
+  [...document.querySelectorAll('.wh-inspector button')].find(button=>button.textContent==='在 Timeline 查看').click();flushSync();
+  assert.ok(document.querySelector('.wh-scope').textContent.includes('Test port'));
+  [...document.querySelectorAll('.wh-toolbar button')].find(button=>button.textContent==='清除范围').click();flushSync();
+  const graph = [...document.querySelectorAll('nav button')].find(button => button.textContent === 'Graph');
+  graph.click(); flushSync();
+  assert.ok(document.querySelectorAll('.wh-graph-node').length > 0);
+  assert.ok(document.querySelectorAll('.wh-graph-edge').length > 0);
+  const preset=document.querySelector('.wh-section-bar select');preset.value='Evidence chain';preset.dispatchEvent(new dom.window.Event('change',{bubbles:true}));flushSync();
+  assert.ok([...document.querySelectorAll('.wh-graph-node title')].some(title=>title.textContent.startsWith('claim:')));
+  assert.ok([...document.querySelectorAll('.wh-graph-node title')].some(title=>title.textContent.startsWith('source:')));
+  document.querySelector('.wh-graph-node').dispatchEvent(new dom.window.MouseEvent('click',{bubbles:true}));flushSync();
+  assert.ok(document.querySelector('.wh-inspector'));
+  [...document.querySelectorAll('.wh-inspector button')].find(button=>button.textContent==='展开邻居').click();flushSync();
+  repo.bucket=()=>{throw Error('corrupt fixture bucket')};
+  [...document.querySelectorAll('.wh-section-bar button')].find(button=>button.textContent==='重置布局').click();flushSync();
+  assert.match(document.body.textContent,/图索引无效/);
+  assert.equal(document.querySelectorAll('.wh-graph-node').length,0);
+  const staleTarget=document.createElement('div');document.body.append(staleTarget);
+  mount(Dashboard,{target:staleTarget,props:{repository:repo,error:'',stale:true,refresh:()=>{},openNote:()=>{},openCanonical:()=>{},settings:()=>{}}});flushSync();
+  assert.match(staleTarget.textContent,/Chronicle 数据比当前读模型更新/);
+  console.log('Dashboard smoke passed: Threads, Timeline, Entities, Map empty state, Graph');
+} finally {
+  rmSync(directory, { recursive: true, force: true });
+}

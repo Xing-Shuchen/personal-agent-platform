@@ -198,6 +198,46 @@ Schema migration 从 `agents/world-historian/runtime/migrations/` 顺序执行�
 - 同步索引位于 `var/world-historian/obsidian-index.json`（不进 git）。
 - 目标目录可用 `WORLD_HISTORIAN_VAULT_DIR` 覆盖，设为空字符串则完全关闭同步。
 
+### World Historian Dashboard（v0.7）
+
+仪表盘是 Obsidian 桌面版 `ItemView`，由 Chronicle SQLite 生成可删除、可重建的本地读模型。
+源库不会被投影器修改。插件源码和安装包位于 `obsidian/world-historian-dashboard/`。
+
+```bash
+python3 agents/world-historian/runtime/dashboard_projector.py \
+  --db docs/chronicle.sqlite \
+  --output var/world-historian/dashboard \
+  --vault "$HOME/documents/Obsidian/Second_Brain"
+cd obsidian/world-historian-dashboard
+npm ci
+npm run check
+npm run build
+```
+
+将 `manifest.json`、`main.js`、`styles.css` 复制到 Vault 的
+`.obsidian/plugins/world-historian-dashboard/`，在社区插件中启用，命令面板运行
+`World Historian Dashboard: Open dashboard`。设置页可配置源库、读模型、投影器和可选地点注册表。
+插件的刷新命令会调用本地 Python 投影器；发布新 generation 后以 `CURRENT` 指针原子切换。
+旧 generation 在失败时继续可用。新 generation 复用未变化文件，Graph 以节点哈希分片读取。
+可删除整个读模型目录并从 Chronicle 重建。命令行可用
+`--inspect-table events --inspect-id <event_id>` 只读查看规范记录。
+
+```bash
+python3 scripts/benchmark_world_dashboard.py --scale 1
+```
+
+此基准会在临时目录生成规格所列 1,000 Threads、100,000 Events、500,000 Claims、
+50,000 Entities 与 1,000,000 原始 Relations；不会触及真实 Chronicle。
+
+当前 Chronicle 快照没有规范化事件地点坐标，也没有独立的 Current State 综合记录。
+仪表盘会明确显示空状态；不会由 Entity 名称或 Source 出版者位置猜测发生地，
+也不会把最新 Event 摘要充当综合结论。可选地点注册表必须提供
+`location_id`、`name`、`lat`、`lon`、`geo_precision`、`canonical_source_ref`；
+只有 Chronicle 中显式的 `event → location`、`occurs_at` 关系才会把该地点显示在地图上。
+Current State 可由 bundle 的 `thread_states` 写入规范库，记录文本、生成/人工来源、
+来源引用和修订；仪表盘会提示晚于综合内容的 Event 变更。Vault Thread 笔记末尾的
+「手工批注」会以独立的人工来源区块显示，不会并入生成综合。
+
 PersonalLink 的隐私流向固定为：
 
 ```text

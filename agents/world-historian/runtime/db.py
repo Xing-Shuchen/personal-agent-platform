@@ -376,6 +376,28 @@ def store_bundle(conn: sqlite3.Connection, bundle: dict[str, Any]) -> dict[str, 
             ):
                 touched.add(row[0])
 
+        for item in _items(bundle, "thread_states"):
+            thread_id = resolve(_required(item, "thread_ref", "thread_state"), "thread_state.thread_ref")
+            body = str(_required(item, "text", "thread_state"))
+            provenance = item.get("provenance", "historian_generated")
+            if provenance not in {"historian_generated", "manual"}:
+                raise ChronicleError("thread_state.provenance must be historian_generated or manual")
+            source_refs = item.get("source_refs", [])
+            if not isinstance(source_refs, list):
+                raise ChronicleError("thread_state.source_refs must be a list")
+            source_refs = [resolve(ref, "thread_state.source_refs[]") if isinstance(ref, str) else ref for ref in source_refs]
+            conn.execute(
+                """INSERT INTO thread_current_states
+                   (thread_id, body, provenance, source_refs_json, revision, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(thread_id) DO UPDATE SET body=excluded.body,
+                     provenance=excluded.provenance, source_refs_json=excluded.source_refs_json,
+                     revision=excluded.revision, updated_at=excluded.updated_at""",
+                (thread_id, body, provenance, _json(source_refs, []), item.get("revision"), now),
+            )
+            touched.add(thread_id)
+            counts["thread_states"] = counts.get("thread_states", 0) + 1
+
         for item in _items(bundle, "quotes"):
             quote_text = str(_required(item, "quote_text", "quote"))
             summary = item.get("summary")
@@ -607,6 +629,8 @@ def thread_snapshot(conn: sqlite3.Connection, thread_id: str) -> dict[str, Any] 
     if row is None:
         return None
     snapshot: dict[str, Any] = dict(row)
+    state = conn.execute("SELECT * FROM thread_current_states WHERE thread_id = ?", (thread_id,)).fetchone()
+    snapshot["current_state"] = dict(state) if state else None
     snapshot["thread_entities"] = [dict(item) for item in conn.execute(
         """SELECT entities.name, entities.kind FROM thread_entities
            JOIN entities ON entities.id = thread_entities.entity_id
