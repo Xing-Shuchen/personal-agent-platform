@@ -32,6 +32,12 @@ trusted upload references, recheck bytes on retry, and allow user resolution
 before or after extraction. Knowledge candidate commands remain explicitly
 unimplemented.
 
+`gateway_bridge.py` accepts bounded staged image bytes over a trusted local
+stdin protocol and executes `reading.capture.ingest`. The linked OpenClaw
+plugin in `../openclaw-plugin/` maps a concrete channel/account/sender to an
+owner and forwards only staged `image/*` media with stable message/item IDs.
+It requires an explicit owner mapping before live capture intake.
+
 `events.py` publishes the transactional outbox with stable event IDs and
 deduplicates consumer handling in a local transaction. The trace projection
 uses the current trace revision so an older event cannot roll back the search

@@ -8,7 +8,7 @@ and validation report did not accompany the standalone file in this worktree.
 | Responsibility | Existing PAP component | Implementation boundary |
 |---|---|---|
 | Agent identity, profile, scheduling | `agents/*/agent.yaml`, `pap/spec.py`, `pap/scheduler.py` | Add a Librarian agent only when its invocation and delivery behavior are defined. |
-| Gateway invocation | `pap/run.py` invokes OpenClaw turns; no typed attachment acceptance API in PAP | A gateway bridge must provide stable source event/item IDs and trusted upload bytes. A text-only agent invocation cannot claim to accept photos. |
+| Gateway invocation | `pap/run.py` invokes OpenClaw turns; no typed attachment acceptance API in PAP | `agents/librarian/openclaw-plugin/` observes staged OpenClaw image media and sends stable source IDs and trusted bytes to `runtime/gateway_bridge.py`. Live intake requires an explicit sender-to-owner mapping and Gateway reload. |
 | Work, Edition, BookInstance, ReadingSession, capture, trace | None | Librarian-owned transactional state under `agents/librarian/runtime/`; runtime files under `var/librarian/`. |
 | Original image and raw model output | No general object store. `pap/artifact.py` is append-only JSONL without blob durability or access control | Add a Librarian-local content-addressed object port; persist bytes before a capture receipt. Do not put private images in Git or the shared artifact log. |
 | Domain events | `pap/artifact.py` and `paplog` are observability/inter-agent records, not transactional domain outboxes | Store domain outbox rows in the same SQLite transaction as trace/session changes. A publisher can bridge events later. |
@@ -39,3 +39,7 @@ their names cannot be compared to the unavailable source-design package. The ful
 M1 image acceptance test and M2 live adapter test cannot be claimed without
 those inputs. A synthetic extractor can verify persistence, normalization, and
 retrieval behavior, but cannot establish OCR or handwriting accuracy.
+
+The local OpenClaw intake plugin is installed and loads one `message_received`
+hook. Its owner mapping is currently empty, so no live sender is authorized
+for automatic image intake yet.

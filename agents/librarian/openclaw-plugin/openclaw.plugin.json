@@ -1,0 +1,30 @@
+{
+  "id": "pap-librarian-intake",
+  "name": "PAP Librarian Image Intake",
+  "description": "Accept staged inbound reading photos into the private Librarian store.",
+  "activation": {"onStartup": true},
+  "configSchema": {
+    "type": "object",
+    "properties": {
+      "repoRoot": {"type": "string", "minLength": 1},
+      "stateRoot": {"type": "string", "minLength": 1},
+      "python": {"type": "string", "minLength": 1},
+      "ownerMappings": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "channelId": {"type": "string", "minLength": 1},
+            "accountId": {"type": "string", "minLength": 1},
+            "senderId": {"type": "string", "minLength": 1},
+            "ownerId": {"type": "string", "minLength": 1}
+          },
+          "required": ["channelId", "accountId", "senderId", "ownerId"],
+          "additionalProperties": false
+        }
+      }
+    },
+    "required": ["repoRoot", "stateRoot", "ownerMappings"],
+    "additionalProperties": false
+  }
+}
