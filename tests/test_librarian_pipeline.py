@@ -117,6 +117,23 @@ def test_invalid_cross_page_link_is_rejected(tmp_path: Path):
         assert err.value.code == "EXTRACTION_SCHEMA_INVALID"
 
 
+def test_extractor_cannot_override_trusted_observation_identity(tmp_path: Path):
+    output = json.loads(_output())
+    output["owner_id"] = "owner_b"
+    output["raw_output_asset"] = {"object_key": "forged"}
+    with Library(tmp_path) as lib:
+        receipt = lib.ingest("owner_a", transport="gateway", account_id="a",
+                             conversation_id="c", source_event_id="m",
+                             attachments=[{"source_item_id": "i", "mime_type": "image/png",
+                                           "data": _photo()}], idempotency_key="k")
+        with pytest.raises(LibrarianError) as error:
+            process_capture(lib, "owner_a", receipt["capture_ids"][0],
+                            lambda _: json.dumps(output).encode())
+        assert error.value.code == "EXTRACTION_SCHEMA_INVALID"
+        assert lib.db.execute("SELECT COUNT(*) FROM records WHERE model='PageObservation'").fetchone()[0] == 0
+        assert lib.db.execute("SELECT COUNT(*) FROM records WHERE model='ReadingTrace'").fetchone()[0] == 0
+
+
 def test_structural_search_finds_a_mark_without_recognized_text(tmp_path: Path):
     output = json.loads(_output())
     output["printed_regions"] = []

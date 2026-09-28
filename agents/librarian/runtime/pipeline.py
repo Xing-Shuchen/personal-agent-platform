@@ -206,6 +206,10 @@ def process_capture(lib: Library, owner_id: str, capture_id: str,
         output = json.loads(raw)
         if not isinstance(output, dict):
             raise ValueError("root must be an object")
+        model_fields = {"image_space", "visible_title", "pages", "printed_regions",
+                        "marks", "annotations", "symbols", "links", "warnings"}
+        if not output.keys() <= model_fields:
+            raise ValueError("extractor returned application-owned fields")
         observation = {"object_type": "PageObservation", "schema_version": "0.1.0",
                        "id": _new("observation"), "owner_id": owner_id,
                        "created_at": _now(), "capture_id": capture_id,
