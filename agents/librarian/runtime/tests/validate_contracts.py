@@ -45,8 +45,21 @@ def _domain_links(cases: list[dict]) -> None:
                for key in batch["origin"])
     assert resolution["capture_id"] == run["capture_id"] == observation["capture_id"] == capture["id"]
     assert observation["processing_run_id"] == run["id"]
+    assert (trace["work_id"], trace["edition_id"], trace["book_instance_id"],
+            trace["session_id"]) == (work["id"], edition["id"], instance["id"], session["id"])
+    assert trace["source"]["capture_id"] == capture["id"]
+    assert trace["source"]["observation_id"] == observation["id"]
+    assert trace["source"]["resolution_id"] == resolution["id"]
+    assert trace["source"]["resolution_revision"] == resolution["revision"]
+    assert trace["location"]["page_region_id"] in {page["id"] for page in observation["pages"]}
+    detections = observation["printed_regions"] + observation["marks"] + observation["annotations"] + observation["symbols"]
+    assert set(trace["source"]["detection_ids"]) <= {item["id"] for item in detections}
+    assert trace["provenance"] == [capture["asset"], observation["raw_output_asset"]]
     assert candidate["source_trace_refs"] == [dict(trace_id=trace["id"], revision=trace["revision"])]
     assert relation["source_trace_ref"] == candidate["source_trace_refs"][0]
+    digital = {case["id"]: case["value"] for case in cases if case["id"] in {"trace-weread", "trace-koodo"}}
+    assert {value["medium"] for value in digital.values()} == {"weread", "koodo"}
+    assert relation["target"]["id"] == digital["trace-weread"]["id"]
 
 
 def check() -> dict:
@@ -85,6 +98,7 @@ def check() -> dict:
     _domain_links(positives)
     return {"schema_definitions": len(main["$defs"]), "entry_models": len(entries),
             "positive_cases": len(positives), "negative_cases": len(negatives),
+            "trace_media_examples": ["physical", "weread", "koodo"],
             "domain_link_checks": "passed", "offline_validation": "passed",
             "draft_definition_target": 77,
             "draft_definition_target_met": len(main["$defs"]) == 77}

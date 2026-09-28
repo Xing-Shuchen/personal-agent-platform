@@ -3,6 +3,11 @@
   "entry_models": 18,
   "positive_cases": 42,
   "negative_cases": 43,
+  "trace_media_examples": [
+    "physical",
+    "weread",
+    "koodo"
+  ],
   "domain_link_checks": "passed",
   "offline_validation": "passed",
   "draft_definition_target": 77,

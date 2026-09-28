@@ -154,10 +154,10 @@
         "source_item_id": "image_fixture"
       },
       "submitted_context": {
-        "session_id": null,
-        "work_id": null,
-        "edition_id": null,
-        "book_instance_id": null
+        "session_id": "session_fixture",
+        "work_id": "work_fixture",
+        "edition_id": "edition_fixture",
+        "book_instance_id": "bookinst_fixture"
       }
     }
   },
@@ -172,30 +172,51 @@
       "created_at": "2026-09-28T00:00:00+00:00",
       "capture_id": "capture_fixture",
       "session": {
-        "value": null,
+        "value": "session_fixture",
         "confidence": null,
-        "basis": "unknown",
-        "status": "unresolved"
+        "basis": "user_confirmation",
+        "status": "resolved"
       },
       "work": {
-        "value": null,
+        "value": "work_fixture",
         "confidence": null,
-        "basis": "unknown",
-        "status": "unresolved"
+        "basis": "user_confirmation",
+        "status": "resolved"
       },
       "edition": {
-        "value": null,
+        "value": "edition_fixture",
         "confidence": null,
-        "basis": "unknown",
-        "status": "unresolved"
+        "basis": "user_confirmation",
+        "status": "resolved"
       },
       "book_instance": {
-        "value": null,
+        "value": "bookinst_fixture",
         "confidence": null,
-        "basis": "unknown",
-        "status": "unresolved"
+        "basis": "user_confirmation",
+        "status": "resolved"
       },
-      "pages": [],
+      "pages": [
+        {
+          "id": "page_fixture",
+          "bbox": [
+            0,
+            0,
+            1,
+            1
+          ],
+          "side": "unknown",
+          "page": {
+            "value": {
+              "label": "171",
+              "number": 171,
+              "scheme": "arabic"
+            },
+            "confidence": 0.9,
+            "basis": "vision",
+            "status": "resolved"
+          }
+        }
+      ],
       "revision": 1,
       "supersedes_revision": null
     }
@@ -210,13 +231,11 @@
       "owner_id": "owner_fixture",
       "created_at": "2026-09-28T00:00:00+00:00",
       "capture_id": "capture_fixture",
-      "checkpoint": "EXTRACTED",
-      "outcome": "partial",
-      "issues": [
-        "NEEDS_BOOK_RESOLUTION"
-      ],
+      "checkpoint": "NORMALIZED",
+      "outcome": "success",
+      "issues": [],
       "extractor_version": "fixture-v1",
-      "normalizer_version": null,
+      "normalizer_version": "fixture-v1",
       "revision": 1,
       "supersedes_revision": null
     }
@@ -240,13 +259,72 @@
         "byte_size": 1
       },
       "image_space": {
-        "width": 1,
-        "height": 1,
+        "width": 1000,
+        "height": 1400,
         "basis": "exif_oriented_original"
       },
-      "pages": [],
-      "printed_regions": [],
-      "marks": [],
+      "pages": [
+        {
+          "id": "page_fixture",
+          "bbox": [
+            0,
+            0,
+            1,
+            1
+          ],
+          "side": "unknown",
+          "page": {
+            "value": {
+              "label": "171",
+              "number": 171,
+              "scheme": "arabic"
+            },
+            "confidence": 0.9,
+            "basis": "vision",
+            "status": "resolved"
+          }
+        }
+      ],
+      "printed_regions": [
+        {
+          "id": "printed_fixture",
+          "page_region_id": "page_fixture",
+          "bbox": [
+            0.1,
+            0.1,
+            0.5,
+            0.2
+          ],
+          "kind": "printed",
+          "text": {
+            "text": "Synthetic Weber and Parsons",
+            "confidence": 0.85,
+            "basis": "vision"
+          },
+          "confidence": 0.9,
+          "linked_text_region_ids": [],
+          "link_confidence": null
+        }
+      ],
+      "marks": [
+        {
+          "id": "mark_fixture",
+          "page_region_id": "page_fixture",
+          "bbox": [
+            0.1,
+            0.18,
+            0.5,
+            0.21
+          ],
+          "kind": "underline",
+          "text": null,
+          "confidence": 0.9,
+          "linked_text_region_ids": [
+            "printed_fixture"
+          ],
+          "link_confidence": 0.95
+        }
+      ],
       "annotations": [],
       "symbols": [],
       "links": [],
@@ -261,50 +339,73 @@
         "basis": "unknown",
         "mark_author": "unknown"
       },
-      "book_instance_id": null,
+      "book_instance_id": "bookinst_fixture",
       "confidence": {
         "book_resolution": null,
-        "page_number": null
+        "page_number": 0.9
       },
       "content": {
-        "annotation": {
-          "basis": "unknown",
-          "confidence": null,
-          "text": null
-        },
         "printed_text": {
-          "basis": "source_payload",
+          "text": "Synthetic Weber and Parsons",
+          "confidence": 0.85,
+          "basis": "vision"
+        },
+        "annotation": {
+          "text": null,
           "confidence": null,
-          "text": "Weber and Parsons"
+          "basis": "unknown"
         },
         "symbols": []
       },
       "context_state": "resolved",
-      "created_at": "2026-09-28T09:01:24+00:00",
-      "edition_id": null,
-      "id": "rt_a37c7f6641ac3115d478837d9821f9c6",
+      "created_at": "2026-09-28T09:10:01+00:00",
+      "edition_id": "edition_fixture",
+      "id": "rt_physical_fixture",
       "intent_signals": [],
       "location": {
-        "chapter": "Chapter One",
-        "epub_cfi": null,
-        "kind": "digital",
-        "paragraph": null,
-        "source_locator": "book-42-1-10-20"
+        "kind": "physical",
+        "page_region_id": "page_fixture",
+        "page": {
+          "label": "171",
+          "number": 171,
+          "scheme": "arabic"
+        },
+        "page_bbox": [
+          0,
+          0,
+          1,
+          1
+        ],
+        "bbox": [
+          0.1,
+          0.1,
+          0.5,
+          0.21
+        ],
+        "side": "unknown",
+        "vertical": "upper",
+        "horizontal": "left"
       },
       "marked_at": {
         "basis": "unknown",
         "confidence": null,
         "value": null
       },
-      "medium": "weread",
+      "medium": "physical",
       "object_type": "ReadingTrace",
       "owner_id": "owner_fixture",
       "provenance": [
         {
-          "byte_size": 154,
-          "mime_type": "text/markdown",
-          "object_key": "objects/f1/f1bc8209d2e15439f71df0a7102d011c2c3087aa51098572582fe409eadf5b35",
-          "sha256": "f1bc8209d2e15439f71df0a7102d011c2c3087aa51098572582fe409eadf5b35"
+          "object_key": "synthetic/original.png",
+          "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "mime_type": "image/png",
+          "byte_size": 1
+        },
+        {
+          "object_key": "synthetic/observation.json",
+          "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "mime_type": "application/json",
+          "byte_size": 1
         }
       ],
       "review": {
@@ -314,24 +415,25 @@
       },
       "revision": 1,
       "schema_version": "0.1.0",
-      "session_id": null,
+      "session_id": "session_fixture",
       "source": {
-        "kind": "weread",
-        "raw_payload": {
-          "byte_size": 154,
-          "mime_type": "text/markdown",
-          "object_key": "objects/f1/f1bc8209d2e15439f71df0a7102d011c2c3087aa51098572582fe409eadf5b35",
-          "sha256": "f1bc8209d2e15439f71df0a7102d011c2c3087aa51098572582fe409eadf5b35"
-        },
-        "source_record_id": "book-42-1-10-20"
+        "kind": "physical",
+        "capture_id": "capture_fixture",
+        "observation_id": "observation_fixture",
+        "resolution_id": "resolution_fixture",
+        "resolution_revision": 1,
+        "detection_ids": [
+          "mark_fixture",
+          "printed_fixture"
+        ]
       },
       "status": "active",
       "supersedes_revision": null,
       "trace_types": [
-        "highlight"
+        "underline"
       ],
       "vocabulary_version": null,
-      "work_id": "work_2ae10661976b7bc9212a7a9c8e879aa6"
+      "work_id": "work_fixture"
     }
   },
   {
@@ -347,7 +449,7 @@
       "supersedes_revision": null,
       "source_trace_refs": [
         {
-          "trace_id": "rt_a37c7f6641ac3115d478837d9821f9c6",
+          "trace_id": "rt_physical_fixture",
           "revision": 1
         }
       ],
@@ -373,7 +475,7 @@
       "revision": 1,
       "supersedes_revision": null,
       "source_trace_ref": {
-        "trace_id": "rt_a37c7f6641ac3115d478837d9821f9c6",
+        "trace_id": "rt_physical_fixture",
         "revision": 1
       },
       "relation": "reminds_of",
@@ -1026,41 +1128,17 @@
     }
   },
   {
-    "id": "edition-second-revision",
-    "model": "Edition",
-    "value": {
-      "object_type": "Edition",
-      "schema_version": "0.1.0",
-      "id": "edition_fixture",
-      "owner_id": "owner_fixture",
-      "created_at": "2026-09-28T00:00:00+00:00",
-      "work_id": "work_fixture",
-      "edition_label": null,
-      "publisher": null,
-      "publication_year": null,
-      "isbn": {
-        "isbn13": null,
-        "isbn10": null
-      },
-      "language": null,
-      "page_count": null,
-      "volume_label": null,
-      "revision": 2,
-      "supersedes_revision": 1
-    }
-  },
-  {
-    "id": "search-small-page",
+    "id": "search-structural",
     "model": "SearchRequest",
     "value": {
       "owner_id": "owner_fixture",
-      "query": "example",
+      "query": "",
       "filters": {
         "work_id": null,
         "edition_id": null,
         "book_instance_id": null,
         "session_id": null,
-        "medium": null,
+        "medium": "physical",
         "trace_types": [],
         "include_unresolved": false
       },
@@ -1069,7 +1147,7 @@
     }
   },
   {
-    "id": "trace-second-revision",
+    "id": "trace-weread",
     "model": "ReadingTrace",
     "value": {
       "attribution": {
@@ -1095,7 +1173,7 @@
         "symbols": []
       },
       "context_state": "resolved",
-      "created_at": "2026-09-28T09:01:24+00:00",
+      "created_at": "2026-09-28T09:10:01+00:00",
       "edition_id": null,
       "id": "rt_a37c7f6641ac3115d478837d9821f9c6",
       "intent_signals": [],
@@ -1127,7 +1205,7 @@
         "required": false,
         "state": "none"
       },
-      "revision": 2,
+      "revision": 1,
       "schema_version": "0.1.0",
       "session_id": null,
       "source": {
@@ -1141,12 +1219,93 @@
         "source_record_id": "book-42-1-10-20"
       },
       "status": "active",
-      "supersedes_revision": 1,
+      "supersedes_revision": null,
       "trace_types": [
         "highlight"
       ],
       "vocabulary_version": null,
       "work_id": "work_2ae10661976b7bc9212a7a9c8e879aa6"
+    }
+  },
+  {
+    "id": "trace-koodo",
+    "model": "ReadingTrace",
+    "value": {
+      "attribution": {
+        "basis": "unknown",
+        "mark_author": "unknown"
+      },
+      "book_instance_id": null,
+      "confidence": {
+        "book_resolution": null,
+        "page_number": null
+      },
+      "content": {
+        "annotation": {
+          "basis": "unknown",
+          "confidence": null,
+          "text": null
+        },
+        "printed_text": {
+          "basis": "source_payload",
+          "confidence": null,
+          "text": "A highlighted passage"
+        },
+        "symbols": []
+      },
+      "context_state": "resolved",
+      "created_at": "2026-09-28T09:10:01+00:00",
+      "edition_id": null,
+      "id": "rt_ab14520b9a1d56c6f7ea8a93520e64b7",
+      "intent_signals": [],
+      "location": {
+        "chapter": "Chapter A",
+        "epub_cfi": null,
+        "kind": "digital",
+        "paragraph": null,
+        "source_locator": "9c53b61716a2eae23378dfd0-1"
+      },
+      "marked_at": {
+        "basis": "unknown",
+        "confidence": null,
+        "value": null
+      },
+      "medium": "koodo",
+      "object_type": "ReadingTrace",
+      "owner_id": "owner_fixture",
+      "provenance": [
+        {
+          "byte_size": 126,
+          "mime_type": "text/markdown",
+          "object_key": "objects/18/18b112fd35539741d0d9cac290eab189f3f288b8fb8ef9c637926a7fd89e4efd",
+          "sha256": "18b112fd35539741d0d9cac290eab189f3f288b8fb8ef9c637926a7fd89e4efd"
+        }
+      ],
+      "review": {
+        "reason": null,
+        "required": false,
+        "state": "none"
+      },
+      "revision": 1,
+      "schema_version": "0.1.0",
+      "session_id": null,
+      "source": {
+        "kind": "koodo",
+        "raw_payload": {
+          "byte_size": 126,
+          "mime_type": "text/markdown",
+          "object_key": "objects/18/18b112fd35539741d0d9cac290eab189f3f288b8fb8ef9c637926a7fd89e4efd",
+          "sha256": "18b112fd35539741d0d9cac290eab189f3f288b8fb8ef9c637926a7fd89e4efd"
+        },
+        "source_record_id": "9c53b61716a2eae23378dfd0-1"
+      },
+      "status": "active",
+      "supersedes_revision": null,
+      "trace_types": [
+        "highlight"
+      ],
+      "vocabulary_version": null,
+      "work_id": "work_ab4e7dedc6c70f177d6e1bd7da31f9b0"
     }
   }
 ]
