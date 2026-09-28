@@ -304,14 +304,16 @@ def _send_message(
     *,
     run_id: str,
     target: str | None,
+    channel: str | None = None,
+    account: str | None = None,
     sender: Callable[..., subprocess.CompletedProcess[str]] | None = None,
 ) -> str:
     """Send one already-approved user-facing message through OpenClaw."""
     if not target:
         return "unconfigured"
     command_runner = sender or subprocess.run
-    channel = os.environ.get("PAP_OPENCLAW_CHANNEL", "feishu")
-    account = os.environ.get("PAP_OPENCLAW_ACCOUNT", "feishu4")
+    channel = channel or os.environ.get("PAP_OPENCLAW_CHANNEL", "feishu")
+    account = account or os.environ.get("PAP_OPENCLAW_ACCOUNT", "feishu4")
     openclaw_bin = os.environ.get("PAP_OPENCLAW_BIN", "openclaw")
     started = time.monotonic()
     message_action_id = ulid()
@@ -485,6 +487,22 @@ def tick(
             _queue_deferred_delivery(delivery_queue_path, run_id=result.run_id, job_key=due.key,
                                     response=response, deliver_at=deadline)
             delivery = "deferred"
+        elif result.status == "not_ready" and due.job.notify:
+            reason = result.error.strip() or "未说明原因"
+            signature = hashlib.sha256(f"{due.key}\n{reason}".encode("utf-8")).hexdigest()
+            with _locked_state(state_path) as state:
+                entry = state.setdefault("jobs", {}).setdefault(due.key, {})
+                already_notified = entry.get("notify_signature") == signature
+            if already_notified:
+                delivery = "notified"
+            else:
+                notify = due.job.notify
+                reminder = f"【PAP 提醒】{due.key} 本周周报未生成：{reason}"
+                sent = _send_message(reminder, run_id=result.run_id, target=notify["target"],
+                                     channel=notify["channel"], account=notify["account"], sender=sender)
+                delivery = "notified" if sent == "sent" else "notify-failed"
+                with _locked_state(state_path) as state:
+                    state.setdefault("jobs", {}).setdefault(due.key, {})["notify_signature"] = signature
         else:
             delivery = _deliver(result, due.job, target=target, sender=sender)
         append_jsonl(run_log, {
@@ -501,6 +519,8 @@ def tick(
                           if result.status == "failed" else None,
                           "last_delivery": delivery,
                           "last_finished_at": _now().isoformat(timespec="seconds")})
+            if result.status == "success":
+                entry.pop("notify_signature", None)
         results.append(TickResult(
             job_key=due.key,
             slot=due.slot.isoformat(timespec="minutes"),

@@ -36,6 +36,7 @@ class ProactiveJob:
     model: str | None = None
     runner: str = "openclaw"
     command: list[str] | None = None
+    notify: dict[str, str] | None = None
     #: §40 stages a rollout: a declared job may exist, be visible and be audited
     #: while not yet scheduled. Disabling is not deleting — the declaration and
     #: its schedule stay in the spec so enabling is a one-line change.
@@ -186,6 +187,18 @@ def load_spec(path: Path) -> AgentSpec:
                 delivery = raw.get("delivery", "user-home")
                 if delivery not in ("user-home", "origin", "local"):
                     raise _err(path, f"{where}.delivery: unknown delivery {delivery!r}")
+                notify = raw.get("notify")
+                if notify is not None:
+                    if not isinstance(notify, dict):
+                        raise _err(path, f"{where}.notify: must be a mapping")
+                    expected_notify_keys = {"channel", "account", "target"}
+                    unknown = set(notify) - expected_notify_keys
+                    if unknown:
+                        raise _err(path, f"{where}.notify: unknown key {sorted(unknown)[0]!r}")
+                    for key in expected_notify_keys:
+                        value = notify.get(key)
+                        if not isinstance(value, str) or not value.strip():
+                            raise _err(path, f"{where}.notify: {key} must be a non-empty string")
                 runtime = raw.get("runtime")
                 if runtime is not None and (not isinstance(runtime, str) or not NAME_RE.match(runtime)):
                     raise _err(path, f"{where}.runtime: must be a runtime identifier or null")
@@ -248,6 +261,7 @@ def load_spec(path: Path) -> AgentSpec:
                         model=job_model,
                         runner=job_runner,
                         command=list(command) if command is not None else None,
+                        notify=dict(notify) if notify is not None else None,
                         enabled=enabled,
                     )
                 )

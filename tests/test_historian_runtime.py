@@ -150,6 +150,61 @@ def test_an_absent_collection_root_is_not_an_error(tmp_path):
     assert _run(env) == {"records": [], "watermarks": {}}
 
 
+def _adapter_script(body: str) -> str:
+    return (
+        "import importlib.util, os, sys;"
+        f"sys.path.insert(0, {str(HISTORIAN_ROOT)!r});"
+        f"spec=importlib.util.spec_from_file_location('adapter', {str(ADAPTER)!r});"
+        "module=importlib.util.module_from_spec(spec); spec.loader.exec_module(module);"
+        + body
+    )
+
+
+def test_vault_dir_env_precedence_config_fallback_and_malformed_config(tmp_path):
+    root = tmp_path / "historian"
+    config = root / "config"
+    config.mkdir(parents=True)
+    fallback = tmp_path / "fallback-vault"
+    configured = tmp_path / "configured-vault"
+    (config / "repositories.json").write_text(json.dumps({"repositories": [
+        {"name": "second-brain", "path": str(fallback)},
+    ]}), encoding="utf-8")
+    script = _adapter_script(
+        f"os.environ['PERSONAL_HISTORIAN_ROOT']={str(root)!r};"
+        f"os.environ['PERSONAL_HISTORIAN_OBSIDIAN_VAULT']={str(configured)!r};"
+        "print(module._vault_dir())"
+    )
+    assert subprocess.run([INTERPRETER, "-c", script], capture_output=True, text=True, check=True).stdout.strip() == str(configured.resolve())
+
+    script = _adapter_script(
+        f"os.environ['PERSONAL_HISTORIAN_ROOT']={str(root)!r};"
+        "os.environ.pop('PERSONAL_HISTORIAN_OBSIDIAN_VAULT', None); print(module._vault_dir())"
+    )
+    assert subprocess.run([INTERPRETER, "-c", script], capture_output=True, text=True, check=True).stdout.strip() == str(fallback.resolve())
+
+    (config / "repositories.json").write_text("not json", encoding="utf-8")
+    assert subprocess.run([INTERPRETER, "-c", script], capture_output=True, text=True, check=True).stdout.strip() == "None"
+
+
+def test_missing_week_diaries_detects_empty_missing_and_complete_days(tmp_path):
+    vault = tmp_path / "vault"
+    script = _adapter_script(
+        "from datetime import datetime, timedelta; from types import SimpleNamespace;"
+        f"os.environ['PERSONAL_HISTORIAN_OBSIDIAN_VAULT']={str(vault)!r};"
+        "period=SimpleNamespace(start=datetime.fromisoformat('2026-09-14T00:00:00+08:00'), end_exclusive=datetime.fromisoformat('2026-09-21T00:00:00+08:00'));"
+        "print(module.json.dumps(module._missing_week_diaries(period)))"
+    )
+    initial = subprocess.run([INTERPRETER, "-c", script], capture_output=True, text=True, check=True)
+    assert json.loads(initial.stdout) == [f"2026-09-{day:02d}" for day in range(14, 21)]
+    for day in range(14, 21):
+        path = vault / "Dairies" / "2026" / f"2026-09-{day:02d}.md"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("---\ntype: ethnography-daily\n---\ncontent\n", encoding="utf-8")
+    assert json.loads(subprocess.run([INTERPRETER, "-c", script], capture_output=True, text=True, check=True).stdout) == []
+    (vault / "Dairies" / "2026" / "2026-09-17.md").unlink()
+    assert json.loads(subprocess.run([INTERPRETER, "-c", script], capture_output=True, text=True, check=True).stdout) == ["2026-09-17"]
+
+
 def test_the_default_root_matches_where_collect_all_writes(tmp_path, monkeypatch):
     """Without an explicit root, discovery must read the collector output layout.
 

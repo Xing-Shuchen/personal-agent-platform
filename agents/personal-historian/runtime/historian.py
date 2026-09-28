@@ -220,16 +220,55 @@ def _literary_path(summary_id: str) -> Path:
     return directory / f"{summary_id.replace(':', '_')}.md"
 
 
-def _obsidian_literary_path(period: Any) -> Path | None:
+def _vault_dir() -> Path | None:
+    """Resolve the Second Brain vault without making its config mandatory."""
     configured = os.environ.get("PERSONAL_HISTORIAN_OBSIDIAN_VAULT")
-    if not configured:
+    if configured and configured.strip():
+        return Path(configured).expanduser().resolve()
+    try:
+        repositories = json.loads((_historian_root() / "config" / "repositories.json").read_text(encoding="utf-8"))
+        if isinstance(repositories, dict):
+            repositories = repositories.get("repositories")
+        if not isinstance(repositories, list):
+            return None
+        for repository in repositories:
+            if isinstance(repository, dict) and repository.get("name") == "second-brain":
+                path = repository.get("path")
+                if isinstance(path, str) and path.strip():
+                    return Path(path).expanduser().resolve()
+    except (OSError, json.JSONDecodeError, TypeError):
+        pass
+    return None
+
+
+def _obsidian_literary_path(period: Any) -> Path | None:
+    vault = _vault_dir()
+    if vault is None:
         return None
-    vault = Path(configured).expanduser().resolve()
     target = (vault / "Dairies" / str(period.start.year) /
               f"summary_week_{period.label}.md").resolve()
     if vault not in target.parents:
         raise ValueError("literary target escapes the configured Obsidian vault")
     return target
+
+
+def _missing_week_diaries(period: Any) -> list[str]:
+    vault = _vault_dir()
+    if vault is None:
+        return []
+    missing: list[str] = []
+    cursor = period.start
+    while cursor < period.end_exclusive:
+        day = cursor.date()
+        diary = vault / "Dairies" / str(day.year) / f"{day.isoformat()}.md"
+        try:
+            present = diary.is_file() and bool(diary.read_text(encoding="utf-8").strip())
+        except OSError:
+            present = False
+        if not present:
+            missing.append(day.isoformat())
+        cursor += timedelta(days=1)
+    return missing
 
 
 def _canonical_hash(value: dict[str, Any]) -> str:
@@ -416,6 +455,13 @@ def _prepare_summary(payload: dict[str, Any]) -> dict[str, Any]:
     missing_children = _missing_child_summaries(store, period)
     if missing_children:
         return {"status": "not_ready", "reason": "required child summaries are missing: " + ", ".join(missing_children)}
+    if kind == "week":
+        if _vault_dir() is None:
+            return {"status": "not_ready", "reason": "obsidian vault is not configured"}
+        missing_diaries = _missing_week_diaries(period)
+        if missing_diaries:
+            return {"status": "not_ready", "reason": "week diaries missing: " + ", ".join(missing_diaries),
+                    "metadata": {"missing_diaries": missing_diaries}}
     candidates = candidates_for_period(store, period, events=_current_events())
     coverage = _coverage()
     policy_path = os.environ.get("PERSONAL_HISTORIAN_POLICY", str(_historian_root() / "config" / "historical-summary-policy.yaml"))
@@ -455,6 +501,13 @@ def _prepare_literary(payload: dict[str, Any]) -> dict[str, Any]:
         return {"status": "not_ready", "reason": f"canonical summary is missing: {summary_id}"}
     if _store().is_stale(summary_id):
         return {"status": "not_ready", "reason": f"canonical summary is stale: {summary_id}"}
+    literary_meta = _literary_path(summary_id).with_suffix(".json")
+    try:
+        previous_render = json.loads(literary_meta.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError, TypeError):
+        previous_render = None
+    if isinstance(previous_render, dict) and previous_render.get("summary_hash") == summary["content_hash"]:
+        return {"status": "not_ready", "reason": "weekly literary render already committed for this summary revision"}
     prepared = {
         "kind": "literary", "summary_id": summary_id,
         "summary_revision": summary["revision"], "summary_hash": summary["content_hash"],
@@ -678,6 +731,9 @@ def _complete_literary(payload: dict[str, Any]) -> dict[str, Any]:
             temporary = vault_target.with_suffix(vault_target.suffix + ".tmp")
             temporary.write_text(markdown + "\n", encoding="utf-8")
             os.replace(temporary, vault_target)
+        state_target.with_suffix(".json").write_text(json.dumps({
+            "summary_revision": prepared["summary_revision"], "summary_hash": prepared["summary_hash"],
+        }, ensure_ascii=False) + "\n", encoding="utf-8")
         return {
             "status": "success", "response": "NO_REPLY",
             "metadata": {

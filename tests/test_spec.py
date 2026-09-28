@@ -54,6 +54,7 @@ def test_valid_spec(tmp_path: Path):
     assert spec.jobs[0].args == {}
     assert spec.jobs[0].model is None
     assert spec.jobs[0].runner == "openclaw"
+    assert spec.jobs[0].notify is None
     assert spec.private_state == ["notes"]
 
 
@@ -79,6 +80,27 @@ def test_job_model_override(tmp_path: Path):
     write_agent(tmp_path, "test-agent", body)
     spec = load_spec(tmp_path / "agents" / "test-agent" / "agent.yaml")
     assert spec.jobs[0].model == "deepseek/deepseek-v4-pro"
+
+
+def test_job_notify_validation_and_loading(tmp_path: Path):
+    valid = VALID.replace("            skill: test-skill", """            skill: test-skill
+            notify:
+              channel: feishu
+              account: diary
+              target: ou_test""")
+    path = write_agent(tmp_path / "valid", "test-agent", valid)
+    assert load_spec(path).jobs[0].notify == {"channel": "feishu", "account": "diary", "target": "ou_test"}
+
+    for name, replacement in {
+        "non_mapping": "            notify: feishu",
+        "missing": "            notify:\n              channel: feishu\n              account: diary",
+        "empty": "            notify:\n              channel: feishu\n              account: ''\n              target: ou_test",
+    }.items():
+        path = write_agent(tmp_path / name, "test-agent", VALID.replace(
+            "            skill: test-skill", "            skill: test-skill\n" + replacement,
+        ))
+        with pytest.raises(SpecError, match="notify"):
+            load_spec(path)
 
 
 @pytest.mark.parametrize("deliver_at", ["08:00", "08:00 tz Asia/Shanghai"])

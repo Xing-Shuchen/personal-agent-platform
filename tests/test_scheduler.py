@@ -15,11 +15,16 @@ CST = timezone(timedelta(hours=8))
 def make_platform(
     root: Path, schedule: str = "* * * * *", *, delivery: str = "local",
     deliver_at: str | None = None, timezone_name: str | None = None,
+    notify: dict[str, str] | None = None,
 ) -> None:
     skill = root / "agents/sample/profile/skills/sample-skill"
     skill.mkdir(parents=True)
     (skill / "SKILL.md").write_text(
         "---\nname: sample-skill\ndescription: Test.\n---\n# Test\n", encoding="utf-8"
+    )
+    notify_yaml = "".join(
+        f"        notify:\n" + "".join(f"          {key}: {value}\n" for key, value in notify.items())
+        if notify else ""
     )
     (root / "agents/sample/agent.yaml").write_text(
         f"""apiVersion: pap/v1
@@ -41,10 +46,45 @@ spec:
         delivery: {delivery}
 """ + (f"        deliver_at: {deliver_at}\n" if deliver_at else "") + (
             f"        timezone: {timezone_name}\n" if timezone_name else ""
-        ) + """
-""",
+        ) + notify_yaml,
         encoding="utf-8",
     )
+
+
+def test_not_ready_notify_is_deduped_and_reason_sensitive(tmp_path, monkeypatch):
+    make_platform(tmp_path, notify={"channel": "feishu", "account": "diary", "target": "ou_test"})
+    monkeypatch.setattr("pap.scheduler.JITTER_MAX_MINUTES", 0)
+    now = datetime(2026, 8, 31, 18, 17, tzinfo=CST)
+    sent = []
+
+    def sender(command, **kwargs):
+        sent.append(command)
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    reasons = iter(["week diaries missing: 2026-08-30", "week diaries missing: 2026-08-30", "week diaries missing: 2026-08-31"])
+    monkeypatch.setattr("pap.scheduler.invoke", lambda **kwargs: RunResult(
+        run_id="run_" + str(len(sent)), agent_id="sample", skill="sample-skill", status="not_ready",
+        returncode=0, response="NOT_READY", error=next(reasons), started_at="", completed_at="", usage={},
+    ))
+    first = tick(tmp_path, now=now, sender=sender)
+    second = tick(tmp_path, now=now + timedelta(minutes=1), sender=sender)
+    third = tick(tmp_path, now=now + timedelta(minutes=2), sender=sender)
+    assert [item.delivery for item in (first[0], second[0], third[0])] == ["notified", "notified", "notified"]
+    assert len(sent) == 2
+    assert "2026-08-31" in sent[-1][-1]
+
+
+def test_success_failed_and_jobs_without_notify_do_not_notify(tmp_path, monkeypatch):
+    make_platform(tmp_path)
+    monkeypatch.setattr("pap.scheduler.JITTER_MAX_MINUTES", 0)
+    now = datetime(2026, 8, 31, 18, 17, tzinfo=CST)
+
+    def sender(*args, **kwargs):
+        raise AssertionError("no notification expected")
+
+    assert tick(tmp_path, now=now, command_runner=lambda argv, **kw: subprocess.CompletedProcess(argv, 0, "NOT_READY", "blocked"), sender=sender)[0].delivery == "not-attempted"
+    assert tick(tmp_path, now=now + timedelta(minutes=1), command_runner=lambda argv, **kw: subprocess.CompletedProcess(argv, 0, "ok", ""), sender=sender)[0].delivery == "local"
+    assert tick(tmp_path, now=now + timedelta(minutes=2), command_runner=lambda argv, **kw: subprocess.CompletedProcess(argv, 1, "", "failed"), sender=sender)[0].delivery == "not-attempted"
 
 
 def test_tick_claims_slot_once(tmp_path):

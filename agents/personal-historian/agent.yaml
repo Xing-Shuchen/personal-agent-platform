@@ -37,7 +37,7 @@ spec:
         attach_to_session: false
         delivery: local
       - name: historian-weekly-summary
-        schedule: "17 2 * * 1"
+        schedule: "17 2 * * *"
         timezone: Asia/Shanghai
         skill: historian-period-summary
         model: qwen/qwen3.8-max
@@ -45,8 +45,12 @@ spec:
         args: {kind: week, period: previous, timezone: Asia/Shanghai}
         attach_to_session: false
         delivery: local
+        notify:
+          channel: feishu
+          account: diary
+          target: ou_094472595f39f23d2b5a222f4729387e
       - name: historian-weekly-literary-render
-        schedule: "27 2 * * 1"
+        schedule: "27 2 * * *"
         timezone: Asia/Shanghai
         skill: historian-literary-renderer
         model: gpt-5.6-sol
