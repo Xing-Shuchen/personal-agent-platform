@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
-import { realpath, stat } from "node:fs/promises";
-import { delimiter, isAbsolute } from "node:path";
+import { realpath, stat, unlink } from "node:fs/promises";
+import { delimiter, dirname, isAbsolute, resolve } from "node:path";
 
 const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
 const MAX_BATCH_BYTES = 100 * 1024 * 1024;
@@ -59,6 +59,8 @@ const runSearchBridge = (config, message) => runPythonBridge(
   config, "agents.librarian.runtime.gateway_search", message);
 const runSessionBridge = (config, message) => runPythonBridge(
   config, "agents.librarian.runtime.gateway_session", message);
+const runEvidenceBridge = (config, message) => runPythonBridge(
+  config, "agents.librarian.runtime.gateway_evidence", message);
 
 export function workerArgs(config, ownerId) {
   if (!ownerId || configuredOwnerIds(config).length !== 1 ||
@@ -115,6 +117,40 @@ export function librarianSearchTool(config, ctx, bridge = runSearchBridge) {
         query: params.query, limit: params.limit ?? 10 });
       return { content: [{ type: "text", text: JSON.stringify(result) }],
         details: result };
+    },
+  };
+}
+
+export function librarianEvidenceTool(config, ctx, bridge = runEvidenceBridge) {
+  if (ctx?.agentId !== "librarian" || !ctx.requesterSenderId || !ctx.delivery?.send) return null;
+  const route = ctx.deliveryContext ?? {};
+  if ((ctx.messageChannel && route.channel && ctx.messageChannel !== route.channel) ||
+      (ctx.agentAccountId && route.accountId && ctx.agentAccountId !== route.accountId)) return null;
+  const ownerId = ownerFor(config, { senderId: ctx.requesterSenderId },
+    { channelId: ctx.messageChannel ?? route.channel,
+      accountId: ctx.agentAccountId ?? route.accountId });
+  if (!ownerId) return null;
+  return {
+    name: "librarian_evidence",
+    label: "Librarian photo evidence",
+    description: "Send a cropped original-photo evidence image for one of this authenticated sender's reading trace IDs to the current conversation.",
+    parameters: { type: "object", properties: {
+      trace_id: { type: "string", pattern: "^rt_[A-Za-z0-9_-]+$" },
+    }, required: ["trace_id"], additionalProperties: false },
+    async execute(_id, params) {
+      const result = await bridge(config, { owner_id: ownerId, trace_id: params.trace_id });
+      const path = resolve(result.media_path);
+      if (dirname(path) !== resolve(config.stateRoot, "delivery-evidence")) {
+        throw new Error("invalid evidence path");
+      }
+      try {
+        await ctx.delivery.send({ text: `原图局部证据：${result.trace_id}`,
+          mediaUrl: path });
+      } finally {
+        await unlink(path).catch(() => {});
+      }
+      return { content: [{ type: "text", text: JSON.stringify({
+        trace_id: result.trace_id, capture_id: result.capture_id, delivered: true }) }] };
     },
   };
 }
@@ -211,6 +247,8 @@ export default {
       { name: "librarian_search" });
     api.registerTool((ctx) => librarianSessionTool(config, ctx, recentInbound),
       { name: "librarian_session" });
+    api.registerTool((ctx) => librarianEvidenceTool(config, ctx),
+      { name: "librarian_evidence" });
     api.registerService({ id: "pap-librarian-worker", start: () => {
       const recover = () => {
         for (const ownerId of configuredOwnerIds(config)) {

@@ -238,3 +238,5 @@ M0：基础已具备，F08 修复并经故障恢复验证后再称验收完成�
 新增受信 `librarian_session` 工具及域命令桥，包含 source message 幂等回执；插件能力变更须执行 `openclaw plugins enable pap-librarian-intake --accept-capabilities`，否则会出现“没有可调用工具”并阻断所有消息。当晚已完成能力登记、配置校验及 Gateway 重启，后续一条真实飞书消息未再触发该错误。真实入站 `/lib read`、检索工具调用、授权原图读取尚待独立验证，M1 与发布门槛仍未满足。相关代码检查结果为 83 项 Python Librarian 测试、6 项 Node 插件测试及契约校验通过。
 
 F06 后续增量：worker 现将模型不可用、提取格式错误及未分类 worker 失败写为脱敏批次状态，持久化 `retry_attempts`、`next_retry_at` 和 `retry_exhausted`。同一批最多自动尝试三次，间隔先后为 5 分钟和 30 分钟；Gateway 重启后仍遵守状态，成功后清零。坏批次与其他批次隔离、物理与数字 worker 分锁已有本地测试；新增退避和成功复位测试通过。未验项目仍有真实慢源/重启恢复及反复 timer 触发下的进程数量上界，故 F06 暂不关闭。
+
+授权原图取证入口后续增量：新增 `librarian_evidence`，只在受信发送者、账户、频道和当前路由匹配且 Gateway 提供绑定投送能力时暴露。桥接按 owner 读取 physical trace 的不可变原图证据，在私有目录生成短期局部 JPEG；投送后删除，Vault 不存图。插件能力已重新登记、工具白名单已更新、Gateway 重启后 active。本地插件投送替身及真实对象库的只读取图成功；**飞书真实消息投送尚未验收**，所以该集成缺口仍为局部完成。

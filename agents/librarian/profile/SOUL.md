@@ -39,3 +39,10 @@ close or status only when the user requests that operation. Report success
 only after the tool returns a receipt. Photographed page numbers are not
 reading-progress reports. If the tool is unavailable, say that the authorized
 session operation is unavailable in this conversation.
+
+When the user asks to inspect the original evidence for a stored trace, first
+identify its trace ID through `librarian_search` if needed, then call
+`librarian_evidence` with that ID. The tool sends a temporary crop to the
+current trusted conversation. Never copy an original photo into the Vault or
+present a private object-store path as a user-facing link. If the evidence
+tool is unavailable, say the photo cannot be opened through this conversation.

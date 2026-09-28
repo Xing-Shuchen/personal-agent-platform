@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { acceptMessage, librarianSearchTool, librarianSessionTool,
+import { acceptMessage, librarianEvidenceTool, librarianSearchTool, librarianSessionTool,
   rememberInboundSession, workerArgs } from "./index.js";
 
 const config = { ownerMappings: [{ channelId: "telegram", accountId: "bot",
@@ -117,4 +117,34 @@ test("session tool carries only trusted inbound source identity", async () => {
   assert.equal(librarianSessionTool(config, trusted, recent, bridge, 601001), null);
   assert.equal(librarianSessionTool(config, { ...trusted, agentAccountId: "other" },
     recent, bridge, 1001), null);
+});
+
+test("evidence tool sends only to the bound route and removes temporary media", async () => {
+  const stateRoot = await mkdtemp(join(tmpdir(), "librarian-evidence-"));
+  try {
+    const evidenceDir = join(stateRoot, "delivery-evidence");
+    await import("node:fs/promises").then(({ mkdir }) => mkdir(evidenceDir));
+    const mediaPath = join(evidenceDir, "evidence-fixture.jpg");
+    await writeFile(mediaPath, Buffer.from("synthetic crop"));
+    const sent = [];
+    const trusted = { agentId: "librarian", requesterSenderId: "person",
+      messageChannel: "telegram", agentAccountId: "bot",
+      deliveryContext: { channel: "telegram", accountId: "bot" },
+      delivery: { send: async (payload) => sent.push(payload) } };
+    const bridge = async (_config, message) => {
+      assert.deepEqual(message, { owner_id: "owner_fixture", trace_id: "rt_fixture" });
+      return { trace_id: "rt_fixture", capture_id: "capture_fixture", media_path: mediaPath };
+    };
+    const tool = librarianEvidenceTool({ ...config, stateRoot }, trusted, bridge);
+    await tool.execute("call", { trace_id: "rt_fixture" });
+    assert.equal(sent.length, 1);
+    assert.equal(sent[0].mediaUrl, mediaPath);
+    await assert.rejects(() => import("node:fs/promises").then(({ stat }) => stat(mediaPath)));
+    assert.equal(librarianEvidenceTool({ ...config, stateRoot },
+      { ...trusted, requesterSenderId: "other" }, bridge), null);
+    assert.equal(librarianEvidenceTool({ ...config, stateRoot },
+      { ...trusted, delivery: undefined }, bridge), null);
+  } finally {
+    await rm(stateRoot, { recursive: true, force: true });
+  }
 });
