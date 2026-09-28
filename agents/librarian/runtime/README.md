@@ -15,6 +15,7 @@ transaction. `pipeline.py` accepts a replaceable extractor that
 returns raw JSON bytes. It saves those bytes, validates the observation,
 checks dimensions against the EXIF-oriented original, records failed runs,
 keeps a valid observation and raw output when catalog context conflicts,
+flags a high-confidence visible title that uniquely matches another registered Work,
 normalizes trace groups, indexes the current revision, supports correction,
 applies an opt-in versioned symbol vocabulary with exception-only review,
 and can rebuild the index from traces. Its tests use synthetic images and

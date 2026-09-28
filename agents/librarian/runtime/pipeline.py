@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import unicodedata
 from pathlib import Path
 from typing import Any, Callable
 
@@ -69,6 +70,29 @@ def _spatial(page_box: list[float], trace_box: list[float]) -> tuple[str, str]:
     y = (cy - page_box[1]) / (page_box[3] - page_box[1])
     return (["upper", "upper_middle", "middle", "lower_middle", "lower"][min(4, int(y * 5))],
             ["left", "center", "right"][min(2, int(x * 3))])
+
+
+def _conflicting_visible_title(lib: Library, owner_id: str,
+                               observation: dict[str, Any], work_id: str | None) -> bool:
+    """Require an unambiguous registered other work, not mere title inequality."""
+    clue = observation.get("visible_title")
+    if not work_id or not clue or clue["text"] is None or clue["confidence"] is None:
+        return False
+    if clue["confidence"] < .90:
+        return False
+    title = " ".join(unicodedata.normalize("NFKC", clue["text"]).casefold().split())
+    if not title:
+        return False
+    rows = lib.db.execute("SELECT id,body FROM records WHERE owner_id=? AND model='Work' AND current=1",
+                          (owner_id,)).fetchall()
+    matches = []
+    for row in rows:
+        work = json.loads(row["body"])
+        names = [work["title"], work["original_title"]]
+        if any(name and " ".join(unicodedata.normalize("NFKC", name).casefold().split()) == title
+               for name in names):
+            matches.append(row["id"])
+    return len(matches) == 1 and matches[0] != work_id
 
 
 def _failed_run(lib: Library, owner_id: str, capture_id: str, run_id: str,
@@ -196,6 +220,9 @@ def process_capture(lib: Library, owner_id: str, capture_id: str,
             if work_id and work_id != edition["work_id"]:
                 raise LibrarianError("CONTEXT_CONFLICT", "edition and work conflict")
             work_id = edition["work_id"]
+        if _conflicting_visible_title(lib, owner_id, observation, work_id):
+            if not prior_resolution or prior_resolution["work"]["basis"] != "user_confirmation":
+                raise LibrarianError("CONTEXT_CONFLICT", "visible title conflicts with session work")
         state = "resolved" if all((session_id, work_id, edition_id, book_instance_id)) else "unresolved"
         resolution = {"object_type": "CaptureResolution", "schema_version": "0.1.0",
                       "id": _new("resolution"), "owner_id": owner_id, "created_at": _now(),

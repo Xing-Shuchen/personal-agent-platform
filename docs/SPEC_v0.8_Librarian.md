@@ -296,6 +296,8 @@ UI 可以提供组合后的 `CaptureView`，但它是投影，不是新的证据
 
 **[实现提案]** 正式 `PageObservation` 包含 `capture_id`、`processing_run_id`、`extractor`、`raw_output_asset`、`image_space`，以及 `pages / printed_regions / marks / annotations / symbols / links / warnings`。
 
+可选的 `visible_title` 是视觉识别到的书名线索，带字段级 confidence；它不直接决定归属。只有当高置信线索唯一匹配已登记的另一部 Work 时，才将当前会话归属标为冲突并等待用户确认。低置信线索或仅仅与当前标题不完全一致，不足以自动换书。
+
 每个检测元素必须有稳定的本次 observation 内 ID、所属 `page_region_id`、bbox 和字段级识别信息。页码、印刷文字、手写文字、符号与连接关系分别给分；整个 observation 不能用一个总分代表。
 
 关键输出规则如下。

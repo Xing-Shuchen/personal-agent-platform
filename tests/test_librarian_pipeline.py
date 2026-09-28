@@ -160,6 +160,35 @@ def test_conflicting_explicit_session_keeps_original_and_observation(tmp_path: P
         assert all(trace["work_id"] == "work_one" for trace in traces)
         assert lib.get("owner_a", "PageObservation", observation["id"]) == observation
 
+        second = lib.ingest("owner_a", transport="gateway", account_id="a",
+                            conversation_id="c", source_event_id="m2",
+                            attachments=[{"source_item_id": "i2", "mime_type": "image/png",
+                                          "data": _photo()}], idempotency_key="k2",
+                            submitted_context={"session_id": session["id"]})
+        title_output = json.loads(_output())
+        title_output["visible_title"] = {"text": "Synthetic other", "confidence": .95,
+                                         "basis": "vision"}
+        second_id = second["capture_ids"][0]
+        with pytest.raises(LibrarianError) as title_error:
+            process_capture(lib, "owner_a", second_id,
+                            lambda _: json.dumps(title_output).encode())
+        assert title_error.value.code == "CONTEXT_CONFLICT"
+        assert lib.read_original("owner_a", second_id) == _photo()
+        resolve_capture(lib, "owner_a", second_id, None,
+                        session_id=session["id"], work_id="work_one")
+        confirmed = process_capture(lib, "owner_a", second_id,
+                                    lambda _: json.dumps(title_output).encode())
+        assert len(confirmed) == 2
+        title_output["visible_title"]["confidence"] = .7
+        third = lib.ingest("owner_a", transport="gateway", account_id="a",
+                           conversation_id="c", source_event_id="m3",
+                           attachments=[{"source_item_id": "i3", "mime_type": "image/png",
+                                         "data": _photo()}], idempotency_key="k3",
+                           submitted_context={"session_id": session["id"]})
+        low_confidence = process_capture(lib, "owner_a", third["capture_ids"][0],
+                                         lambda _: json.dumps(title_output).encode())
+        assert len(low_confidence) == 2
+
 
 def test_explicit_annotation_link_groups_trace_without_inventing_authorship(tmp_path: Path):
     output = json.loads(_output())

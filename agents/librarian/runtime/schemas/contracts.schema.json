@@ -1449,6 +1449,9 @@
           ],
           "additionalProperties": false
         },
+        "visible_title": {
+          "$ref": "#/$defs/TextField"
+        },
         "pages": {
           "type": "array",
           "items": {

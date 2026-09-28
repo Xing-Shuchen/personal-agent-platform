@@ -78,6 +78,9 @@ def _validate_semantics(model: str, value: dict[str, Any]) -> None:
             page = region["page"]
             if (page["status"] == "resolved") != (page["value"] is not None):
                 raise LibrarianError("VALIDATION_FAILED", "page status/value disagree")
+    if model == "PageObservation" and "visible_title" in value:
+        if value["visible_title"]["basis"] != "vision":
+            raise LibrarianError("VALIDATION_FAILED", "visible title must come from vision")
     if model == "ReadingTrace":
         medium = value["medium"]
         if medium == "physical":
