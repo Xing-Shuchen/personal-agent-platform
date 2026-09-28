@@ -135,3 +135,29 @@ def test_truncated_provider_reply_is_not_accepted_as_observation():
                                     base_url="https://vision.example", opener=opener)
     with pytest.raises(RuntimeError, match="did not finish normally"):
         extractor(_photo())
+
+
+def test_provider_timeout_keeps_original_and_records_failed_run(tmp_path):
+    def opener(_request, *, timeout):
+        raise TimeoutError("provider timed out")
+
+    extractor = anthropic_extractor(model="synthetic-vision", api_key="test-key",
+                                    base_url="https://vision.example", opener=opener)
+    photo = _photo()
+    with Library(tmp_path) as lib:
+        receipt = lib.ingest("owner_a", transport="gateway", account_id="a",
+                             conversation_id="c", source_event_id="m",
+                             attachments=[{"source_item_id": "i", "mime_type": "image/jpeg",
+                                           "data": photo}], idempotency_key="k")
+        capture_id = receipt["capture_ids"][0]
+        with pytest.raises(LibrarianError) as error:
+            process_capture(lib, "owner_a", capture_id, extractor,
+                            extractor_version="synthetic-vision")
+        assert error.value.code == "EXTRACTOR_UNAVAILABLE"
+        assert lib.read_original("owner_a", capture_id) == photo
+        failed = json.loads(lib.db.execute(
+            "SELECT body FROM records WHERE model='ProcessingRun'").fetchone()[0])
+        assert failed["capture_id"] == capture_id
+        assert failed["outcome"] == "failed"
+        assert lib.db.execute(
+            "SELECT COUNT(*) FROM records WHERE model='ReadingTrace'").fetchone()[0] == 0

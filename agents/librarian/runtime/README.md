@@ -16,6 +16,8 @@ idempotency, immutable evidence records, and an outbox in the domain
 transaction. `pipeline.py` accepts a replaceable extractor that
 returns raw JSON bytes. It saves those bytes, validates the observation,
 checks dimensions against the EXIF-oriented original, records failed runs,
+rejects a mark's direct printed-text link when it crosses a page region,
+keeps explicit cross-page observation relationships without merging traces,
 keeps a valid observation and raw output when catalog context conflicts,
 flags a high-confidence visible title that uniquely matches another registered Work,
 normalizes trace groups, indexes the current revision, supports correction,
@@ -28,6 +30,8 @@ it sends an EXIF-oriented, uniformly resized derivative, requests normalized
 coordinates, and returns the model text to the pipeline. The derivative,
 transform and raw model text are saved with the processing attempt, including
 failed validation attempts. Its provider transport has a local mock test; the
+timeout path retains the original and records a failed processing run without
+creating traces. A timeout has no model response bytes to retain. The
 current configured endpoint returns HTTP 404 for `/v1/messages`, so live
 image recognition has not been verified. The current default local model also
 rejected a synthetic image input; configure a vision-capable model and endpoint

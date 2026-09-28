@@ -56,15 +56,18 @@ def _check_observation(observation: dict[str, Any]) -> None:
         box = page["bbox"]
         if not (box[0] < box[2] and box[1] < box[3]):
             raise LibrarianError("EXTRACTION_SCHEMA_INVALID", "zero-area page region")
-    printed = {item["id"] for item in observation["printed_regions"]}
+    printed = {item["id"]: item for item in observation["printed_regions"]}
     for item in elements:
         box = item["bbox"]
         if item["page_region_id"] not in regions or not (box[0] < box[2] and box[1] < box[3]):
             raise LibrarianError("EXTRACTION_SCHEMA_INVALID", "detection has invalid page or bbox")
         if not _inside(box, regions[item["page_region_id"]]["bbox"]):
             raise LibrarianError("EXTRACTION_SCHEMA_INVALID", "detection outside its page region")
-        if any(link not in printed for link in item["linked_text_region_ids"]):
-            raise LibrarianError("EXTRACTION_SCHEMA_INVALID", "text link target missing")
+        for link in item["linked_text_region_ids"]:
+            if link not in printed:
+                raise LibrarianError("EXTRACTION_SCHEMA_INVALID", "text link target missing")
+            if printed[link]["page_region_id"] != item["page_region_id"]:
+                raise LibrarianError("EXTRACTION_SCHEMA_INVALID", "direct text link crosses page regions")
     for link in observation["links"]:
         if link["from_id"] not in by_id or link["to_id"] not in by_id:
             raise LibrarianError("EXTRACTION_SCHEMA_INVALID", "observation link target missing")

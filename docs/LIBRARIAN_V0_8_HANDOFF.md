@@ -88,7 +88,7 @@ actual Vault path separately.
   `loaded`, one typed `message_received` hook, and no diagnostics. The Gateway
   service was started and reports healthy, but no mapped sender or live image
   has been exercised. The CLI Gateway RPC probe did not establish a connection.
-- Focused Python tests: 25 vision/pipeline/bridge tests and 18
+- Focused Python tests: 28 vision/pipeline/bridge tests and 18
   store/digital/command/event/knowledge tests passed. Contract validation
   passed 77 definitions, 18 entries, 42 positive and 43 negative cases;
   the two Node plugin tests passed. These are synthetic tests.
@@ -108,14 +108,14 @@ not mean the real-photo, live Gateway, upstream, or service acceptance is done.
 | 06 | `test_session_selection_and_soft_affinity_stay_in_conversation_scope` | Local |
 | 07 | `test_unreadable_page_number_keeps_local_trace_and_original` | Local for unknown page; real 137/139 ambiguity pending |
 | 08–09 | `test_catalog_owner_chain_and_session_progress` covers explicit progress evidence | Local; four-photo session pending |
-| 10 | `test_trace_crop_uses_oriented_original_and_stays_within_page` renders owner-scoped crops from an EXIF-rotated two-page synthetic photo; derivative mapping and cross-page link checks also pass | Local geometry; real-photo acceptance pending |
-| 11 | Trace confidence fields and ordinary mark normalization | Partial; recognition-error runtime scenario pending |
+| 10 | `test_trace_crop_uses_oriented_original_and_stays_within_page` renders crops from an EXIF-rotated two-page photo; `test_cross_page_text_link_is_rejected_and_observation_link_keeps_traces_separate` checks direct text links and trace separation | Local geometry; real-photo acceptance pending |
+| 11 | `test_uncertain_ordinary_underline_is_saved_without_content_review` preserves uncertain OCR and avoids routine review | Local; real recognition accuracy pending |
 | 12 | `test_opt_in_symbol_signal_and_important_content_review` | Local |
 | 13 | `test_printed_and_margin_punctuation_do_not_trigger_symbol_vocabulary` | Local for correctly typed regions; model misclassification on real photos pending |
 | 14 | `test_correction_adds_revision_and_keeps_evidence` | Local |
 | 15–16 | New-extractor reconciliation and late-event index tests | Local |
 | 17 | `test_object_write_failure_does_not_acknowledge_capture_and_retry_succeeds` injects a failed atomic object write and retries the same key | Local |
-| 18 | Invalid JSON and unfinished provider reply tests | Partial; provider timeout pending |
+| 18 | Invalid JSON, unfinished reply, and `test_provider_timeout_keeps_original_and_records_failed_run` | Local; live provider fault response pending |
 | 19–20 | Outbox retry and index rebuild tests | Local |
 | 21 | Owner-filtered search, review and evidence reads tested | Partial; adversarial cross-owner reference matrix pending |
 | 22 | `test_explicit_annotation_link_groups_trace_without_inventing_authorship` | Local |

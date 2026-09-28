@@ -124,6 +124,25 @@ def test_unreadable_page_number_keeps_local_trace_and_original(tmp_path: Path):
         assert "NEEDS_PAGE_RESOLUTION" in run["issues"]
 
 
+def test_uncertain_ordinary_underline_is_saved_without_content_review(tmp_path: Path):
+    output = json.loads(_output())
+    output["printed_regions"][0]["text"] = {"text": "Weber and Parson?",
+                                            "confidence": .45, "basis": "vision"}
+    output["annotations"] = []
+    with Library(tmp_path) as lib:
+        receipt = lib.ingest("owner_a", transport="gateway", account_id="a",
+                             conversation_id="c", source_event_id="m",
+                             attachments=[{"source_item_id": "i", "mime_type": "image/png",
+                                           "data": _photo()}], idempotency_key="k")
+        traces = process_capture(lib, "owner_a", receipt["capture_ids"][0],
+                                 lambda _: json.dumps(output).encode())
+        assert len(traces) == 1
+        assert traces[0]["content"]["printed_text"] == {
+            "text": "Weber and Parson?", "confidence": .45, "basis": "vision"}
+        assert traces[0]["review"] == {"required": False, "state": "none", "reason": None}
+        assert review_queues(lib, "owner_a")["content"] == []
+
+
 def test_printed_and_margin_punctuation_do_not_trigger_symbol_vocabulary(tmp_path: Path):
     output = json.loads(_output())
     output["printed_regions"][0]["text"]["text"] = "R! Weber and Parsons"
@@ -144,7 +163,7 @@ def test_printed_and_margin_punctuation_do_not_trigger_symbol_vocabulary(tmp_pat
             "SELECT COUNT(*) FROM records WHERE model='KnowledgeCandidate'").fetchone()[0] == 0
 
 
-def test_invalid_cross_page_link_is_rejected(tmp_path: Path):
+def test_missing_text_link_target_is_rejected(tmp_path: Path):
     output = json.loads(_output())
     output["marks"][0]["linked_text_region_ids"] = ["missing"]
     with Library(tmp_path) as lib:
@@ -156,6 +175,45 @@ def test_invalid_cross_page_link_is_rejected(tmp_path: Path):
             process_capture(lib, "owner_a", receipt["capture_ids"][0],
                             lambda _: json.dumps(output).encode())
         assert err.value.code == "EXTRACTION_SCHEMA_INVALID"
+
+
+def test_cross_page_text_link_is_rejected_and_observation_link_keeps_traces_separate(tmp_path: Path):
+    output = json.loads(_output())
+    output["pages"][0]["id"] = "left"
+    output["pages"][0]["bbox"] = [0, 0, .5, 1]
+    output["pages"].append({"id": "right", "bbox": [.5, 0, 1, 1],
+                            "side": "right", "page": {"value": None,
+                            "confidence": None, "basis": "unknown",
+                            "status": "unresolved"}})
+    output["printed_regions"] = [{**_detection("right_text", "printed", "Other page"),
+                                   "page_region_id": "right", "bbox": [.6, .1, .9, .2]}]
+    output["marks"] = [{**_detection("left_mark", "underline", None, ["right_text"]),
+                        "page_region_id": "left", "bbox": [.1, .18, .4, .21]}]
+    output["annotations"] = []
+    output["symbols"] = [{**_detection("right_symbol", "symbol", "R"),
+                          "page_region_id": "right", "bbox": [.6, .18, .7, .21]}]
+    with Library(tmp_path) as lib:
+        receipt = lib.ingest("owner_a", transport="gateway", account_id="a",
+                             conversation_id="c", source_event_id="m",
+                             attachments=[{"source_item_id": "i", "mime_type": "image/png",
+                                           "data": _photo()}], idempotency_key="k")
+        capture_id = receipt["capture_ids"][0]
+        with pytest.raises(LibrarianError) as error:
+            process_capture(lib, "owner_a", capture_id,
+                            lambda _: json.dumps(output).encode())
+        assert error.value.code == "EXTRACTION_SCHEMA_INVALID"
+        assert lib.db.execute(
+            "SELECT COUNT(*) FROM records WHERE model='ReadingTrace'").fetchone()[0] == 0
+
+        output["marks"][0]["linked_text_region_ids"] = []
+        output["marks"][0]["link_confidence"] = None
+        output["links"] = [{"from_id": "left_mark", "to_id": "right_symbol",
+                            "kind": "annotates", "confidence": .95}]
+        traces = process_capture(lib, "owner_a", capture_id,
+                                 lambda _: json.dumps(output).encode())
+        assert len(traces) == 2
+        assert {trace["location"]["page_region_id"] for trace in traces} == {"left", "right"}
+        assert all(trace["content"]["printed_text"]["text"] is None for trace in traces)
 
 
 def test_extractor_cannot_override_trusted_observation_identity(tmp_path: Path):
