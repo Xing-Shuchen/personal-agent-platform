@@ -448,6 +448,43 @@ def test_opt_in_symbol_signal_and_important_content_review(tmp_path: Path):
         assert candidates[0]["content"]["text"] is None
         assert [event["event"] for event in lib.pending_events("owner_a")].count(
             "reading.knowledge_candidate.created") == 1
+        corrected = correct_trace(lib, "owner_a", important["id"], 1,
+                                  printed_text="Weber and Parsons",
+                                  reason="user reviewed important content")
+        assert corrected["review"]["state"] == "resolved"
+        assert review_queues(lib, "owner_a")["content"] == []
+
+
+def test_content_review_stays_pending_until_all_uncertain_fields_are_checked(tmp_path: Path):
+    output = json.loads(_output())
+    output["printed_regions"][0]["text"]["confidence"] = .5
+    output["annotations"][0]["text"]["confidence"] = .4
+    symbol = _detection("symbol_1", "symbol", "!!")
+    symbol["text"]["confidence"] = .95
+    symbol["confidence"] = .95
+    output["symbols"] = [symbol]
+    output["links"] = [
+        {"from_id": "mark_1", "to_id": "symbol_1", "kind": "annotates", "confidence": .95},
+        {"from_id": "mark_1", "to_id": "note_1", "kind": "annotates", "confidence": .95},
+    ]
+    vocabulary = {"enabled": True, "version": "personal-v1",
+                  "mappings": {"!!": "promote_candidate"}}
+    with Library(tmp_path) as lib:
+        receipt = lib.ingest("owner_a", transport="gateway", account_id="a",
+                             conversation_id="c", source_event_id="review",
+                             attachments=[{"source_item_id": "i", "mime_type": "image/png",
+                                           "data": _photo()}], idempotency_key="review")
+        trace = process_capture(lib, "owner_a", receipt["capture_ids"][0],
+                                lambda _: json.dumps(output).encode(), vocabulary=vocabulary)[0]
+        assert trace["review"]["state"] == "pending"
+        first = correct_trace(lib, "owner_a", trace["id"], 1,
+                              printed_text="Weber and Parsons", reason="checked print")
+        assert first["review"]["state"] == "pending"
+        assert review_queues(lib, "owner_a")["content"][0]["revision"] == 2
+        second = correct_trace(lib, "owner_a", trace["id"], 2,
+                               annotation="Parsons?", reason="checked margin")
+        assert second["review"]["state"] == "resolved"
+        assert review_queues(lib, "owner_a")["content"] == []
 
 
 def test_user_resolution_before_extraction_survives_processing(tmp_path: Path):

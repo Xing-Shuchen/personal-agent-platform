@@ -472,6 +472,23 @@ def correct_trace(lib: Library, owner_id: str, trace_id: str, expected_revision:
             raise LibrarianError("VALIDATION_FAILED", "correction text must be nonempty or null")
         revised["content"][field] = {"text": value, "confidence": None,
                                       "basis": "user_statement" if value is not None else "unknown"}
+    if prior["review"]["state"] == "pending":
+        printed = prior["content"]["printed_text"]
+        annotation_field = prior["content"]["annotation"]
+        required = set()
+        if (printed["basis"] != "user_statement"
+                and (printed["text"] is None or printed["confidence"] is None
+                     or printed["confidence"] < .85)):
+            required.add("printed_text")
+        if (annotation_field["basis"] != "user_statement"
+                and annotation_field["text"] is not None
+                and (annotation_field["confidence"] is None
+                     or annotation_field["confidence"] < .70)):
+            required.add("annotation")
+        corrected = ({"printed_text"} if printed_text is not ... else set()) | (
+            {"annotation"} if annotation is not ... else set())
+        if required and required <= corrected:
+            revised["review"]["state"] = "resolved"
     validate("ReadingTrace", revised)
     with lib.transaction():
         lib._put(revised)

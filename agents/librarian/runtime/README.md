@@ -28,7 +28,9 @@ Search accepts text or a structural filter, including textless symbol traces,
 and returns the same provenance-bearing hit contract for all three media.
 `review.py` exposes separate owner-scoped queues for processed captures with
 unresolved catalog context and important traces whose recognized content is
-uncertain. Ordinary low-confidence marks do not enter the content queue.
+uncertain. Ordinary low-confidence marks do not enter the content queue. A
+user correction closes content review only after every uncertain field has
+been explicitly checked, including checks made across successive revisions.
 
 `commands.py` validates the thirteen command names and their payload shapes,
 then executes the supported MVP commands and candidate approval/rejection with
