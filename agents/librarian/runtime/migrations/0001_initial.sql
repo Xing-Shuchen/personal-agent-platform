@@ -47,6 +47,12 @@ CREATE TABLE IF NOT EXISTS extractor_attempts (
   error_code TEXT,
   PRIMARY KEY (owner_id, run_id)
 );
+CREATE TABLE IF NOT EXISTS extractor_derivatives (
+  owner_id TEXT NOT NULL,
+  run_id TEXT NOT NULL,
+  derivative TEXT NOT NULL,
+  PRIMARY KEY (owner_id, run_id)
+);
 CREATE TABLE IF NOT EXISTS trace_index (
   owner_id TEXT NOT NULL,
   trace_id TEXT NOT NULL,

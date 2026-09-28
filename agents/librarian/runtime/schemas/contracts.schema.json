@@ -1216,6 +1216,36 @@
         "image_space": {
           "$ref": "#/$defs/ImageSpace"
         },
+        "derivative": {
+          "type": "object",
+          "properties": {
+            "asset": {
+              "$ref": "#/$defs/ObjectRef"
+            },
+            "width": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "height": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "operations": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": ["exif_transpose", "uniform_resize"]
+              },
+              "minItems": 1,
+              "uniqueItems": true
+            },
+            "coordinate_mapping": {
+              "const": "normalized_same_origin"
+            }
+          },
+          "required": ["asset", "width", "height", "operations", "coordinate_mapping"],
+          "additionalProperties": false
+        },
         "visible_title": {
           "$ref": "#/$defs/TextField"
         },

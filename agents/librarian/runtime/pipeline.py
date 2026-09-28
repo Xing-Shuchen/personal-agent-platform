@@ -1,15 +1,11 @@
-"""Evidence-preserving synthetic extraction seam and current-trace retrieval.
-
-An extractor passed to ``process_capture`` must return raw JSON bytes. This
-module does not supply a vision model; a real extractor must be validated with
-annotated photographs before M1 can be claimed.
-"""
+"""Evidence-preserving physical extraction and current-trace retrieval."""
 from __future__ import annotations
 
 import hashlib
 import io
 import json
 import unicodedata
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
@@ -21,6 +17,15 @@ from .store import Library, LibrarianError, _json, _new, _now, _unknown_time, va
 
 TRACE_KINDS = {"highlight", "underline", "circle", "bracket", "margin_note",
                "inline_note", "symbol", "arrow", "page_mark", "unknown_mark"}
+
+
+@dataclass(frozen=True)
+class ExtractionOutput:
+    raw: bytes
+    derivative: bytes
+    derivative_width: int
+    derivative_height: int
+    operations: tuple[str, ...]
 
 
 def _identity(value: str | None, basis: str) -> dict[str, Any]:
@@ -99,7 +104,8 @@ def _conflicting_visible_title(lib: Library, owner_id: str,
 def _failed_run(lib: Library, owner_id: str, capture_id: str, run_id: str,
                 extractor_version: str, normalizer_version: str,
                 error_code: str, raw_asset: dict[str, Any] | None = None,
-                observation: dict[str, Any] | None = None) -> None:
+                observation: dict[str, Any] | None = None,
+                derivative: dict[str, Any] | None = None) -> None:
     record = {"object_type": "ProcessingRun", "schema_version": "0.1.0",
               "id": run_id, "owner_id": owner_id, "created_at": _now(),
               "capture_id": capture_id, "checkpoint": "EXTRACTED" if observation else "STORED",
@@ -112,13 +118,21 @@ def _failed_run(lib: Library, owner_id: str, capture_id: str, run_id: str,
         lib._put(record)
         if observation:
             lib._put(observation)
+        if derivative:
+            _record_derivative(lib, owner_id, run_id, derivative)
         if raw_asset:
             lib.db.execute("INSERT INTO extractor_attempts VALUES(?,?,?,?,?,?)",
                            (owner_id, capture_id, run_id, _json(raw_asset), "failed", error_code))
 
 
+def _record_derivative(lib: Library, owner_id: str, run_id: str,
+                       derivative: dict[str, Any]) -> None:
+    lib.db.execute("INSERT INTO extractor_derivatives VALUES(?,?,?)",
+                   (owner_id, run_id, _json(derivative)))
+
+
 def process_capture(lib: Library, owner_id: str, capture_id: str,
-                    extractor: Callable[[bytes], bytes], *, extractor_version: str = "synthetic-v1",
+                    extractor: Callable[[bytes], bytes | ExtractionOutput], *, extractor_version: str = "synthetic-v1",
                     normalizer_version: str = "physical-v1",
                     vocabulary: dict[str, Any] | None = None) -> list[dict[str, Any]]:
     """Run one captured original through a replaceable extractor and normalize.
@@ -155,14 +169,37 @@ def process_capture(lib: Library, owner_id: str, capture_id: str,
                     normalizer_version, "VALIDATION_FAILED")
         raise LibrarianError("VALIDATION_FAILED", "capture is not a decodable image") from error
     try:
-        raw = extractor(original)
+        extracted = extractor(original)
     except Exception as error:
         _failed_run(lib, owner_id, capture_id, run_id, extractor_version,
                     normalizer_version, "EXTRACTOR_UNAVAILABLE")
         raise LibrarianError("EXTRACTOR_UNAVAILABLE", "extractor failed; original capture remains stored") from error
+    derivative = None
+    if isinstance(extracted, ExtractionOutput):
+        raw = extracted.raw
+        try:
+            with Image.open(io.BytesIO(extracted.derivative)) as image:
+                image.load()
+                if image.format != "PNG" or image.size != (
+                        extracted.derivative_width, extracted.derivative_height):
+                    raise ValueError("derivative must be PNG with declared dimensions")
+            if not extracted.operations or any(operation not in
+                    {"exif_transpose", "uniform_resize"} for operation in extracted.operations):
+                raise ValueError("invalid derivative operations")
+            derivative = {"asset": lib._save_object(extracted.derivative, "image/png"),
+                          "width": extracted.derivative_width,
+                          "height": extracted.derivative_height,
+                          "operations": list(extracted.operations),
+                          "coordinate_mapping": "normalized_same_origin"}
+        except (OSError, ValueError) as error:
+            _failed_run(lib, owner_id, capture_id, run_id, extractor_version,
+                        normalizer_version, "EXTRACTION_SCHEMA_INVALID")
+            raise LibrarianError("EXTRACTION_SCHEMA_INVALID", "invalid extraction derivative") from error
+    else:
+        raw = extracted
     if not isinstance(raw, bytes):
         _failed_run(lib, owner_id, capture_id, run_id, extractor_version,
-                    normalizer_version, "EXTRACTION_SCHEMA_INVALID")
+                    normalizer_version, "EXTRACTION_SCHEMA_INVALID", derivative=derivative)
         raise LibrarianError("EXTRACTION_SCHEMA_INVALID", "extractor must return raw JSON bytes")
     raw_asset = lib._save_object(raw, "application/json")
     try:
@@ -174,13 +211,16 @@ def process_capture(lib: Library, owner_id: str, capture_id: str,
                        "created_at": _now(), "capture_id": capture_id,
                        "processing_run_id": run_id, "extractor": extractor_version,
                        "raw_output_asset": raw_asset, **output}
+        if derivative:
+            observation["derivative"] = derivative
         validate("PageObservation", observation)
         if (observation["image_space"]["width"], observation["image_space"]["height"]) != oriented_size:
             raise LibrarianError("EXTRACTION_SCHEMA_INVALID", "observation dimensions differ from EXIF-oriented original")
         _check_observation(observation)
     except (json.JSONDecodeError, ValueError, KeyError, TypeError, LibrarianError) as error:
         _failed_run(lib, owner_id, capture_id, run_id, extractor_version,
-                    normalizer_version, "EXTRACTION_SCHEMA_INVALID", raw_asset)
+                    normalizer_version, "EXTRACTION_SCHEMA_INVALID", raw_asset,
+                    derivative=derivative)
         raise LibrarianError("EXTRACTION_SCHEMA_INVALID", f"extractor output invalid: {error}") from error
 
     if completed:
@@ -196,6 +236,8 @@ def process_capture(lib: Library, owner_id: str, capture_id: str,
         with lib.transaction():
             lib._put(pending)
             lib._put(observation)
+            if derivative:
+                _record_derivative(lib, owner_id, run_id, derivative)
             lib.db.execute("INSERT INTO extractor_attempts VALUES(?,?,?,?,?,?)",
                            (owner_id, capture_id, run_id, _json(raw_asset), "pending",
                             "RECONCILIATION_REQUIRED"))
@@ -273,7 +315,8 @@ def process_capture(lib: Library, owner_id: str, capture_id: str,
         resolution, state, store_resolution = build_resolution()
     except LibrarianError as error:
         _failed_run(lib, owner_id, capture_id, run_id, extractor_version,
-                    normalizer_version, error.code, raw_asset, observation)
+                    normalizer_version, error.code, raw_asset, observation,
+                    derivative=derivative)
         raise
     traces = normalize(capture, observation, resolution, state, normalizer_version,
                        vocabulary=vocabulary)
@@ -289,6 +332,8 @@ def process_capture(lib: Library, owner_id: str, capture_id: str,
     with lib.transaction():
         lib._put(run)
         lib._put(observation)
+        if derivative:
+            _record_derivative(lib, owner_id, run_id, derivative)
         if store_resolution:
             lib._put(resolution)
         lib.db.execute("INSERT INTO extractor_attempts VALUES(?,?,?,?,?,?)",
@@ -406,7 +451,10 @@ def normalize(capture: dict[str, Any], observation: dict[str, Any],
                             "observation_id": observation["id"],
                             "resolution_id": resolution["id"],
                             "resolution_revision": resolution["revision"], "detection_ids": source_ids},
-                 "provenance": [capture["asset"], observation["raw_output_asset"]],
+                 "provenance": [capture["asset"]] +
+                               ([observation["derivative"]["asset"]]
+                                if observation.get("derivative") else []) +
+                               [observation["raw_output_asset"]],
                  "confidence": {"book_resolution": None,
                                 "page_number": page["page"]["confidence"]},
                  "marked_at": _unknown_time(),

@@ -23,7 +23,13 @@ stores a new extractor's observation for reconciliation without replacing
 corrected traces,
 applies an opt-in versioned symbol vocabulary with exception-only review,
 and can rebuild the index from traces. Its tests use synthetic images and
-synthetic observations; it is not a production image extractor.
+synthetic observations. `vision.py` provides a Claude Messages image adapter:
+it sends an EXIF-oriented, uniformly resized derivative, requests normalized
+coordinates, and returns the model text to the pipeline. The derivative,
+transform and raw model text are saved with the processing attempt, including
+failed validation attempts. Its provider transport has a local mock test; the
+current configured endpoint returns HTTP 404 for `/v1/messages`, so live
+image recognition has not been verified.
 Search accepts text or a structural filter, including textless symbol traces,
 and returns the same provenance-bearing hit contract for all three media.
 `review.py` exposes separate owner-scoped queues for processed captures with
@@ -72,7 +78,23 @@ Run the focused tests from the repo root:
 ```bash
 PYTHONPATH=. python3 -m pytest tests/test_librarian_store.py tests/test_librarian_pipeline.py tests/test_librarian_digital.py tests/test_librarian_commands.py tests/test_librarian_events.py -q
 PYTHONPATH=. python3 -m pytest tests/test_librarian_knowledge.py -q
+PYTHONPATH=. python3 -m pytest tests/test_librarian_vision.py -q
 ```
+
+Once a Claude-compatible Messages endpoint and credential are configured,
+process an already accepted capture with:
+
+```bash
+PYTHONPATH=. python3 -m agents.librarian.runtime.vision \
+  --root var/librarian --owner OWNER_ID --capture CAPTURE_ID --model MODEL_ID
+```
+
+Set `ANTHROPIC_API_KEY` (or the deployment's `ANTHROPIC_AUTH_TOKEN`) and
+optionally `ANTHROPIC_BASE_URL` in the local environment. The command sends
+image content to the configured provider. Choose a vision model whose native
+resolution accommodates the derivative; provider-side downscaling is rejected
+to preserve coordinate mapping. Do not treat a successful API response as the
+annotated-photo acceptance result.
 
 Run the offline contract verifier from this directory with
 `python3 tests/validate_contracts.py`. It writes
