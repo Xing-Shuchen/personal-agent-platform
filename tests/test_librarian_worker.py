@@ -6,7 +6,7 @@ import pytest
 
 from agents.librarian.runtime.store import Library, LibrarianError, _now, _unknown_time
 from agents.librarian.runtime.worker import (_catalog, _current, _hide_vault_markers,
-                                             _remove_vault_images)
+                                             _remove_vault_images, _sync_digital)
 
 
 def _epub(path: Path) -> None:
@@ -80,3 +80,26 @@ def test_vault_trace_metadata_is_hidden_without_changing_review_text(tmp_path: P
     assert '<span hidden data-librarian-trace="rt_abc" data-revision="2"></span>' in content
     assert '<span hidden data-librarian-batch="batch_abc"></span>' in content
     assert not _hide_vault_markers(tmp_path, {"id": "batch_abc"})
+
+
+def test_failed_digital_source_does_not_stop_other_sources(tmp_path: Path, monkeypatch) -> None:
+    from agents.librarian.runtime import worker
+
+    def unavailable(*_args):
+        raise LibrarianError("UPSTREAM_UNAVAILABLE", "private source unavailable")
+
+    monkeypatch.setattr(worker, "sync_koodo_sqlite", unavailable)
+    monkeypatch.setattr(worker, "fetch_weread_book",
+                        lambda _key, book_id: ({"bookId": book_id}, []))
+    monkeypatch.setattr(worker, "sync_weread_book",
+                        lambda *_args: {"created": 0, "unchanged": 0})
+    config = tmp_path / "plugin-data.json"
+    config.write_text('{"wereadApiKey":"private"}', encoding="utf-8")
+    with Library(tmp_path / "state") as lib:
+        result = _sync_digital(lib, tmp_path / "state", "owner",
+                               koodo=("koodo", tmp_path / "books.db", tmp_path / "notes.db"),
+                               weread=("weread", config, ["book-1"]))
+    assert [(item["source"], item["status"]) for item in result] == [
+        ("koodo", "error"), ("weread", "success")]
+    assert result[0]["code"] == "UPSTREAM_UNAVAILABLE"
+    assert "private" not in (tmp_path / "state" / "digital-sync-status.json").read_text()

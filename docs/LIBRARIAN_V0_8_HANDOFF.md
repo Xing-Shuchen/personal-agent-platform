@@ -59,6 +59,13 @@ Create `release-v0.8` only after the acceptance evidence below is complete.
   with no duplicates. Owner-scoped search passed. Synthetic tests cover source
   changes, removals, pagination, and correction conflicts. No private text,
   book IDs, or API key were committed.
+- Native Koodo and one explicitly selected WeRead book are now configured in
+  the live OpenClaw Librarian worker. Its first production sync stored 118
+  Koodo and four WeRead traces beside the ten physical traces; a second sync
+  in an isolated copy made zero duplicates. All three media returned owner-
+  scoped production search results. Digital errors are recorded per source
+  and do not stop physical intake. The five-minute live repeat and app-driven
+  changes still need observation.
 - The OpenClaw intake plugin reports `loaded`, with one `message_received`
   typed hook, one mapped search tool, one recovery service and no diagnostics.
   The dedicated `librarian` PAP profile and OpenClaw agent are registered;
@@ -104,10 +111,11 @@ Create `release-v0.8` only after the acceptance evidence below is complete.
    real inbound question from the mapped sender and verify that the agent
    returns a relevant trace, edition/page and original evidence without
    overclaiming. Human review of the first-book note remains pending.
-4. Verify actual app-driven create/edit/delete and periodic invocation under
-   the trusted owner for both WeRead and Koodo before claiming live sync.
-   Real upstream record mapping and replay were exercised on this PC for both
-   sources; Markdown exports remain separate adapters.
+4. Verify actual app-driven create/edit/delete and a repeat five-minute
+   invocation under the trusted owner for both WeRead and Koodo before claiming
+   live sync. Initial production import and isolated replay passed. Only one
+   WeRead book is configured; extend the explicit book list to the intended
+   scope. Markdown exports remain separate adapters.
 5. Connect and verify an actual knowledge service writer if claiming the
    candidate promotion stage. The port exists but has no configured writer.
 6. Audit all AC-01 through AC-26 against runtime evidence, not solely schema
@@ -181,20 +189,20 @@ not mean the real-photo, live Gateway, upstream, or service acceptance is done.
 | 04 | `test_same_title_two_copies_requires_explicit_catalog_resolution` covers the domain; `test_librarian_worker.py` now rejects automatic binding when multiple copies share one edition without a selected session | Local ambiguity guard; first-book unique copy resolved from photographed ISBN plus supplied EPUB |
 | 05 | `test_conflicting_explicit_session_keeps_original_and_observation` | Local; real visible-title extraction pending |
 | 06 | `test_session_selection_and_soft_affinity_stay_in_conversation_scope` | Local |
-| 07 | `test_unreadable_page_number_keeps_local_trace_and_original`; first-book OCR resolved photographed pp.40, 41, 43 and 44 | Live first-book pages; real 137/139 ambiguity pending |
+| 07 | `test_unreadable_page_number_keeps_local_trace_and_original`; first-book OCR now resolves marked text across photographed pp.39–44, including two original-book page numbers on one image | Live first-book pages; real 137/139 ambiguity pending |
 | 08–09 | `test_catalog_owner_chain_and_session_progress` covers explicit progress evidence | Local; four-photo session pending |
 | 10 | `test_trace_crop_uses_oriented_original_and_stays_within_page` renders crops from an EXIF-rotated two-page photo; `test_cross_page_text_link_is_rejected_and_observation_link_keeps_traces_separate` checks direct text links and trace separation | Local geometry; real-photo acceptance pending |
 | 11 | `test_uncertain_ordinary_underline_is_saved_without_content_review`; first-book long underlines were aligned to EPUB sentences and saved without per-trace interruption | User accuracy review pending; §38.1 pending |
 | 12 | `test_opt_in_symbol_signal_and_important_content_review` | Local |
 | 13 | `test_printed_and_margin_punctuation_do_not_trigger_symbol_vocabulary` | Local for correctly typed regions; model misclassification on real photos pending |
 | 14 | `test_correction_adds_revision_and_keeps_evidence` | Local |
-| 15–16 | New-extractor reconciliation and late-event index tests | Local |
+| 15–16 | New-extractor reconciliation and late-event index tests; the first-book v3 reprocessing retained earlier traces as superseded revisions, installed ten current traces and refreshed the generated Vault note only after an unchanged-content check | Local and first-book reprocessing; arbitrary user-corrected split/merge still requires reconciliation |
 | 17 | `test_object_write_failure_does_not_acknowledge_capture_and_retry_succeeds` injects a failed atomic object write and retries the same key | Local |
 | 18 | Invalid JSON, unfinished reply, and `test_provider_timeout_keeps_original_and_records_failed_run` | Local; live provider fault response pending |
 | 19–20 | Outbox retry and index rebuild tests | Local |
 | 21 | `test_foreign_ids_cannot_read_or_mutate_owner_records` probes foreign trace, capture and candidate IDs; the mapped production search returned one p.41 trace while an unmapped sender had no tool | Local adversarial matrix and mapped tool call passed; real inbound question pending |
 | 22 | `test_explicit_annotation_link_groups_trace_without_inventing_authorship` | Local |
-| 23 | `test_same_query_returns_common_hits_from_all_three_media` returns physical, WeRead and Koodo SearchHits for one query without upstream-specific objects; 118 actual Koodo notes and 39 actual WeRead records were imported and searched in temporary stores, with replay and raw evidence verified | Three-source contract passed locally; app-driven and periodic live sync pending |
+| 23 | `test_same_query_returns_common_hits_from_all_three_media` returns physical, WeRead and Koodo SearchHits for one query without upstream-specific objects; production now has 10 physical, 118 Koodo and four WeRead traces with owner-scoped hits for each medium; the separate 39-record WeRead fixture was tested in a temporary store | Initial live sync passed; periodic repeat, wider WeRead coverage and app-driven changes pending |
 | 24 | The mapped-only `librarian_search` tool returned a production p.41 note with source and page in a trusted-context call. A CLI synthetic agent turn could not resolve the Feishu session route. | Partial: real inbound search-to-answer and evidence-backed reply still pending |
 | 25 | `test_source_correction_during_external_write_does_not_publish_promotion` | Local mock; actual knowledge writer pending |
 | 26 | `test_candidate_requires_explicit_trigger_and_promotion_confirms_external_write` | Local |

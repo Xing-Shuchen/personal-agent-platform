@@ -282,7 +282,7 @@ def _notify_correction(root: Path, batch: dict, note: Path, count: int) -> None:
     if marker.exists():
         return
     message = (f"《{note.stem}》的页码与画线识别已修正，数据库和 Obsidian 已同步更新。"
-               f"现有 {count} 条画线/笔记；第 39 页“正是帕森斯……”已归回原书第 39 页。"
+               f"现有 {count} 条画线/笔记。"
                f"请在「2Area/40 学习与阅读/阅读笔记/{note.name}」review。")
     result = subprocess.run(["openclaw", "message", "send", "--channel", "feishu",
                              "--account", "librarian", "--target",
@@ -300,18 +300,35 @@ def _sync_digital(lib: Library, root: Path, owner: str, *,
     results = []
     if koodo:
         source_id, books_db, notes_db = koodo
-        counts = sync_koodo_sqlite(lib, owner, source_id, books_db, notes_db)
-        results.append({"source": "koodo", "counts": counts})
+        try:
+            counts = sync_koodo_sqlite(lib, owner, source_id, books_db, notes_db)
+            results.append({"source": "koodo", "status": "success", "counts": counts})
+        except Exception as error:
+            results.append({"source": "koodo", "status": "error",
+                            "code": error.code if isinstance(error, LibrarianError) else "SYNC_FAILED"})
     if weread:
         source_id, data_path, book_ids = weread
-        plugin_data = json.loads(data_path.read_text(encoding="utf-8"))
-        key = plugin_data.get("wereadApiKey")
-        if not isinstance(key, str) or not key:
-            raise LibrarianError("UPSTREAM_UNAVAILABLE", "WeRead API key unavailable")
+        try:
+            plugin_data = json.loads(data_path.read_text(encoding="utf-8"))
+            if not isinstance(plugin_data, dict):
+                raise LibrarianError("UPSTREAM_FORMAT_UNSUPPORTED", "WeRead plugin data invalid")
+            key = plugin_data.get("wereadApiKey")
+            if not isinstance(key, str) or not key:
+                raise LibrarianError("UPSTREAM_UNAVAILABLE", "WeRead API key unavailable")
+        except Exception as error:
+            key = None
+            results.append({"source": "weread", "status": "error",
+                            "code": error.code if isinstance(error, LibrarianError) else "SYNC_FAILED"})
         for book_id in book_ids:
-            book, items = fetch_weread_book(key, book_id)
-            counts = sync_weread_book(lib, owner, source_id, book, items)
-            results.append({"source": "weread", "counts": counts})
+            if key is None:
+                break
+            try:
+                book, items = fetch_weread_book(key, book_id)
+                counts = sync_weread_book(lib, owner, source_id, book, items)
+                results.append({"source": "weread", "status": "success", "counts": counts})
+            except Exception as error:
+                results.append({"source": "weread", "status": "error",
+                                "code": error.code if isinstance(error, LibrarianError) else "SYNC_FAILED"})
     if koodo or weread:
         _atomic_write(root / "digital-sync-status.json", json.dumps(
             {"completed_at": _now(), "results": results}, ensure_ascii=False).encode())

@@ -110,10 +110,11 @@ keeps Koodo's locator object as a source-native locator rather than calling it
 an EPUB CFI. Repeated calls create, update, or retire traces as source records
 change. A source edit to a user-corrected trace stays pending until an explicit
 `reconcile_koodo_note` choice accepts the source or retains the correction.
-No polling job is configured, and no Koodo app edit has been observed live.
-This PC's actual native databases yielded 118 notes from one book in a
-temporary acceptance store; first import and replay, raw evidence, search,
-and owner isolation passed without storing private content in Git.
+The OpenClaw worker now schedules a five-minute read-only sync for the trusted
+owner on this PC. Its initial production import stored 118 notes from one book;
+an isolated replay, raw evidence, search, and owner isolation passed without
+storing private content in Git. An app-driven edit and the live repeat remain
+to be observed.
 
 Run a native sync only after assigning the trusted owner and stable source ID:
 
@@ -124,9 +125,7 @@ PYTHONPATH=. python3 -m agents.librarian.runtime.koodo_native \
   --notes-db /path/to/koodo-reader/uploads/data/config/notes.db
 ```
 
-The two source database paths are machine-specific. Re-run the command after
-Koodo changes its local data, or schedule it under a trusted local owner once
-that identity is configured. An empty source will not retire every known note
+The two source database paths are machine-specific. An empty source will not retire every known note
 unless `--allow-empty-source` is supplied deliberately. Never edit the Koodo
 databases from Librarian.
 
@@ -138,7 +137,11 @@ record as private evidence. The API key is read from
 read-only check on this PC imported 38 highlights and one review into a
 temporary Library. Replay created no duplicates, and raw evidence and
 owner-scoped search passed. Source edit/delete behavior has synthetic tests;
-an actual app-driven change and scheduled invocation remain unverified.
+an actual app-driven change and a live scheduled repeat remain unverified.
+The OpenClaw worker on this PC imports one explicitly configured WeRead book
+using the private Obsidian plugin data file for its API key. Its first
+production sync stored four traces. Other books require adding their IDs to
+the worker configuration.
 
 ```bash
 LIBRARIAN_WEREAD_API_KEY=... PYTHONPATH=. python3 -m agents.librarian.runtime.weread_native \

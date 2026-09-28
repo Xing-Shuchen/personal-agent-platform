@@ -53,6 +53,16 @@ openclaw plugins inspect pap-librarian-intake --runtime --json
 its staged media and write access to `stateRoot` and `vaultRoot`. The Python
 bridge and worker use `jsonschema`, Pillow, RapidOCR, ONNX Runtime and OpenCV.
 
+Optional native digital sync runs with the same five-minute recovery service.
+Configure `digitalSources.koodo` with a stable source ID and Koodo's read-only
+`books.db` and `notes.db` paths. Configure `digitalSources.weread` with a stable
+source ID, the local Obsidian WeRead plugin `data.json` path and explicit book
+IDs. The worker reads the Agent API key from that private file; do not put it
+in OpenClaw config. Each source reports success or an error code in
+`stateRoot/digital-sync-status.json`. A digital source error does not stop
+physical photo processing. The WeRead book list is explicit; adding books
+requires updating this config.
+
 Run local tests:
 
 ```bash
