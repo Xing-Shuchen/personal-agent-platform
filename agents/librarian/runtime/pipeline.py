@@ -15,6 +15,7 @@ from typing import Any, Callable
 
 from PIL import Image, ImageOps, UnidentifiedImageError
 
+from .knowledge import create_candidate
 from .store import Library, LibrarianError, _json, _new, _now, _unknown_time, validate
 
 
@@ -298,6 +299,12 @@ def process_capture(lib: Library, owner_id: str, capture_id: str,
             lib._event(owner_id, "reading.trace.created", "reading_trace", trace["id"], 1,
                        {"trace_id": trace["id"], "revision": 1, "medium": "physical",
                         "book_instance_id": trace["book_instance_id"]}, run_id)
+            if "promote_candidate" in trace["intent_signals"]:
+                create_candidate(lib, owner_id,
+                                 [{"trace_id": trace["id"], "revision": 1}],
+                                 candidate_type="concept",
+                                 content={"text": None, "confidence": None, "basis": "unknown"},
+                                 correlation_id=run_id)
         lib._event(owner_id, "reading.capture.processed", "processing_run", run_id, 1,
                    {"capture_id": capture_id, "processing_run_id": run_id,
                     "outcome": run["outcome"], "trace_refs":

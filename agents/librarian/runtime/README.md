@@ -28,11 +28,17 @@ Search accepts text or a structural filter, including textless symbol traces,
 and returns the same provenance-bearing hit contract for all three media.
 
 `commands.py` validates the thirteen command names and their payload shapes,
-then executes the supported MVP commands with owner/actor checks and an
-idempotent receipt in the same database transaction. Capture commands resolve
+then executes the supported MVP commands and candidate approval/rejection with
+owner/actor checks and an idempotent receipt in the same database transaction.
+Capture commands resolve
 trusted upload references, recheck bytes on retry, and allow user resolution
-before or after extraction. Knowledge candidate commands remain explicitly
-unimplemented.
+before or after extraction.
+
+`knowledge.py` keeps candidates separate from knowledge objects. An enabled
+`promote_candidate` symbol creates only a pending candidate; ordinary
+highlights do not. Approval checks exact current trace revisions. Promotion
+requires an idempotent external knowledge writer to confirm persistence before
+the candidate and success event advance; PAP has no configured writer yet.
 
 `gateway_bridge.py` accepts bounded staged image bytes over a trusted local
 stdin protocol and executes `reading.capture.ingest`. The linked OpenClaw
@@ -73,5 +79,5 @@ Python methods is not an authentication mechanism.
 Remaining work includes broader semantic checks; stronger
 batch book/page conflict resolution; actual image extraction with annotated-photo tests;
 Gateway upload identity and authorization; page/edition conflict handling;
-review exception workflows; complete search
-contracts; live WeRead/Koodo synchronization; and knowledge promotion.
+review exception workflows; complete search contracts; live WeRead/Koodo
+synchronization; and connection to an actual knowledge service.

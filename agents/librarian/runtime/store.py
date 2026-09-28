@@ -96,6 +96,11 @@ def _validate_semantics(model: str, value: dict[str, Any]) -> None:
     if model == "KnowledgeCandidate":
         if (value["status"] == "promoted") != (value["knowledge_id"] is not None):
             raise LibrarianError("VALIDATION_FAILED", "promoted candidate needs a knowledge ID")
+        if value["status"] == "rejected" and not value.get("decision_reason"):
+            raise LibrarianError("VALIDATION_FAILED", "rejected candidate needs a reason")
+        refs = [(ref["trace_id"], ref["revision"]) for ref in value["source_trace_refs"]]
+        if len(refs) != len(set(refs)):
+            raise LibrarianError("VALIDATION_FAILED", "candidate source refs must be unique")
     if model == "SearchRequest":
         filters = value["filters"]
         if not value["query"].strip() and not any(

@@ -10,6 +10,7 @@ import hashlib
 import json
 from typing import Any, Callable
 
+from .knowledge import decide_candidate
 from .pipeline import correct_trace, resolve_capture
 from .store import Library, LibrarianError, _json, validate
 
@@ -132,6 +133,13 @@ def execute_command(lib: Library, command: dict[str, Any], *,
             validate("CommandReceipt", receipt)
             _store_receipt(lib, trusted_owner_id, key, fingerprint, receipt)
             return receipt
+        elif name in {"reading.knowledge_candidate.approve",
+                      "reading.knowledge_candidate.reject"}:
+            candidate = decide_candidate(
+                lib, trusted_owner_id, _required(payload, "candidate_id"),
+                _required(payload, "expected_revision"),
+                approve=name.endswith(".approve"), reason=payload.get("reason"))
+            object_id = candidate["id"]
         else:
             raise LibrarianError("VALIDATION_FAILED", f"command not implemented: {name}")
         receipt = {"command_id": command["command_id"], "status": "completed",

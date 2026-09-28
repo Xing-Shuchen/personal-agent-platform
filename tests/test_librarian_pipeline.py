@@ -429,6 +429,14 @@ def test_opt_in_symbol_signal_and_important_content_review(tmp_path: Path):
         assert important["review"]["state"] == "pending"
         assert important["attribution"]["mark_author"] == "unknown"
         assert all("reread_target" not in trace["intent_signals"] for trace in enabled)
+        candidates = [json.loads(row[0]) for row in lib.db.execute(
+            "SELECT body FROM records WHERE model='KnowledgeCandidate' AND current=1")]
+        assert len(candidates) == 1
+        assert candidates[0]["source_trace_refs"] == [{"trace_id": important["id"], "revision": 1}]
+        assert candidates[0]["status"] == "pending"
+        assert candidates[0]["content"]["text"] is None
+        assert [event["event"] for event in lib.pending_events("owner_a")].count(
+            "reading.knowledge_candidate.created") == 1
 
 
 def test_user_resolution_before_extraction_survives_processing(tmp_path: Path):

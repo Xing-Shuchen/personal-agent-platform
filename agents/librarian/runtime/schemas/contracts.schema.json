@@ -1857,6 +1857,17 @@
               "type": "null"
             }
           ]
+        },
+        "decision_reason": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
