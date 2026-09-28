@@ -282,6 +282,14 @@ python3 scripts/benchmark_world_dashboard.py --scale 1
 此基准会在临时目录生成规格所列 1,000 Threads、100,000 Events、500,000 Claims、
 50,000 Entities 与 1,000,000 原始 Relations；不会触及真实 Chronicle。
 
+可视化中的活动折线统计 **Event 发生日期**，按周聚合；窗口为最新有日期的 Event
+所在周及此前 11 周。空白基线表示此对象没有可定位到日期的 Event。首页
+`Events · 7d` 按当前日期回看 7 天，`Changed Threads · 7d` 按最近有意义变更时间统计。
+Thread、Timeline、Map、Graph 共用顶部范围；在 Timeline 选中 Event 后，可跳到
+Map 高亮其地点或在 Graph 聚焦其节点。地图只绘制有规范坐标和来源的发生地。
+Thread 行内的 ↺、⇄、⊘ 和 ○ 分别表示关联 Claim 存在修正/取代、争议、撤回，
+以及当前仍有未解问题；这些标记反映现存记录状态，不表示变化发生在最近 12 周。
+
 当前 Chronicle 快照没有规范化事件地点坐标，也没有独立的 Current State 综合记录。
 仪表盘会明确显示空状态；不会由 Entity 名称或 Source 出版者位置猜测发生地，
 也不会把最新 Event 摘要充当综合结论。可选地点注册表必须提供

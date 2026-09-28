@@ -47,7 +47,13 @@ def test_projection_preserves_semantics_and_canonical_database(tmp_path):
     assert thread["current_state"]["provenance"] == "unavailable"
     assert thread["last_meaningful_change_at"] == "2026-02-05"
     assert thread["attention"]["reasons"] == ["contested_or_corrected_claim", "high_priority_open_questions"]
+    assert thread["activity_series"]["measure"] == "event_count"
+    assert thread["activity_series"]["aggregation"] == "week"
+    assert len(thread["activity_series"]["bins"]) == 12
+    assert sum(bin["count"] for bin in thread["activity_series"]["bins"]) == 1
+    assert {"claim_contested", "open_question"} <= set(thread["recent_change_types"])
     assert json.loads((root / "threads" / "t2.json").read_text())["event_ids"] == []
+    assert json.loads((root / "threads" / "t2.json").read_text())["activity_series"]["bins"] == []
     event = json.loads((root / "events" / "e1.json").read_text())
     assert event["occurred_at"] == "2026-02-01" and event["time_precision"] == "day"
     assert event["claims"][0]["state"] == "contested"
@@ -55,6 +61,7 @@ def test_projection_preserves_semantics_and_canonical_database(tmp_path):
     entity = json.loads((root / "entities" / "actor1.json").read_text())
     assert entity["current_thread_ids"] == ["t1"]
     assert entity["contextual_questions"][0]["owner_thread_id"] == "t1"
+    assert sum(bin["count"] for bin in entity["activity_series"]["bins"]) == 1
     buckets = [json.loads(path.read_text()) for path in (root / "graph").glob("*.json")]
     assert {"thread", "event", "claim", "source", "entity", "question"} <= {node["type"] for bucket in buckets for node in bucket["nodes"].values()}
     assert {edge["type"] for bucket in buckets for edges in bucket["adjacency"].values() for edge in edges} >= {"event_contains_claim", "claim_supported_by_source", "question_about_thread"}
@@ -76,6 +83,21 @@ def test_bad_location_registry_keeps_previous_generation(tmp_path):
         projector.publish(db_path, output, location_registry=registry)
     assert (output / "CURRENT").read_text() == previous
     projector.validate(generation(output))
+
+
+def test_corrected_claim_has_visual_change_marker(tmp_path):
+    projector = load_runtime_module("dashboard_projector")
+    db = load_runtime_db()
+    db_path, output = tmp_path / "chronicle.sqlite", tmp_path / "dashboard"
+    fixture_db(db_path)
+    conn = db.connect(db_path)
+    with conn:
+        conn.execute("UPDATE claims SET status='superseded' WHERE id='c1'")
+    conn.close()
+    projector.publish(db_path, output)
+    thread = next(row for row in json.loads((generation(output) / "threads.json").read_text()) if row["thread_id"] == "t1")
+    assert "claim_corrected" in thread["recent_change_types"]
+    assert thread["attention"]["required"] is True
 
 
 def test_explicit_geography_and_vault_reference(tmp_path):

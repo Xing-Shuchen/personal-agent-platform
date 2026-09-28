@@ -16,12 +16,37 @@ import shutil
 import sqlite3
 import tempfile
 from collections import defaultdict
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
 SCHEMA = "world-historian-dashboard.v1"
-GENERATOR = "0.7.0"
+GENERATOR = "0.7.1"
+
+
+def _activity_series(event_rows: list[dict], weeks: int = 12) -> dict:
+    """Weekly Event occurrence counts, ending in the week of the latest dated Event."""
+    days = []
+    for row in event_rows:
+        raw = row.get("occurred_at") or row.get("reported_at") or row.get("observed_at")
+        if raw and re.match(r"^\d{4}-\d{2}-\d{2}", raw):
+            try:
+                days.append(datetime.fromisoformat(raw[:10]).date())
+            except ValueError:
+                pass
+    if not days:
+        return {"measure": "event_count", "aggregation": "week", "window": "latest_12_weeks", "bins": []}
+    last_week = max(days) - timedelta(days=max(days).weekday())
+    first_week = last_week - timedelta(weeks=weeks - 1)
+    counts = [0] * weeks
+    for day in days:
+        week = day - timedelta(days=day.weekday())
+        index = (week - first_week).days // 7
+        if 0 <= index < weeks:
+            counts[index] += 1
+    return {"measure": "event_count", "aggregation": "week", "window": "latest_12_weeks",
+            "bins": [{"start": (first_week + timedelta(weeks=i)).isoformat(), "count": count}
+                     for i, count in enumerate(counts)]}
 
 
 def _rows(conn: sqlite3.Connection, sql: str, args: tuple = ()) -> list[dict]:
@@ -285,7 +310,7 @@ def build(conn: sqlite3.Connection, directory: Path, *, note_paths: dict[str, st
         last_meaningful = _meaningful(row["created_at"], last_event_change, state["updated_at"] if state else None, *claim_changes, *q_changes, *source_ingestions)
         open_questions = [q for q in questions_by_thread[tid] if q["state"] == "open"]
         attention = []
-        if any(c["state"] in {"contested", "superseded"} for eid in eids for c in claims_by_event[eid]):
+        if any(c["state"] in {"contested", "corrected", "superseded", "retracted"} for eid in eids for c in claims_by_event[eid]):
             attention.append("contested_or_corrected_claim")
         if row["priority"] == "high" and open_questions:
             attention.append("high_priority_open_questions")
@@ -304,6 +329,10 @@ def build(conn: sqlite3.Connection, directory: Path, *, note_paths: dict[str, st
             "last_event_at": latest_event["occurred_at"] or latest_event["reported_at"] if latest_event else None,
             "latest_event_id": latest_event["id"] if latest_event else None,
             "latest_event_summary": latest_event["summary"] if latest_event else None,
+            "activity_series": _activity_series(linked_events),
+            "recent_change_types": sorted({"claim_retracted" if c["state"] == "retracted" else "claim_corrected" if c["state"] in {"corrected", "superseded"} else "claim_contested"
+                                           for eid in eids for c in claims_by_event[eid]
+                                           if c["state"] in {"contested", "corrected", "superseded", "retracted"}}) + (["open_question"] if open_questions else []),
             "current_state_excerpt": state["body"][:240] if state else None, "open_question_count": len(open_questions),
             "event_count": len(eids),
             "source_count": len({c["source"]["source_id"] for eid in eids for c in claims_by_event[eid] if c["source"]}),
@@ -347,6 +376,7 @@ def build(conn: sqlite3.Connection, directory: Path, *, note_paths: dict[str, st
                 "aliases": json.loads(row["aliases_json"] or "[]"),
                 "thread_ids": sorted(tids, key=lambda tid: (_time_key(thread_summary_by_id[tid]["last_meaningful_change_at"] or ""), tid), reverse=True),
                 "event_count": len(ev_ids), "thread_count": len(tids), "last_seen_at": last_seen,
+                "activity_series": _activity_series([by_id[event_id] for event_id in ev_ids]),
                 "canonical_ref": _canonical("entities", eid)}
         entity_list.append(item)
         contextual_questions = [{**question, "owner_thread_id": tid} for tid in sorted(tids) for question in questions_by_thread[tid]]
@@ -432,6 +462,18 @@ def validate(directory: Path) -> None:
     manifest = read("manifest.json")
     if manifest.get("schema_version") != SCHEMA:
         raise ValueError("unsupported dashboard schema")
+    def activity_ok(item: dict) -> bool:
+        series = item.get("activity_series")
+        if not isinstance(series, dict) or series.get("measure") != "event_count" or series.get("aggregation") != "week" or series.get("window") != "latest_12_weeks":
+            return False
+        bins = series.get("bins")
+        if not isinstance(bins, list) or len(bins) not in {0, 12}:
+            return False
+        try:
+            starts = [datetime.fromisoformat(bin["start"]).date() for bin in bins]
+            return all(isinstance(bin["count"], int) and bin["count"] >= 0 for bin in bins) and all((b - a).days == 7 for a, b in zip(starts, starts[1:])) and sum(bin["count"] for bin in bins) <= item["event_count"]
+        except (KeyError, TypeError, ValueError):
+            return False
     ids_by_kind = {}
     details_by_kind = {}
     partitions = read("timeline-partitions.json")
@@ -463,6 +505,8 @@ def validate(directory: Path) -> None:
             detail = json.loads(detail_file.read_text(encoding="utf-8"))
             if detail.get(key) != identifier or detail.get("canonical_ref") != item["canonical_ref"]:
                 raise ValueError(f"invalid {folder} detail {identifier}")
+            if folder in {"threads", "entities"} and (not activity_ok(item) or not activity_ok(detail)):
+                raise ValueError(f"invalid {folder} activity series {identifier}")
             details_by_kind[identifier] = detail
         ids_by_kind[folder] = identifiers
     for thread in (details_by_kind[tid] for tid in ids_by_kind["threads"]):
