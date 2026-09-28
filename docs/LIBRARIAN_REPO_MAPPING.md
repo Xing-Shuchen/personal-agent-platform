@@ -15,7 +15,9 @@ and validation report did not accompany the standalone file in this worktree.
 | Migrations | World Historian has an agent-specific SQLite migration pattern | Use agent-local SQLite migrations. Do not insert reading entities into Chronicle. |
 | Search | `pap/cognition.py` indexes Markdown evidence, with WeRead note recognition | Librarian needs a current-trace, owner-filtered index with original image provenance. Existing cognition indexing does not provide it. |
 | Digital adapters | Vault has WeRead and Koodo Markdown exports; `pap/cognition.py` recognizes some WeRead headings | `agents/librarian/runtime/digital.py` parses observed export shapes into ReadingTrace. Markdown shape is not proof of platform API or live sync semantics. |
-| Knowledge promotion | Cognition stores retrieval evidence; no Librarian KnowledgeObject write port | Keep candidates separate and optional. No automatic promotion from ordinary highlights. |
+| Physical image extraction | No existing PAP vision pipeline for annotated book pages | `runtime/vision.py` now prepares a traceable EXIF-oriented derivative and calls a configurable Claude Messages endpoint. Current local proxy returns HTTP 404 for standard `/v1/messages`, and its default model rejects image input; real photo acceptance remains open. |
+| Exception review | No shared Librarian review UI | `runtime/review.py` returns separate owner-scoped catalog resolution and important-content queues. User corrections close content review after the uncertain fields are checked. |
+| Knowledge promotion | Cognition stores retrieval evidence; no Librarian KnowledgeObject write port | `runtime/knowledge.py` supports provenance-bound candidates, decisions and an idempotent writer port. No actual knowledge service writer is configured; ordinary highlights do not auto-promote. |
 
 ## Immediate integration decisions
 
@@ -42,4 +44,5 @@ retrieval behavior, but cannot establish OCR or handwriting accuracy.
 
 The local OpenClaw intake plugin is installed and loads one `message_received`
 hook. Its owner mapping is currently empty, so no live sender is authorized
-for automatic image intake yet.
+for automatic image intake yet. Leave the mapping empty until the dedicated
+Librarian profile and its channel/account/sender identity are known.
