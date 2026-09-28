@@ -63,6 +63,7 @@ Run the focused tests from the repo root:
 
 ```bash
 PYTHONPATH=. python3 -m pytest tests/test_librarian_store.py tests/test_librarian_pipeline.py tests/test_librarian_digital.py tests/test_librarian_commands.py tests/test_librarian_events.py -q
+PYTHONPATH=. python3 -m pytest tests/test_librarian_knowledge.py -q
 ```
 
 Run the offline contract verifier from this directory with
