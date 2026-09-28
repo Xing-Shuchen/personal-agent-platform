@@ -26,7 +26,7 @@ Create `release-v0.8` only after the acceptance evidence below is complete.
   book IDs, or API key were committed.
 - The OpenClaw intake plugin reports `loaded`, with one `message_received`
   typed hook and no diagnostics. Both plugin tests pass. On this PC, the
-  dedicated `librarian` PAP profile and unbound OpenClaw agent are registered.
+  dedicated `librarian` PAP profile and OpenClaw agent are registered.
   The linked plugin is installed and enabled with `ownerMappings: []`; no
   sender is authorized for automatic intake.
 - A live synthetic reading-history question exposed a profile gap: the agent
@@ -41,13 +41,19 @@ Create `release-v0.8` only after the acceptance evidence below is complete.
   one hook, one tool and no diagnostics; RPC probe is healthy. Synthetic tests
   cover mapping denial and owner-scoped search bridge results. The mapping is
   still empty, so no live user search was exercised.
+- The dedicated OpenClaw Librarian agent is now bound to a separate Feishu
+  account named `librarian`. Its App Secret is in OpenClaw's write-only secret
+  store, while config holds a SecretRef. The China-region WebSocket account is
+  connected and the credential probe passes; DM pairing is enabled and group
+  chats are disabled for this account. The inbound sender is not paired yet,
+  and `ownerMappings: []` still blocks reading intake and search.
 - `runtime/vision.py` sends an EXIF-oriented derivative through Claude
-  Messages or OpenAI-compatible Chat Completions. The pipeline stores the
-  original, derivative, transform and raw model JSON. Mocked provider tests
-  cover both transports and failure persistence. The earlier Claude proxy
-  returned HTTP 404 for standard `/v1/messages`. A local OpenClaw Z.AI route
-  advertises GLM-5.3-Flash image input, but its write-only secret has not been
-  supplied to the Librarian runtime and no live request has succeeded.
+  Messages, OpenAI-compatible Chat Completions, or the configured OpenClaw
+  model route. The pipeline stores the original, derivative, transform and raw
+  model JSON. `zai/glm-5.3-flash` accepted a generated synthetic page; after
+  tightening the JSON prompt, a live `process_capture` run in a temporary
+  Library produced one underline and one margin-note trace and persisted the
+  raw response. This does not establish accuracy on the four real photos.
 
 ## Required before release
 
@@ -56,13 +62,12 @@ Create `release-v0.8` only after the acceptance evidence below is complete.
    image bytes outside Git. Similarly numbered Evernote `_orphan` files in the
    Vault have not been established as these inputs; `_orphan_171.jpg` was
    visually checked and is unrelated.
-2. Configure a vision-capable provider compatible with an image request in
-   `runtime/vision.py`, then verify a live synthetic image request. Run
-   extraction against the four real photos and verify
+2. The configured OpenClaw vision route passed a live synthetic image request.
+   Run extraction against the four real photos and verify
    the twelve trace groups, source regions, `Parsons?`, page attribution,
    progress evidence and later Weber/Parsons retrieval specified in §38.1.
-3. With the dedicated Librarian profile now registered on this PC, configure
-   an explicit OpenClaw channel/account/sender-to-owner mapping and reload
+3. With the dedicated Librarian profile bound to the connected Feishu account,
+   finish DM pairing, configure an explicit sender-to-owner mapping and reload
    Gateway. Verify one real inbound image batch and replay behavior, then an
    authenticated `librarian_search` call and evidence-backed answer. Leave
    mapping empty until the identity is known.
@@ -111,8 +116,10 @@ actual Vault path separately.
 ## Current PC verification — 2026-09-28
 
 - `agents/librarian/agent.yaml` loads through `pap.spec.load_spec` with no
-  proactive jobs. `openclaw agents list --json` reports `librarian` with zero
-  bindings; its workspace SOUL matches the repository profile.
+  proactive jobs. The OpenClaw `librarian` agent has one binding to the
+  separate `feishu:librarian` account; its workspace SOUL matches the
+  repository profile. The account credential probe passes. DM pairing and
+  trusted sender mapping remain pending.
 - `openclaw plugins inspect pap-librarian-intake --runtime --json` reports
   `loaded`, one typed `message_received` hook, and no diagnostics. The Gateway
   service is running and its CLI RPC probe now succeeds, but no mapped sender
@@ -124,7 +131,9 @@ actual Vault path separately.
   tests, and two Node plugin tests. These are synthetic tests.
 - `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, and `ANTHROPIC_BASE_URL` were
   unset in this shell. The OpenClaw Z.AI credential is a write-only secret
-  reference. No working vision provider was demonstrated for this runtime.
+  reference. Direct `openclaw infer model run` and the Librarian `process_capture`
+  path both passed with one generated synthetic page through `zai/glm-5.3-flash`.
+  Real-photo accuracy remains unverified.
 
 ## AC-01–26 runtime evidence audit
 

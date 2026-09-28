@@ -3,13 +3,14 @@ from __future__ import annotations
 import base64
 import io
 import json
+import subprocess
 
 import pytest
 from PIL import Image
 
 from agents.librarian.runtime.pipeline import process_capture
 from agents.librarian.runtime.store import Library, LibrarianError
-from agents.librarian.runtime.vision import anthropic_extractor, chat_completions_extractor
+from agents.librarian.runtime.vision import anthropic_extractor, chat_completions_extractor, openclaw_extractor
 
 
 def _photo() -> bytes:
@@ -220,4 +221,41 @@ def test_chat_completions_rejects_unfinished_reply():
                                            base_url="https://vision.example/v1",
                                            opener=opener)
     with pytest.raises(RuntimeError, match="did not finish normally"):
+        extractor(_photo())
+
+
+def test_openclaw_image_transport_keeps_exact_model_text_and_derivative():
+    raw_text = '{"image_space":{"width":1400,"height":1000}}'
+    calls = []
+
+    def runner(command, **kwargs):
+        calls.append((command, kwargs))
+        assert command[:4] == ["openclaw", "infer", "model", "run"]
+        assert command[command.index("--model") + 1] == "zai/glm-5.3-flash"
+        assert '"width":1400' in command[command.index("--prompt") + 1]
+        assert "without Markdown fences" in command[command.index("--prompt") + 1]
+        with Image.open(command[command.index("--file") + 1]) as image:
+            assert image.size == (700, 500)
+        assert kwargs == {"capture_output": True, "text": True, "timeout": 30}
+        return subprocess.CompletedProcess(command, 0, stdout=json.dumps({
+            "ok": True, "provider": "zai", "model": "glm-5.3-flash",
+            "outputs": [{"text": raw_text}]}, ensure_ascii=False), stderr="")
+
+    extractor = openclaw_extractor(model="zai/glm-5.3-flash", max_edge=700,
+                                  timeout=30, runner=runner)
+    output = extractor(_photo())
+    assert output.raw == raw_text.encode()
+    assert output.derivative_width == 700 and output.derivative_height == 500
+    assert output.operations == ("exif_transpose", "uniform_resize")
+    assert len(calls) == 1
+
+
+def test_openclaw_image_transport_rejects_unexpected_model():
+    def runner(command, **kwargs):
+        return subprocess.CompletedProcess(command, 0, stdout=json.dumps({
+            "ok": True, "provider": "other", "model": "wrong",
+            "outputs": [{"text": "{}"}]}), stderr="")
+
+    extractor = openclaw_extractor(model="zai/glm-5.3-flash", runner=runner)
+    with pytest.raises(RuntimeError, match="incomplete or rerouted"):
         extractor(_photo())

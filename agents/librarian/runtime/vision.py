@@ -1,4 +1,4 @@
-"""Claude Messages vision port for PageObservation extraction.
+"""Vision provider ports for PageObservation extraction.
 
 The immutable original remains in Library. This adapter sends an EXIF-oriented
 derivative and returns the model's JSON text verbatim to process_capture, which
@@ -12,6 +12,8 @@ import hashlib
 import io
 import json
 import os
+import subprocess
+import tempfile
 from pathlib import Path
 from typing import Any, Callable
 from urllib.error import HTTPError, URLError
@@ -26,7 +28,10 @@ from .store import Library
 PROMPT_VERSION = "physical-page-v1"
 PROMPT = """Return one JSON object only, with these required keys:
 image_space, pages, printed_regions, marks, annotations, symbols, links,
-warnings. Include optional visible_title only when it is legible.
+warnings. Include optional visible_title only when it is legible, as a TextField
+object with text, confidence and basis. Otherwise omit the visible_title key
+entirely; never set it to null. Return raw JSON without Markdown fences or any
+surrounding explanation.
 
 This is an EXIF-oriented derivative of one physical book photo. Coordinates
 must be [x1,y1,x2,y2] normalized to the ENTIRE supplied image, each in [0,1],
@@ -200,16 +205,62 @@ def chat_completions_extractor(*, model: str, api_key: str, base_url: str,
     return extract
 
 
+def openclaw_extractor(*, model: str, agent: str = "librarian",
+                      binary: str = "openclaw", max_edge: int = 2000,
+                      max_pixels: int = 2_000_000, timeout: int = 180,
+                      runner: Callable[..., Any] = subprocess.run) -> Callable[[bytes], ExtractionOutput]:
+    """Use OpenClaw's configured image-capable model without exporting its key."""
+    if (not model or "/" not in model or not agent or not binary
+            or min(max_edge, max_pixels, timeout) <= 0):
+        raise ValueError("model, agent, binary and positive vision limits required")
+
+    def extract(original: bytes) -> ExtractionOutput:
+        derivative, width, height, derivative_width, derivative_height, operations = _derivative(
+            original, max_edge=max_edge, max_pixels=max_pixels)
+        with tempfile.TemporaryDirectory(prefix="librarian-vision-") as directory:
+            image_path = Path(directory) / "page.png"
+            image_path.write_bytes(derivative)
+            command = [binary, "infer", "model", "run", "--agent", agent,
+                       "--model", model, "--file", str(image_path),
+                       "--prompt", PROMPT.format(width=width, height=height), "--json"]
+            try:
+                result = runner(command, capture_output=True, text=True, timeout=timeout)
+            except (OSError, subprocess.TimeoutExpired) as error:
+                raise RuntimeError("OpenClaw vision inference unavailable") from error
+        if result.returncode != 0:
+            raise RuntimeError("OpenClaw vision inference failed")
+        try:
+            envelope = json.loads(result.stdout)
+        except (TypeError, ValueError) as error:
+            raise RuntimeError("OpenClaw vision response invalid") from error
+        if (not isinstance(envelope, dict) or envelope.get("ok") is not True
+                or f"{envelope.get('provider')}/{envelope.get('model')}" != model
+                or not isinstance(envelope.get("outputs"), list)
+                or len(envelope["outputs"]) != 1
+                or not isinstance(envelope["outputs"][0], dict)
+                or not isinstance(envelope["outputs"][0].get("text"), str)
+                or not envelope["outputs"][0]["text"].strip()):
+            raise RuntimeError("OpenClaw vision response incomplete or rerouted")
+        return ExtractionOutput(raw=envelope["outputs"][0]["text"].encode("utf-8"),
+                                derivative=derivative,
+                                derivative_width=derivative_width,
+                                derivative_height=derivative_height,
+                                operations=operations)
+
+    return extract
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Process one already accepted Librarian capture")
     parser.add_argument("--root", type=Path, required=True)
     parser.add_argument("--owner", required=True, help="trusted local owner ID")
     parser.add_argument("--capture", required=True)
-    parser.add_argument("--provider", choices=("anthropic", "chat-completions"), default="anthropic")
+    parser.add_argument("--provider", choices=("anthropic", "chat-completions", "openclaw"), default="anthropic")
     parser.add_argument("--model")
     parser.add_argument("--base-url")
     parser.add_argument("--max-edge", type=int, default=2000)
     parser.add_argument("--max-pixels", type=int, default=2_000_000)
+    parser.add_argument("--openclaw-agent", default="librarian")
     args = parser.parse_args()
     if args.provider == "anthropic":
         base_url = args.base_url or os.environ.get("ANTHROPIC_BASE_URL", "https://api.anthropic.com")
@@ -219,12 +270,17 @@ def main() -> None:
             model=model, api_key=api_key or os.environ.get("ANTHROPIC_AUTH_TOKEN", ""),
             auth_mode="api_key" if api_key else "bearer", base_url=base_url,
             max_edge=args.max_edge, max_pixels=args.max_pixels)
-    else:
+    elif args.provider == "chat-completions":
         base_url = args.base_url or os.environ.get("LIBRARIAN_VISION_BASE_URL", "")
         model = args.model or os.environ.get("LIBRARIAN_VISION_MODEL")
         extractor = chat_completions_extractor(
             model=model, api_key=os.environ.get("LIBRARIAN_VISION_API_KEY", ""),
             base_url=base_url, max_edge=args.max_edge, max_pixels=args.max_pixels)
+    else:
+        base_url = "openclaw://" + args.openclaw_agent
+        model = args.model or os.environ.get("LIBRARIAN_VISION_MODEL", "")
+        extractor = openclaw_extractor(model=model, agent=args.openclaw_agent,
+                                      max_edge=args.max_edge, max_pixels=args.max_pixels)
     with Library(args.root) as lib:
         endpoint_id = hashlib.sha256(base_url.encode()).hexdigest()[:12]
         traces = process_capture(lib, args.owner, args.capture, extractor,

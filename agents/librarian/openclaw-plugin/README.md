@@ -29,12 +29,14 @@ owner mapping. Replace the example channel, account, sender and owner IDs with
 trusted values from your OpenClaw deployment:
 
 Until those IDs are established, use `"ownerMappings":[]`; the plugin will
-load but cannot ingest any sender's images. A dedicated unbound Librarian
+load but cannot ingest any sender's images. A dedicated Librarian
 agent/profile is declared at `agents/librarian/agent.yaml` and
 `agents/librarian/profile/`. Register the OpenClaw agent separately with
 `openclaw agents add librarian --non-interactive --workspace
-~/.openclaw/workspace-librarian --model MODEL_ID`, leaving channel bindings
-empty until routing is decided.
+~/.openclaw/workspace-librarian --model MODEL_ID`, then bind it to a dedicated
+channel account when routing is decided. On this PC it is bound to the
+`feishu:librarian` account, with DM pairing enabled and group chats disabled.
+The owner mapping stays empty until the sender is paired and identified.
 
 ```bash
 openclaw config set plugins.entries.pap-librarian-intake.config '{"repoRoot":"/absolute/path/to/personal-agent-platform","stateRoot":"/absolute/path/to/personal-agent-platform/var/librarian","ownerMappings":[{"channelId":"telegram","accountId":"my-bot","senderId":"my-user-id","ownerId":"owner_local"}]}' --strict-json
@@ -56,7 +58,8 @@ PYTHONPATH=. python3 -m pytest tests/test_librarian_gateway_search.py -q
 ```
 
 This hook accepts original bytes and creates a capture receipt. Extraction is
-a later step and still needs a production vision adapter and real annotated
-photos for the v0.8 M1 acceptance test. The official OpenClaw
+a later step. The OpenClaw model route is connected to the runtime vision
+adapter and passed a synthetic live image, while real annotated photos are
+still needed for the v0.8 M1 acceptance test. The official OpenClaw
 [message hook contract](https://docs.openclaw.ai/plugins/hooks/messages)
 defines the staged `media` fields used here.

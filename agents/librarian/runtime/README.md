@@ -172,9 +172,24 @@ PYTHONPATH=. python3 -m agents.librarian.runtime.vision \
 
 The endpoint must accept `image_url.url` with a PNG data URL and return one
 completed text response. OpenClaw write-only secret references are not read
-by this Python command; supply a separate runtime credential securely. A
-mocked transport test covers this adapter, but no live image request has been
-accepted by the configured Z.AI route yet.
+by this Python command; supply a separate runtime credential securely.
+
+For a model already authenticated in OpenClaw, use its direct image inference
+command through this runtime's `openclaw` provider:
+
+```bash
+PYTHONPATH=. python3 -m agents.librarian.runtime.vision \
+  --provider openclaw --root var/librarian --owner OWNER_ID \
+  --capture CAPTURE_ID --model zai/glm-5.3-flash
+```
+
+This transport passes the EXIF-oriented derivative to `openclaw infer model
+run`, verifies the returned model route and stores the model's text exactly
+before observation validation. It uses OpenClaw's configured credential and
+does not copy it into Librarian. On this PC a synthetic 900×1200 page passed
+the live route and `process_capture` created one underline and one margin-note
+trace in a temporary Library. This establishes a working provider path, not
+accuracy on the four acceptance photos.
 
 Run the offline contract verifier from this directory with
 `python3 tests/validate_contracts.py`. It writes
