@@ -4,7 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { acceptMessage, librarianSearchTool, workerArgs } from "./index.js";
+import { acceptMessage, librarianSearchTool, librarianSessionTool,
+  rememberInboundSession, workerArgs } from "./index.js";
 
 const config = { ownerMappings: [{ channelId: "telegram", accountId: "bot",
   senderId: "person", ownerId: "owner_fixture" }] };
@@ -95,4 +96,25 @@ test("worker runs without a Vault and binds a configurable vision model", () => 
   assert.ok(args);
   assert.ok(!args.includes("--vault"));
   assert.equal(args[args.indexOf("--vision-model") + 1], "fixture/vision");
+});
+
+test("session tool carries only trusted inbound source identity", async () => {
+  const recent = new Map();
+  const inbound = { ...ctx, sessionKey: "agent:librarian:chat" };
+  rememberInboundSession(config, recent, { senderId: "person", messageId: "msg-77" }, inbound, 1000);
+  const trusted = { agentId: "librarian", sessionKey: inbound.sessionKey,
+    requesterSenderId: "person", messageChannel: "telegram", agentAccountId: "bot" };
+  let seen;
+  const bridge = async (_config, message) => { seen = message; return { status: "active" }; };
+  const tool = librarianSessionTool(config, trusted, recent, bridge, 1001);
+  assert.equal(tool.name, "librarian_session");
+  await tool.execute("call", { action: "start", book: "Synthetic Work" });
+  assert.deepEqual(seen, { owner_id: "owner_fixture", actor_id: "person",
+    source: { transport: "telegram", account_id: "bot", conversation_id: "chat",
+      source_event_id: "msg-77" }, action: "start", book: "Synthetic Work", page: undefined });
+  assert.equal(librarianSessionTool(config, { ...trusted, requesterSenderId: "other" },
+    recent, bridge, 1001), null);
+  assert.equal(librarianSessionTool(config, trusted, recent, bridge, 601001), null);
+  assert.equal(librarianSessionTool(config, { ...trusted, agentAccountId: "other" },
+    recent, bridge, 1001), null);
 });

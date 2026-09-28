@@ -539,7 +539,8 @@ def _traces_for_capture(lib: Library, owner_id: str, capture_id: str) -> list[di
 
 
 def reconcile_extraction(lib: Library, owner_id: str, capture_id: str,
-                         extractor_version: str) -> list[dict[str, Any]]:
+                         extractor_version: str, *,
+                         allow_rotation_upgrade: bool = False) -> list[dict[str, Any]]:
     """Accept a pending new extraction when no trace has a user correction.
 
     The former traces remain as superseded revisions. The new observation and
@@ -597,9 +598,25 @@ def reconcile_extraction(lib: Library, owner_id: str, capture_id: str,
                     observation["annotations"] + observation["symbols"]}
     old_groups = [set(group) for group in groups(old_traces, old_mark_ids)]
     new_groups = [set(group) for group in groups(traces, new_mark_ids)]
+    rotation_upgrade = False
+    if allow_rotation_upgrade and extractor_version.startswith("rapidocr-epub-notes-v6:"):
+        try:
+            raw = json.loads(lib._read_object(observation["raw_output_asset"]))
+            source_versions = {lib.get(owner_id, "PageObservation",
+                                       trace["source"]["observation_id"])["extractor"]
+                               for trace in old_traces}
+            rotation_upgrade = (raw.get("analysis_rotation_degrees") == 180 and
+                                len(new_mark_ids) >= 1 and
+                                sum(line.get("epub_match", 0) >= .85
+                                    for line in raw.get("lines", [])) >= 3 and
+                                all(version.startswith(("openclaw-physical-v1:",
+                                                        "rapidocr-epub-notes-v5:"))
+                                    for version in source_versions))
+        except (KeyError, ValueError, TypeError, LibrarianError):
+            rotation_upgrade = False
     # A single group may gain newly detected ink. A split, merge, loss, or
     # replacement cannot be mapped without a person's review.
-    if (len(old_groups) != len(new_groups) or
+    if not rotation_upgrade and (len(old_groups) != len(new_groups) or
             any(len([group for group in new_groups if old <= group]) != 1
                 for old in old_groups) or
             any(len([old for old in old_groups if old <= new]) != 1

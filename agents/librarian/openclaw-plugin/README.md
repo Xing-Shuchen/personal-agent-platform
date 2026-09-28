@@ -19,8 +19,11 @@ created only for the dedicated `librarian` agent when OpenClaw supplies a
 matching channel, account and sender. Its arguments contain a query and limit,
 never an owner ID. With `ownerMappings: []`, the tool is absent. A normal CLI
 agent turn also has no mapped sender and cannot read the private store.
-Configure the dedicated OpenClaw agent with `tools.allow` set to only
-`["librarian_search"]`. Image intake and background processing run through the
+`librarian_session` applies an explicit reading-session instruction using the
+trusted inbound message ID and conversation scope. The model supplies only
+the requested action, title or reported page. Configure the dedicated
+OpenClaw agent with `tools.allow` set to
+`["librarian_search", "librarian_session", "session_status"]`. Image intake and background processing run through the
 plugin service, so the chat agent needs no shell or filesystem tool. This
 prevents a model from bypassing owner-scoped search through local SQLite.
 
@@ -51,7 +54,7 @@ The sender is paired and the mapping is active for the first-book run.
 
 ```bash
 openclaw config set plugins.entries.pap-librarian-intake.config '{"repoRoot":"/absolute/path/to/personal-agent-platform","stateRoot":"/absolute/path/to/personal-agent-platform/var/librarian","vaultRoot":"/absolute/path/to/Obsidian/Second_Brain","python":"/absolute/path/to/personal-agent-platform/.venv/bin/python","ownerMappings":[{"channelId":"feishu","accountId":"librarian","senderId":"paired-user-open-id","ownerId":"owner_local"}]}' --strict-json
-openclaw plugins enable pap-librarian-intake
+openclaw plugins enable pap-librarian-intake --accept-capabilities
 openclaw plugins inspect pap-librarian-intake --runtime --json
 ```
 
@@ -81,10 +84,16 @@ PYTHONPATH=. python3 -m pytest tests/test_librarian_gateway_search.py -q
 ```
 
 This hook accepts original bytes and creates a capture receipt. The worker
-then aligns printed text to the EPUB, detects long underlines, refines small
+waits for a short upload quiet period and groups consecutive images in the
+same conversation. It then aligns printed text to the EPUB, corrects
+upside-down scans for analysis, detects long underlines, refines small
 handwriting crops, writes current traces and a review note under
-`2Area/40 学习与阅读/阅读笔记`, and sends one Feishu message after both stores are
-written. The first-book five-photo run and replay passed. The separate
+`2Area/40 学习与阅读/阅读笔记`, and sends a Feishu review message after both stores are
+written. Existing generated blocks are consolidated into one WeRead-style
+note only after verifying their trace anchors and exact generated text.
+The first-book five-photo run and a later 22-photo burst were processed;
+unresolved page labels and one conflicting old extraction remain for review.
+The separate
 pp.159/166/171/184 M1 acceptance set remains deferred. The official OpenClaw
 [message hook contract](https://docs.openclaw.ai/plugins/hooks/messages)
 defines the staged `media` fields used here.

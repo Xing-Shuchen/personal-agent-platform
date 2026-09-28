@@ -129,7 +129,7 @@ def test_bad_batch_does_not_starve_later_batch(tmp_path: Path, monkeypatch) -> N
         ids = []
         for index in (1, 2):
             receipt = lib.ingest("owner", transport="feishu", account_id="librarian",
-                                 conversation_id="chat", source_event_id=f"message-{index}",
+                                 conversation_id=f"chat-{index}", source_event_id=f"message-{index}",
                                  attachments=[{"source_item_id": f"image-{index}",
                                                "mime_type": "image/png", "data": stream.getvalue()}],
                                  idempotency_key=f"command-{index}")
@@ -143,6 +143,7 @@ def test_bad_batch_does_not_starve_later_batch(tmp_path: Path, monkeypatch) -> N
         return {"batch_id": batch["id"], "status": "processed", "traces": 1}
 
     monkeypatch.setattr(worker, "_process_batch", process)
+    monkeypatch.setattr(worker, "_now", lambda: "2099-01-01T00:00:00+00:00")
     result = worker.run(tmp_path / "state", tmp_path / "vault", "owner")
     assert seen == ids
     assert [(item["batch_id"], item["status"]) for item in result] == [
@@ -187,6 +188,7 @@ def test_interior_photo_without_epub_or_vault_persists_partial_trace(tmp_path: P
             }).encode()
         return infer
     monkeypatch.setattr(worker, "openclaw_extractor", extractor)
+    monkeypatch.setattr(worker, "_now", lambda: "2099-01-01T00:00:00+00:00")
 
     result = worker.run(state, None, "owner", vision_model="fixture/vision")
     assert result[0]["status"] == "partial"
@@ -229,7 +231,7 @@ def test_physical_note_uses_weread_layout_and_upgrades_unchanged_legacy(tmp_path
     new = _render_batch_note(batch, "社会理论二十讲", [trace], created="2026-09-28")
     assert "# 元数据" in new and "# 高亮划线" in new
     assert "## 第 39 页" in new
-    assert "> 📌 正是帕森斯，\n> 完成整合。 ^rt_fixture" in new
+    assert "> 📌 正是帕森斯，完成整合。 ^rt_fixture" in new
     assert "> ⏱ 2026-09-28 20:00:00" in new
     assert "<span hidden data-librarian-trace=" in new
     assert "![[" not in new

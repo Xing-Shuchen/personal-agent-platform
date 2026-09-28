@@ -59,6 +59,28 @@ def _display_text(value: str) -> str:
     return re.sub(r"\s+", space, value)
 
 
+def _upside_down_page(result, width: int, height: int) -> bool:
+    """Detect a scan whose isolated printed header number is at the bottom."""
+    top = bottom = 0
+    for quad, value in zip([] if result.boxes is None else result.boxes,
+                           [] if result.txts is None else result.txts):
+        if not re.fullmatch(r"\s*\d{1,3}\s*", str(value)):
+            continue
+        box = _box([[float(x), float(y)] for x, y in quad], width, height)
+        if box[0] > .25 and box[2] < .75:
+            continue
+        if box[1] < .12:
+            top += 1
+        if box[1] > .75:
+            bottom += 1
+    return bottom > 0 and top == 0
+
+
+def _flip_bbox(box: list[float]) -> list[float]:
+    return [round(1 - box[2], 5), round(1 - box[3], 5),
+            round(1 - box[0], 5), round(1 - box[1], 5)]
+
+
 class EpubGroundTruth:
     def __init__(self, path: Path) -> None:
         self.sha256 = hashlib.sha256(path.read_bytes()).hexdigest()
@@ -223,6 +245,12 @@ def ocr_extractor(*, epub: Path, max_edge: int = 2000,
             pixels = np.asarray(image)
         gray = cv2.cvtColor(pixels, cv2.COLOR_RGB2GRAY)
         result = engine(pixels)
+        rotated = _upside_down_page(result, width, height)
+        if rotated:
+            pixels = np.rot90(pixels, 2).copy()
+            image = Image.fromarray(pixels)
+            gray = cv2.cvtColor(pixels, cv2.COLOR_RGB2GRAY)
+            result = engine(pixels)
         boxes = [] if result.boxes is None else result.boxes
         texts = [] if result.txts is None else result.txts
         scores = [] if result.scores is None else result.scores
@@ -439,7 +467,16 @@ def ocr_extractor(*, epub: Path, max_edge: int = 2000,
                     "Handwriting transcription is OCR-derived and may need correction")
         else:
             observation["warnings"].append("No marked book page detected")
+        if rotated:
+            for section in ("pages", "printed_regions", "marks", "annotations", "symbols"):
+                for item in observation[section]:
+                    item["bbox"] = _flip_bbox(item["bbox"])
+                    if section == "pages":
+                        item["side"] = {"left": "right", "right": "left"}.get(
+                            item["side"], item["side"])
+            observation["warnings"].append("Upside-down scan analyzed after 180-degree rotation")
         raw = {"engine": "RapidOCR", "epub_sha256": groundtruth.sha256,
+               "analysis_rotation_degrees": 180 if rotated else 0,
                "image_space": observation["image_space"], "lines": lines,
                "page_markers": locals().get("markers", []),
                "page_marker_probe": locals().get("marker_probe", []),

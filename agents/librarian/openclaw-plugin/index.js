@@ -57,6 +57,8 @@ const runBridge = (config, message) => runPythonBridge(
   config, "agents.librarian.runtime.gateway_bridge", message);
 const runSearchBridge = (config, message) => runPythonBridge(
   config, "agents.librarian.runtime.gateway_search", message);
+const runSessionBridge = (config, message) => runPythonBridge(
+  config, "agents.librarian.runtime.gateway_session", message);
 
 export function workerArgs(config, ownerId) {
   if (!ownerId || configuredOwnerIds(config).length !== 1 ||
@@ -102,6 +104,7 @@ export function librarianSearchTool(config, ctx, bridge = runSearchBridge) {
   if (!ownerId) return null;
   return {
     name: "librarian_search",
+    label: "Librarian search",
     description: "Search this authenticated sender's stored Librarian reading traces. Return provenance-backed hits or no supporting hits in this owner scope.",
     parameters: { type: "object", properties: {
       query: { type: "string", minLength: 1, maxLength: 256 },
@@ -112,6 +115,50 @@ export function librarianSearchTool(config, ctx, bridge = runSearchBridge) {
         query: params.query, limit: params.limit ?? 10 });
       return { content: [{ type: "text", text: JSON.stringify(result) }],
         details: result };
+    },
+  };
+}
+
+export function rememberInboundSession(config, recent, event, ctx, now = Date.now()) {
+  const ownerId = ownerFor(config, event, ctx);
+  if (!ownerId || !ctx.sessionKey || !ctx.conversationId || !event.messageId) return;
+  for (const [key, entry] of recent) {
+    if (now - entry.at > 10 * 60_000) recent.delete(key);
+  }
+  recent.set(ctx.sessionKey, { ownerId, senderId: event.senderId,
+    channelId: ctx.channelId, accountId: ctx.accountId,
+    conversationId: ctx.conversationId, messageId: event.messageId, at: now });
+}
+
+export function librarianSessionTool(config, ctx, recent, bridge = runSessionBridge,
+                                     now = Date.now()) {
+  if (ctx?.agentId !== "librarian" || !ctx.sessionKey || !ctx.requesterSenderId) return null;
+  const entry = recent.get(ctx.sessionKey);
+  const route = ctx.deliveryContext ?? {};
+  if (!entry || now - entry.at > 10 * 60_000 || now < entry.at ||
+      entry.senderId !== ctx.requesterSenderId ||
+      entry.channelId !== (ctx.messageChannel ?? route.channel) ||
+      entry.accountId !== (ctx.agentAccountId ?? route.accountId) ||
+      (ctx.messageChannel && route.channel && ctx.messageChannel !== route.channel) ||
+      (ctx.agentAccountId && route.accountId && ctx.agentAccountId !== route.accountId) ||
+      ownerFor(config, { senderId: entry.senderId },
+        { channelId: entry.channelId, accountId: entry.accountId }) !== entry.ownerId) return null;
+  return {
+    name: "librarian_session",
+    label: "Librarian session",
+    description: "Apply an explicit reading-session instruction from this authenticated inbound message. start needs a physical book title or ISBN; progress needs a page number.",
+    parameters: { type: "object", properties: {
+      action: { type: "string", enum: ["start", "progress", "pause", "resume", "close", "status"] },
+      book: { type: "string", minLength: 1, maxLength: 200 },
+      page: { type: "integer", minimum: 1, maximum: 9999 },
+    }, required: ["action"], additionalProperties: false },
+    async execute(_id, params) {
+      const result = await bridge(config, { owner_id: entry.ownerId,
+        actor_id: entry.senderId,
+        source: { transport: entry.channelId, account_id: entry.accountId,
+          conversation_id: entry.conversationId, source_event_id: entry.messageId },
+        action: params.action, book: params.book, page: params.page });
+      return { content: [{ type: "text", text: JSON.stringify(result) }], details: result };
     },
   };
 }
@@ -146,8 +193,24 @@ export default {
   register(api) {
     const config = api.pluginConfig ?? {};
     let recoveryTimer;
-    api.registerTool((ctx) => librarianSearchTool(config, ctx),
+    let intakeTimer;
+    const recentInbound = new Map();
+    api.registerTool((ctx) => {
+      const tool = librarianSearchTool(config, ctx);
+      if (ctx?.agentId === "librarian") api.logger.info(
+        `Librarian tool scope: sender=${Boolean(ctx.requesterSenderId)} ` +
+        `channel=${ctx.messageChannel ?? ctx.deliveryContext?.channel ?? "missing"} ` +
+        `account=${ctx.agentAccountId ?? ctx.deliveryContext?.accountId ?? "missing"} ` +
+        `session=${Boolean(ctx.sessionKey)} search=${Boolean(tool)} ` +
+        `ownerCount=${configuredOwnerIds(config).length} ` +
+        `senderMatch=${config.ownerMappings?.some((m) => m.senderId === ctx.requesterSenderId) ?? false} ` +
+        `routeMatch=${config.ownerMappings?.some((m) => m.channelId === (ctx.messageChannel ?? ctx.deliveryContext?.channel) &&
+          m.accountId === (ctx.agentAccountId ?? ctx.deliveryContext?.accountId)) ?? false}`);
+      return tool;
+    },
       { name: "librarian_search" });
+    api.registerTool((ctx) => librarianSessionTool(config, ctx, recentInbound),
+      { name: "librarian_session" });
     api.registerService({ id: "pap-librarian-worker", start: () => {
       const recover = () => {
         for (const ownerId of configuredOwnerIds(config)) {
@@ -159,13 +222,21 @@ export default {
       };
       recover();
       recoveryTimer = setInterval(recover, 300_000);
-    }, stop: () => clearInterval(recoveryTimer) });
+    }, stop: () => { clearInterval(recoveryTimer); clearTimeout(intakeTimer); } });
     api.on("message_received", async (event, ctx) => {
       try {
+        if (ctx.accountId === "librarian") api.logger.info(
+          `Librarian inbound: sender=${Boolean(event.senderId)} ` +
+          `message=${Boolean(event.messageId)} session=${Boolean(ctx.sessionKey)} ` +
+          `media=${Array.isArray(event.media) ? event.media.length : "absent"} ` +
+          `staging=${Boolean(event.mediaStagingPending)}`);
+        rememberInboundSession(config, recentInbound, event, ctx);
         const receipt = await acceptMessage(config, event, ctx);
         if (receipt) {
           api.logger.info(`Librarian accepted ${receipt.capture_ids.length} image(s)`);
-          startWorker(config, ownerFor(config, event, ctx));
+          clearTimeout(intakeTimer);
+          intakeTimer = setTimeout(() => startWorker(config, ownerFor(config, event, ctx)),
+            60_000);
         }
       } catch (error) {
         const code = typeof error?.code === "string" && /^[A-Z_]+$/.test(error.code)

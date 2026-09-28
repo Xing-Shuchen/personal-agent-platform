@@ -273,3 +273,46 @@ forbids shell/file inspection for reading-history answers. Configuration
 validation and Gateway restart passed. A new real incoming question is still
 needed to verify the tool is exposed with the trusted sender context and used
 for the reply; do not mark AC-24 complete from the earlier answer.
+
+## 2026-09-28 late Feishu burst and rendering update
+
+The owner sent 22 individual scans after a text instruction, including
+upside-down pages. All 22 image messages were durably accepted. The former
+worker processed some as separate batches before the fix and sent redundant
+review notices. The plugin now delays processing until uploads have been quiet
+for 60 seconds; the worker also skips captures newer than 45 seconds and groups
+nearby single-image messages in one conversation into a stable review batch.
+The group is replayable without altering the immutable source message IDs.
+
+OCR v6 uses several printed lines to identify the supplied EPUB from interior
+pages, detects upside-down scans using the isolated page header number,
+analyzes those pages upright, and maps all boxes back to original coordinates.
+A scoped reconciliation path accepts that orientation correction only when
+the old traces are uncorrected, the EPUB match is strong, a new mark exists,
+and no knowledge candidate depends on the old trace. Other group changes
+still require review. One prior scan remains in `RECONCILIATION_REQUIRED`.
+
+The current `社会理论二十讲.md` in the requested Vault folder has one WeRead-style
+metadata section, 68 highlighted excerpts, 13 handwritten note entries and
+five unreadable-mark placeholders: 86 active trace anchors in total. There are
+no original photos in the Vault folder. The grouped worker status reports
+76 traces from the 22 new captures, 47 with unresolved page labels and one
+reconciliation issue; the earlier five captures contribute ten traces, three
+with unresolved page labels. These numbers are a review queue, not a claim of
+accurate page assignment or mark recognition. The single-note migration
+verified each prior generated block against its exact historical trace
+revisions before replacing it, so user-edited blocks fail closed.
+
+The dedicated agent now allows `librarian_search`, `librarian_session` and
+the harmless `session_status` fallback. Adding the new session tool initially
+invalidated OpenClaw plugin capability consent, causing every agent message
+to fail before reply. `openclaw plugins enable pap-librarian-intake
+--accept-capabilities` restored the plugin. A later real Feishu `？` message
+produced a reply without the prior “No callable tools” error. Actual
+`librarian_search` and `librarian_session` tool use from real inbound messages
+is still unverified. Authorized original-image opening is still absent.
+
+Verification: 83 Python Librarian tests, six Node plugin tests, contract
+validator (77 definitions / 18 entries / 42 positive / 43 negative),
+`openclaw config validate`, and Gateway startup passed. The separate
+pp.159/166/171/184 acceptance set and `source-design.txt` remain deferred.

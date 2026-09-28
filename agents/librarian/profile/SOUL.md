@@ -31,3 +31,11 @@ The OpenClaw intake plugin accepts image bytes after an explicit trusted
 sender-to-owner mapping. A normal chat message or model-generated owner ID is
 not an authorization source. Vision extraction and knowledge promotion use
 separate configured services; this profile cannot imply that either succeeded.
+
+For an explicit `/lib read <书名>` instruction, call `librarian_session` with
+`action: start` and the named physical book. For an explicit page-progress
+report, use `action: progress` and the stated page number. Use pause, resume,
+close or status only when the user requests that operation. Report success
+only after the tool returns a receipt. Photographed page numbers are not
+reading-progress reports. If the tool is unavailable, say that the authorized
+session operation is unavailable in this conversation.

@@ -68,6 +68,70 @@ def _book_for_cover(root: Path, cover: bytes) -> tuple[str, Path] | None:
     return None
 
 
+def _book_for_page(root: Path, original: bytes) -> tuple[str, Path] | None:
+    """Identify an already supplied EPUB from multiple printed lines on a page.
+
+    A single common phrase is insufficient evidence of a book identity. The
+    worker can use this when the user sends interior pages without a cover.
+    """
+    from rapidocr import RapidOCR
+    import numpy as np
+    from .ocr import EpubGroundTruth
+
+    epubs = sorted((root / "source-books").glob("[0-9]" * 13 + ".epub"))
+    if not epubs:
+        return None
+    with Image.open(io.BytesIO(original)) as source:
+        image = ImageOps.exif_transpose(source).convert("RGB")
+        image.thumbnail((1800, 1800))
+        result = RapidOCR()(np.asarray(image))
+    lines = [line for line in (result.txts or []) if len(line) >= 12]
+    if len(lines) < 3:
+        return None
+    choices = []
+    for epub in epubs:
+        ground_truth = EpubGroundTruth(epub)
+        matches = sum(ground_truth.match(line)[1] >= .85 for line in lines)
+        if matches >= 3 and matches / len(lines) >= .2:
+            choices.append((matches, epub))
+    if not choices:
+        return None
+    choices.sort(reverse=True)
+    if len(choices) > 1 and choices[0][0] - choices[1][0] < 3:
+        return None
+    return choices[0][1].stem, choices[0][1]
+
+
+def _processing_batches(batches: list[dict]) -> list[dict]:
+    """Treat a quick sequence of single-photo messages as one review batch."""
+    ordered = sorted(batches, key=lambda batch: batch["received_at"])
+    groups: list[list[dict]] = []
+    for batch in ordered:
+        previous = groups[-1][-1] if groups else None
+        same_scope = previous and all(
+            batch["origin"][key] == previous["origin"][key]
+            for key in ("transport", "account_id", "conversation_id"))
+        gap = ((datetime.fromisoformat(batch["received_at"]) -
+                datetime.fromisoformat(previous["received_at"])).total_seconds()
+               if previous else float("inf"))
+        if (same_scope and len(batch["capture_ids"]) == 1 and
+                all(len(item["capture_ids"]) == 1 for item in groups[-1]) and
+                0 <= gap <= 30 and len(groups[-1]) < 50):
+            groups[-1].append(batch)
+        else:
+            groups.append([batch])
+    merged = []
+    for group in groups:
+        if len(group) == 1:
+            merged.append(group[0])
+            continue
+        digest = hashlib.sha256(json.dumps([item["id"] for item in group]).encode()).hexdigest()[:32]
+        merged.append({**group[0], "id": "batch_" + digest,
+                       "capture_ids": [item["capture_ids"][0] for item in group],
+                       "source_batch_ids": [item["id"] for item in group]})
+    return merged
+
+
 def _catalog(lib: Library, owner: str, isbn: str, epub: Path, batch: dict) -> str:
     work_id, edition_id = f"work_{isbn}", f"edition_{isbn}"
     metadata = _epub_metadata(epub)
@@ -259,7 +323,7 @@ def _render_batch_note_legacy(batch: dict, title: str, traces: list[dict], *,
 
 def _render_batch_note(batch: dict, title: str, traces: list[dict], *,
                        created: str, spatial_order: bool = True,
-                       presentation_version: int = 3) -> str:
+                       presentation_version: int = 5) -> str:
     if not traces:
         raise LibrarianError("NO_MARKS", "no reading marks found in batch")
     traces = sorted(traces, key=lambda item: (
@@ -269,10 +333,12 @@ def _render_batch_note(batch: dict, title: str, traces: list[dict], *,
     notes = [trace for trace in traces if trace["content"]["annotation"]["text"]]
     highlights = [trace for trace in traces if trace["content"]["printed_text"]["text"]
                   and trace not in notes]
+    unreadable = [trace for trace in traces if trace not in notes and trace not in highlights]
     lines = ["---", "doc_type: physical-highlights-notes", "type: reference",
              "area: reading", "status: review", f"created: {created}",
              f"updated: {created}", f"isbn: '{batch.get('isbn', '')}'",
              f"noteCount: {len(highlights)}", f"reviewCount: {len(notes)}",
+             *([f"unreadableCount: {len(unreadable)}"] if presentation_version >= 5 else []),
              "---", "", "# 元数据", f"> [!abstract] {title}",
              f"> - 书名： {title}", f"> - ISBN： {batch.get('isbn', '待核对')}",
              "> - 来源： 飞书图书专员 · 纸质书照片",
@@ -305,12 +371,16 @@ def _render_batch_note(batch: dict, title: str, traces: list[dict], *,
                         suffix = f" ^{trace['id']}" if index == len(quote_lines) - 1 else ""
                         lines.append(prefix + quote_line + suffix)
                 else:
+                    if presentation_version >= 4:
+                        flattened = re.sub(r"\s*\n\s*", "", printed.strip())
                     lines.append(f"> 📌 {flattened} ^{trace['id']}")
                 if presentation_version != 1 and not flattened.rstrip().endswith(("。", "！", "？", "!", "?")):
                     lines.append("> ⚠️ 转录可能不完整，待核对")
             if annotation:
                 rendered_note = annotation if presentation_version == 1 else annotation.replace("\n", " / ")
                 lines.append(f"> 💭 {rendered_note}（手写待核对）")
+            if not printed and not annotation and presentation_version >= 5:
+                lines.append(f"> ⚠️ 检测到标记，文字尚未辨认 ^{trace['id']}")
             try:
                 stamp = datetime.fromisoformat(trace["created_at"]).astimezone(
                     ZoneInfo("Asia/Shanghai")).strftime("%Y-%m-%d %H:%M:%S")
@@ -322,6 +392,8 @@ def _render_batch_note(batch: dict, title: str, traces: list[dict], *,
 
     render_section("高亮划线", highlights)
     render_section("读书笔记", notes)
+    if presentation_version >= 5:
+        render_section("待核对的标记", unreadable)
     lines.append(_batch_marker(batch["id"]))
     return "\n".join(lines).rstrip() + "\n"
 
@@ -335,6 +407,8 @@ def _export(lib: Library, owner: str, batch: dict, title: str, vault: Path) -> P
     block = _render_batch_note(batch, title, traces, created=_now()[:10])
     if note.exists():
         old = note.read_text(encoding="utf-8")
+        if re.search(r'data-librarian-batch="batch_book_[0-9]{13}"', old):
+            return note
         if _has_batch_marker(old, batch["id"]):
             return note
         block = old.rstrip() + "\n\n" + block
@@ -347,20 +421,104 @@ def _refresh_generated_note(vault: Path, batch: dict, title: str,
     """Replace only an unchanged generated note; preserve any review edits."""
     note = vault / "2Area" / "40 学习与阅读" / "阅读笔记" / f"{title}.md"
     old = note.read_text(encoding="utf-8")
+    if re.search(r'data-librarian-batch="batch_book_[0-9]{13}"', old):
+        return note
     match = re.search(r"(?m)^created: (\d{4}-\d{2}-\d{2})$", old)
-    if not match or old not in (
+    candidates = (
             _render_batch_note(batch, title, old_traces, created=match.group(1)),
             _render_batch_note(batch, title, old_traces, created=match.group(1),
                                presentation_version=1),
             _render_batch_note(batch, title, old_traces, created=match.group(1),
                                presentation_version=2),
+            _render_batch_note(batch, title, old_traces, created=match.group(1),
+                               presentation_version=3),
+            _render_batch_note(batch, title, old_traces, created=match.group(1),
+                               presentation_version=4),
             _render_batch_note_legacy(batch, title, old_traces, created=match.group(1)),
             _render_batch_note_legacy(batch, title, old_traces,
-                                      created=match.group(1), spatial_order=False)):
+                                      created=match.group(1), spatial_order=False)) if match else ()
+    matches = [(candidate, old.find(candidate)) for candidate in candidates
+               if old.count(candidate) == 1]
+    matches = [(candidate, index) for candidate, index in matches
+               if (index == 0 or old[:index].endswith("\n\n")) and
+               (index + len(candidate) == len(old) or
+                old[index + len(candidate):].startswith("\n"))]
+    if not matches:
         raise LibrarianError("REVIEW_EDIT_CONFLICT", "Vault review note has edits; preserve it for manual reconciliation")
+    matched, index = matches[0]
     revised = _render_batch_note(batch, title, new_traces, created=match.group(1))
-    if revised != old:
-        _atomic_write(note, revised.encode("utf-8"))
+    updated = old[:index] + revised + old[index + len(matched):]
+    if updated != old:
+        _atomic_write(note, updated.encode("utf-8"))
+    return note
+
+
+def _consolidate_generated_note(lib: Library, owner: str, title: str,
+                                vault: Path) -> Path:
+    """Collapse only verifiably generated blocks into one WeRead-style note."""
+    note = vault / "2Area" / "40 学习与阅读" / "阅读笔记" / f"{title}.md"
+    old = note.read_text(encoding="utf-8")
+    blocks = [part.strip() for part in re.split(
+        r"(?=^---\n(?:doc_type:|type:))", old, flags=re.M) if part.strip()]
+    if not blocks or "".join(blocks) == "":
+        raise LibrarianError("REVIEW_EDIT_CONFLICT", "generated review note unavailable")
+    editions = [edition for edition in _current(lib, owner, "Edition")
+                if edition["isbn"]["isbn13"] and
+                lib.get(owner, "Work", edition["work_id"])["title"] == title]
+    if len(editions) != 1:
+        return note
+    isbn = editions[0]["isbn"]["isbn13"]
+    aggregate_id = f"batch_book_{isbn}"
+    batches = {batch["id"]: batch for batch in
+               _current(lib, owner, "CaptureBatch") +
+               _processing_batches(_current(lib, owner, "CaptureBatch"))}
+    date = None
+    for block in blocks:
+        marker = re.search(r'data-librarian-batch="([^"]+)"', block)
+        stamp = re.search(r"(?m)^created: (\d{4}-\d{2}-\d{2})$", block)
+        if not marker or not stamp:
+            raise LibrarianError("REVIEW_EDIT_CONFLICT", "review note has an unverified block")
+        date = date or stamp.group(1)
+        batch = dict(batches.get(marker.group(1), {"id": aggregate_id}))
+        if marker.group(1) != aggregate_id and marker.group(1) not in batches:
+            raise LibrarianError("REVIEW_EDIT_CONFLICT", "review note batch is unknown")
+        batch["isbn"] = isbn
+        refs = re.findall(r'data-librarian-trace="([^"]+)" data-revision="(\d+)"', block)
+        traces = []
+        for trace_id, revision in refs:
+            row = lib.db.execute(
+                "SELECT body FROM records WHERE owner_id=? AND model='ReadingTrace' "
+                "AND id=? AND revision=?",
+                (owner, trace_id, int(revision))).fetchone()
+            if row is None:
+                raise LibrarianError("REVIEW_EDIT_CONFLICT", "review note trace is unknown")
+            traces.append(json.loads(row["body"]))
+        if not traces:
+            raise LibrarianError("REVIEW_EDIT_CONFLICT", "review note has no trace anchors")
+        variants = [_render_batch_note(batch, title, traces, created=stamp.group(1),
+                                       presentation_version=version).strip()
+                    for version in (1, 2, 3, 4, 5)]
+        variants.extend([_render_batch_note_legacy(batch, title, traces,
+                                                   created=stamp.group(1)).strip(),
+                         _render_batch_note_legacy(batch, title, traces,
+                                                   created=stamp.group(1),
+                                                   spatial_order=False).strip()])
+        if block not in variants:
+            raise LibrarianError("REVIEW_EDIT_CONFLICT", "review note has user edits")
+    sessions = {session["id"] for session in _current(lib, owner, "ReadingSession")
+                if session["edition_id"] == editions[0]["id"]}
+    related_captures = {row["capture_id"] for row in lib.db.execute(
+        "SELECT capture_id,session_id FROM capture_context WHERE owner_id=?", (owner,))
+        if row["session_id"] in sessions}
+    current = [trace for trace in _current(lib, owner, "ReadingTrace")
+               if trace["status"] == "active" and trace["medium"] == "physical" and
+               trace["source"].get("capture_id") in related_captures]
+    if not current:
+        return note
+    rendered = _render_batch_note({"id": aggregate_id, "isbn": isbn},
+                                  title, current, created=date)
+    if rendered != old:
+        _atomic_write(note, rendered.encode("utf-8"))
     return note
 
 
@@ -386,13 +544,15 @@ def _remove_vault_images(vault: Path, batch: dict) -> bool:
     return changed
 
 
-def _notify(root: Path, batch: dict, note: Path, count: int) -> None:
+def _notify(root: Path, batch: dict, note: Path, count: int, *,
+            unresolved: int = 0, issues: int = 0) -> None:
     marker = root / "notifications" / f"{batch['id']}.json"
     if marker.exists():
         return
     alignment = "、EPUB 辅助核对" if batch.get("isbn") else ""
-    message = (f"《{note.stem}》已完成照片识别{alignment}，并写入图书专员数据库和 Obsidian。"
-               f"共识别 {count} 条画线/笔记。请在「2Area/40 学习与阅读/阅读笔记/{note.name}」review；"
+    message = (f"《{note.stem}》照片已用 OCR 识别{alignment}，并写入图书专员数据库和 Obsidian。"
+               f"当前 {count} 条画线/笔记；{unresolved} 条页码、{issues} 张提取差异待核对。"
+               f"请在「2Area/40 学习与阅读/阅读笔记/{note.name}」review；"
                "手写文字标为待核对。")
     command = ["openclaw", "message", "send", "--channel", "feishu", "--account", "librarian",
                "--target", batch["origin"]["conversation_id"], "--message", message, "--json"]
@@ -402,12 +562,13 @@ def _notify(root: Path, batch: dict, note: Path, count: int) -> None:
     _atomic_write(marker, json.dumps({"batch_id": batch["id"], "sent_at": _now()}).encode())
 
 
-def _notify_correction(root: Path, batch: dict, note: Path, count: int) -> None:
+def _notify_correction(root: Path, batch: dict, note: Path, count: int, *,
+                       unresolved: int = 0, issues: int = 0) -> None:
     marker = root / "notifications" / f"{batch['id']}-revision.json"
     if marker.exists():
         return
-    message = (f"《{note.stem}》的页码与画线识别已修正，数据库和 Obsidian 已同步更新。"
-               f"现有 {count} 条画线/笔记。"
+    message = (f"《{note.stem}》的页码与画线识别已更新，数据库和 Obsidian 已同步更新。"
+               f"现有 {count} 条画线/笔记；{unresolved} 条页码、{issues} 张提取差异待核对。"
                f"请在「2Area/40 学习与阅读/阅读笔记/{note.name}」review。")
     result = subprocess.run(["openclaw", "message", "send", "--channel", "feishu",
                              "--account", "librarian", "--target",
@@ -469,7 +630,8 @@ def _process_batch(lib: Library, root: Path, vault: Path | None, owner: str,
     match = None
     for capture_id in batch["capture_ids"]:
         try:
-            match = _book_for_cover(root, lib.read_original(owner, capture_id))
+            original = lib.read_original(owner, capture_id)
+            match = _book_for_cover(root, original) or _book_for_page(root, original)
         except Exception:
             match = None
         if match:
@@ -485,7 +647,7 @@ def _process_batch(lib: Library, root: Path, vault: Path | None, owner: str,
     if match:
         batch["isbn"] = isbn
         epub_hash = hashlib.sha256(epub.read_bytes()).hexdigest()[:16]
-        version = f"rapidocr-epub-notes-v5:{isbn}:{epub_hash}"
+        version = f"rapidocr-epub-notes-v6:{isbn}:{epub_hash}"
         extractor = ocr_extractor(epub=epub, note_refiner=openclaw_note_refiner)
     else:
         title = "待确认书籍"
@@ -502,6 +664,7 @@ def _process_batch(lib: Library, root: Path, vault: Path | None, owner: str,
                     trace["source"].get("capture_id") in batch["capture_ids"]]
         if vault:
             _refresh_generated_note(vault, batch, title, existing, existing)
+            _consolidate_generated_note(lib, owner, title, vault)
         unresolved = sum(trace["location"]["page"] is None for trace in existing)
         return ({"batch_id": batch["id"], "status": "partial",
                  "traces": len(existing), "unresolved_pages": unresolved,
@@ -517,14 +680,24 @@ def _process_batch(lib: Library, root: Path, vault: Path | None, owner: str,
                           if trace["status"] == "active" and
                           trace["source"].get("capture_id") in batch["capture_ids"]]
             _atomic_write(snapshot, json.dumps(old_traces, ensure_ascii=False).encode())
+    extraction_issues = []
     for capture_id in batch["capture_ids"]:
         try:
             process_capture(lib, owner, capture_id, extractor,
                             extractor_version=version)
         except LibrarianError as error:
-            if error.code != "RECONCILIATION_REQUIRED":
+            if error.code == "RECONCILIATION_REQUIRED":
+                try:
+                    reconcile_extraction(lib, owner, capture_id, version,
+                                         allow_rotation_upgrade=True)
+                except LibrarianError as conflict:
+                    extraction_issues.append({"capture_id": capture_id,
+                                              "code": conflict.code})
+            elif error.code in {"EXTRACTION_SCHEMA_INVALID", "EXTRACTOR_UNAVAILABLE"}:
+                extraction_issues.append({"capture_id": capture_id,
+                                          "code": error.code})
+            else:
                 raise
-            reconcile_extraction(lib, owner, capture_id, version)
     traces = [trace for trace in _current(lib, owner, "ReadingTrace")
               if trace["status"] == "active" and
               trace["source"].get("capture_id") in batch["capture_ids"]]
@@ -535,12 +708,12 @@ def _process_batch(lib: Library, root: Path, vault: Path | None, owner: str,
     if not vault:
         unresolved = sum(trace["location"]["page"] is None for trace in traces)
         return {"batch_id": batch["id"],
-                "status": "partial" if not match or unresolved or not traces else "processed",
+                "status": "partial" if not match or unresolved or not traces or extraction_issues else "processed",
                 "traces": len(traces), "unresolved_pages": unresolved,
                 "vault_status": "unconfigured",
                 "issues": (["NEEDS_BOOK_RESOLUTION"] if not match else []) +
                           (["NEEDS_PAGE_RESOLUTION"] if unresolved else []) +
-                          (["NO_MARKS"] if not traces else [])}
+                          (["NO_MARKS"] if not traces else []) + extraction_issues}
     if not traces:
         return {"batch_id": batch["id"], "status": "partial", "traces": 0,
                 "code": "NO_MARKS"}
@@ -549,15 +722,22 @@ def _process_batch(lib: Library, root: Path, vault: Path | None, owner: str,
                 "code": "NEEDS_BOOK_RESOLUTION"}
     if notified:
         note = _refresh_generated_note(vault, batch, title, old_traces, traces)
-        _notify_correction(root, batch, note, len(traces))
+        note = _consolidate_generated_note(lib, owner, title, vault)
+        _notify_correction(root, batch, note, len(traces),
+                           unresolved=sum(trace["location"]["page"] is None for trace in traces),
+                           issues=len(extraction_issues))
         snapshot.unlink(missing_ok=True)
     else:
         note = _export(lib, owner, batch, title, vault)
-        _notify(root, batch, note, len(traces))
+        note = _consolidate_generated_note(lib, owner, title, vault)
+        _notify(root, batch, note, len(traces),
+                unresolved=sum(trace["location"]["page"] is None for trace in traces),
+                issues=len(extraction_issues))
     unresolved = sum(trace["location"]["page"] is None for trace in traces)
     return {"batch_id": batch["id"],
-            "status": "partial" if unresolved else "processed", "traces": len(traces),
-            "unresolved_pages": unresolved, "note": str(note)}
+            "status": "partial" if unresolved or extraction_issues else "processed",
+            "traces": len(traces), "unresolved_pages": unresolved,
+            "issues": extraction_issues, "note": str(note)}
 
 
 def run(root: Path, vault: Path | None, owner: str, *,
@@ -578,8 +758,14 @@ def run(root: Path, vault: Path | None, owner: str, *,
             else:
                 with Library(root) as lib:
                     _repair_legacy_auto_affinity(lib, owner)
-                    for batch in _current(lib, owner, "CaptureBatch"):
+                    for batch in _processing_batches(_current(lib, owner, "CaptureBatch")):
                         if batch["origin"]["transport"] != "feishu":
+                            continue
+                        newest = max((lib.get(owner, "PageCapture", capture_id)["received_at"]
+                                      for capture_id in batch["capture_ids"]),
+                                     default=batch["received_at"])
+                        if (datetime.fromisoformat(_now()) -
+                                datetime.fromisoformat(newest)).total_seconds() < 45:
                             continue
                         status_file = root / "batch-status" / f"{batch['id']}.json"
                         try:
