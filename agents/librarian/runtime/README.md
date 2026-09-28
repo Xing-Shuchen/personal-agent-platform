@@ -29,7 +29,11 @@ coordinates, and returns the model text to the pipeline. The derivative,
 transform and raw model text are saved with the processing attempt, including
 failed validation attempts. Its provider transport has a local mock test; the
 current configured endpoint returns HTTP 404 for `/v1/messages`, so live
-image recognition has not been verified.
+image recognition has not been verified. The current default local model also
+rejected a synthetic image input; configure a vision-capable model and endpoint
+before enabling processing. See the official [Claude vision](https://platform.claude.com/docs/en/build-with-claude/vision)
+and [coordinate](https://platform.claude.com/docs/en/build-with-claude/vision-coordinates)
+API documentation for the request shape and resize behavior.
 Search accepts text or a structural filter, including textless symbol traces,
 and returns the same provenance-bearing hit contract for all three media.
 `review.py` exposes separate owner-scoped queues for processed captures with
@@ -91,7 +95,8 @@ PYTHONPATH=. python3 -m agents.librarian.runtime.vision \
 
 Set `ANTHROPIC_API_KEY` (or the deployment's `ANTHROPIC_AUTH_TOKEN`) and
 optionally `ANTHROPIC_BASE_URL` in the local environment. The command sends
-image content to the configured provider. Choose a vision model whose native
+image content to the configured provider. API keys use `x-api-key`; auth tokens
+use `Authorization: Bearer`. Choose a vision model whose native
 resolution accommodates the derivative; provider-side downscaling is rejected
 to preserve coordinate mapping. Do not treat a successful API response as the
 annotated-photo acceptance result.

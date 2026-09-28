@@ -96,12 +96,15 @@ def _derivative(original: bytes, *, max_edge: int, max_pixels: int) -> tuple[byt
 def anthropic_extractor(*, model: str, api_key: str, base_url: str = "https://api.anthropic.com",
                         max_edge: int = 2000, max_pixels: int = 3_000_000,
                         max_tokens: int = 8192, timeout: int = 180,
+                        auth_mode: str = "api_key",
                         opener: Callable[..., Any] = urlopen) -> Callable[[bytes], ExtractionOutput]:
     """Build a callable compatible with process_capture's extraction port."""
     if not model or not api_key or not base_url.startswith("https://"):
         raise ValueError("model, key and HTTPS API base URL are required")
     if min(max_edge, max_pixels, max_tokens, timeout) <= 0:
         raise ValueError("positive vision limits required")
+    if auth_mode not in {"api_key", "bearer"}:
+        raise ValueError("unsupported vision auth mode")
 
     def extract(original: bytes) -> ExtractionOutput:
         derivative, width, height, derivative_width, derivative_height, operations = _derivative(
@@ -114,9 +117,11 @@ def anthropic_extractor(*, model: str, api_key: str, base_url: str = "https://ap
                         "transformations": {"oversized_image": "error"}},
                        {"type": "text", "text": PROMPT.format(width=width, height=height)},
                    ]}]}
+        auth_header = ({"x-api-key": api_key} if auth_mode == "api_key" else
+                       {"authorization": f"Bearer {api_key}"})
         request = Request(_endpoint(base_url),
                           data=json.dumps(payload, separators=(",", ":")).encode(),
-                          headers={"x-api-key": api_key, "anthropic-version": "2023-06-01",
+                          headers={**auth_header, "anthropic-version": "2023-06-01",
                                    "content-type": "application/json"}, method="POST")
         try:
             with opener(request, timeout=timeout) as response:
@@ -152,9 +157,10 @@ def main() -> None:
     parser.add_argument("--max-edge", type=int, default=2000)
     parser.add_argument("--max-pixels", type=int, default=3_000_000)
     args = parser.parse_args()
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
     extractor = anthropic_extractor(
-        model=args.model, api_key=os.environ.get("ANTHROPIC_API_KEY") or
-        os.environ.get("ANTHROPIC_AUTH_TOKEN", ""), base_url=args.base_url,
+        model=args.model, api_key=api_key or os.environ.get("ANTHROPIC_AUTH_TOKEN", ""),
+        auth_mode="api_key" if api_key else "bearer", base_url=args.base_url,
         max_edge=args.max_edge, max_pixels=args.max_pixels)
     with Library(args.root) as lib:
         endpoint_id = hashlib.sha256(args.base_url.encode()).hexdigest()[:12]

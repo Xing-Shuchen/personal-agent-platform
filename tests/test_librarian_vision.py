@@ -111,3 +111,16 @@ def test_invalid_vision_json_keeps_raw_text_and_derivative(tmp_path):
             (row["run_id"],)).fetchone()[0])
         assert (tmp_path / derivative["asset"]["object_key"]).is_file()
         assert lib.db.execute("SELECT COUNT(*) FROM records WHERE model='ReadingTrace'").fetchone()[0] == 0
+
+
+def test_bearer_mode_sends_authorization_header():
+    def opener(request, *, timeout):
+        assert request.get_header("Authorization") == "Bearer test-token"
+        assert request.get_header("X-api-key") is None
+        return io.BytesIO(json.dumps({"content": [{"type": "text", "text": "{}"}],
+                                      "stop_reason": "end_turn"}).encode())
+
+    extractor = anthropic_extractor(model="synthetic-vision", api_key="test-token",
+                                    base_url="https://vision.example", auth_mode="bearer",
+                                    opener=opener)
+    assert extractor(_photo()).raw == b"{}"
