@@ -46,3 +46,26 @@ def test_generic_ocr_keeps_mark_without_epub(monkeypatch) -> None:
     assert observation["printed_regions"][0]["text"]["text"].startswith("这是照片上第1行")
     assert observation["pages"][0]["page"]["status"] == "unresolved"
     assert json.loads(output.raw)["epub_sha256"] is None
+
+
+def test_printed_header_number_outweighs_inline_marginal_number(monkeypatch) -> None:
+    from agents.librarian.runtime import ocr
+    import rapidocr
+
+    body_boxes = [[[150, top], [800, top], [800, top + 32], [150, top + 32]]
+                  for top in (100, 190, 280, 370, 460)]
+    boxes = ([[480, 45], [670, 45], [670, 65], [480, 65]],
+             [[680, 45], [705, 45], [705, 65], [680, 65]],
+             *body_boxes,
+             [[810, 570], [835, 570], [835, 590], [810, 590]])
+    texts = ["第二讲帕森斯与社会学理论", "23",
+             *[f"这里是第{i}行完整的印刷正文，包含一整句话。" for i in range(5)], "41"]
+    result = SimpleNamespace(boxes=boxes, txts=texts, scores=[.95] * len(texts))
+    monkeypatch.setattr(rapidocr, "RapidOCR", lambda: lambda _pixels: result)
+    monkeypatch.setattr(ocr, "_underline_evidence", lambda *_: (0.0, [0, 0]))
+    image = io.BytesIO()
+    Image.new("RGB", (1000, 1400), "white").save(image, "PNG")
+    output = ocr.ocr_extractor()(image.getvalue())
+    observation = json.loads(output.observation)
+    assert [page["page"]["value"]["number"] for page in observation["pages"]] == [23]
+    assert json.loads(output.raw)["page_markers"][0]["source"] == "header_ocr"

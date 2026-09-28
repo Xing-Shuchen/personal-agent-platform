@@ -248,3 +248,9 @@ F07 后续验证：已晋升和待审知识候选引用旧 trace 时，自动对
 F01 与成本控制后续增量：没有匹配 EPUB 的纸书内页现在先用本地 RapidOCR 定位正文和下划线；只在本地未找到标记时调用整页视觉模型。图片有画线但书籍或页码未知时仍持久化 unresolved trace，不以 EPUB 或 Vault 为接收前提。定位 OCR 和 worker 分支测试证明一张有本地可识别画线的图不触发整页模型。高亮颜色、独立符号及同图混合标记的真实覆盖率尚未验收，不能据此关闭 F01。
 
 §5.1 目录 ID 后续增量：新入库纸书的 Work、Edition、BookInstance 改用不透明随机 ID；ISBN 只作为 Edition 字段和查询键。按 owner 与 ISBN 唯一匹配已有版本时复用旧 ID，因此首本书已存在的 ISBN 派生 ID 不被强行重写。新建及旧版复用均有测试；历史 ID 的迁移政策仍需单独制定。
+
+M2 周期运行观察：Gateway 重启后的 `digital-sync-status.json` 于 2026-09-28 16:20:08 UTC 记录 Koodo 与 WeRead 均成功；Koodo 118 条、WeRead 4 条来源记录在这次运行中均为 unchanged。当前 owner 的 208 条活跃 trace 与 208 条索引投影一致。此证据确认周期调度至少执行了一轮并能读取两个真实来源；实际来源增改删及断网恢复仍未验收。
+
+真实入站工具审计：Librarian 本机 `trajectory_runtime_events` 截至本轮检查有 32 条历史 tool.call（`exec` 25、`memory_search` 4、`read` 3），没有 `librarian_search`、`librarian_session` 或 `librarian_evidence` 调用。插件已加载和工具已获许可只证明可供调用，不证明模型在真实飞书消息中使用过。受信入站问答及取证验收继续待实际消息。
+
+F02 真实照片复核发现双页码版式歧义：一张原图顶部印有「23」，中段边栏有「41」，旧 v6 将上段留为 unknown 并把下段误标为 41；另一张无顶部页码的原图在边栏印「39」「40」，确实对应上下两段。v7 在 OCR 识别出与短页眉同行的唯一顶部页码时，以该号码覆盖整张正文页；否则保留边栏分段。两张既有原图只读重跑分别得到 `[23]` 和 `[unknown,39,40]`，并增加合成回归测试。生产 trace 尚待 v7 正常重提取与对账更新，不能以只读重跑声称数据库及 Vault 已纠正。

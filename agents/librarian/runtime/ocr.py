@@ -279,6 +279,23 @@ def ocr_extractor(*, epub: Path | None = None, max_edge: int = 2000,
             bottom = max(line["bbox"][3] for line in body)
             page_box = [max(0.0, left - .06), max(0.0, top - .12),
                         min(1.0, right + .13), min(1.0, bottom + .15)]
+            header_numbers = []
+            for line in lines:
+                value = re.fullmatch(r"\s*(\d{1,3})\s*", line["ocr_text"])
+                box = line["bbox"]
+                if not value or box[1] > .12 or not page_box[0] <= box[0] < box[2] <= page_box[2]:
+                    continue
+                center_y = (box[1] + box[3]) / 2
+                adjacent_header = any(
+                    other["id"] != line["id"] and 5 <= len(_compact(other["ocr_text"])) <= 40 and
+                    abs((other["bbox"][1] + other["bbox"][3]) / 2 - center_y) <= .022 and
+                    0 <= box[0] - other["bbox"][2] <= .07
+                    for other in lines)
+                if adjacent_header:
+                    header_numbers.append({"number": int(value.group(1)), "y": box[1],
+                                           "confidence": line["ocr_score"],
+                                           "source": "header_ocr"})
+            header_number = header_numbers[0] if len(header_numbers) == 1 else None
             markers = []
             for line in lines:
                 value = re.fullmatch(r"\s*(\d{1,3})\s*", line["ocr_text"])
@@ -292,7 +309,7 @@ def ocr_extractor(*, epub: Path | None = None, max_edge: int = 2000,
                     markers.append({"number": number, "y": line["bbox"][1],
                                     "confidence": line["ocr_score"], "source": "full_ocr"})
             marker_probe = []
-            if len(markers) == 1:
+            if len(markers) == 1 and header_number is None:
                 # A second original-book page number is often missed when it
                 # sits next to body text. Re-read only that margin at 2x.
                 margin_x = left
@@ -337,13 +354,18 @@ def ocr_extractor(*, epub: Path | None = None, max_edge: int = 2000,
                                             "confidence": round(float(score), 4),
                                             "source": "margin_ocr"})
             markers.sort(key=lambda item: item["y"])
+            if header_number is not None:
+                markers = [header_number]
             # The region above the first visible page number is unresolved.
             # Upload order and neighboring captures are not page evidence.
-            cuts = [page_box[1]] + [max(page_box[1] + .001, item["y"] - .01)
-                                    for item in markers] + [page_box[3]]
+            cuts = ([page_box[1], page_box[3]] if header_number is not None else
+                    [page_box[1]] + [max(page_box[1] + .001, item["y"] - .01)
+                                    for item in markers] + [page_box[3]])
             for index in range(len(cuts) - 1):
-                number = markers[index - 1]["number"] if index else None
-                confidence = markers[index - 1]["confidence"] if index else None
+                marker = (header_number if header_number is not None else
+                          markers[index - 1] if index else None)
+                number = marker["number"] if marker else None
+                confidence = marker["confidence"] if marker else None
                 page = ({"value": {"label": str(number), "number": number,
                                    "scheme": "arabic"}, "confidence": confidence,
                          "basis": "vision", "status": "resolved"} if number is not None else

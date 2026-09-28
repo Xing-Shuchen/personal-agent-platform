@@ -688,7 +688,7 @@ def _process_batch(lib: Library, root: Path, vault: Path | None, owner: str,
     if match:
         batch["isbn"] = isbn
         epub_hash = hashlib.sha256(epub.read_bytes()).hexdigest()[:16]
-        version = f"rapidocr-epub-notes-v6:{isbn}:{epub_hash}"
+        version = f"rapidocr-epub-notes-v7:{isbn}:{epub_hash}"
         extractor = ocr_extractor(epub=epub, note_refiner=openclaw_note_refiner)
     else:
         title = "待确认书籍"

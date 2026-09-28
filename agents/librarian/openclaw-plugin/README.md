@@ -40,8 +40,9 @@ Configure absolute repository and private state paths, an OCR-capable Python
 interpreter, and an explicit owner mapping. Vault is optional. Install the
 package's `librarian-ocr` extra in that interpreter. An owner-supplied EPUB at
 `stateRoot/source-books/<isbn13>.epub` enables local OCR alignment; without it,
-the worker uses the configured image-capable OpenClaw model and persists
-unresolved observations when the book or page cannot be identified.
+the worker still runs local OCR for printed lines and underlines, then uses the
+configured image-capable OpenClaw model only when local OCR finds no mark.
+Unknown books and page numbers remain unresolved in stored observations.
 Replace the example channel, account, sender and owner IDs with trusted values
 from your OpenClaw deployment:
 
