@@ -75,6 +75,67 @@ def test_reextract_keeps_promoted_knowledge_source_active(tmp_path: Path) -> Non
         assert lib.get("owner_a", "KnowledgeCandidate", candidate["id"])["status"] == "promoted"
 
 
+def test_reextract_keeps_pending_candidate_source_active(tmp_path: Path) -> None:
+    with Library(tmp_path) as lib:
+        receipt = lib.ingest("owner_a", transport="gateway", account_id="account",
+                             conversation_id="chat", source_event_id="message-1",
+                             attachments=[{"source_item_id": "image-1", "mime_type": "image/png",
+                                           "data": _photo()}], idempotency_key="command-1")
+        capture_id = receipt["capture_ids"][0]
+        old = process_capture(lib, "owner_a", capture_id, lambda _: _output(), extractor_version="v1")
+        candidate = create_candidate(lib, "owner_a", [{"trace_id": old[0]["id"], "revision": 1}],
+                                     candidate_type="concept", correlation_id="test",
+                                     content={"text": None, "confidence": None, "basis": "unknown"})
+        with pytest.raises(LibrarianError, match="awaits reconciliation"):
+            process_capture(lib, "owner_a", capture_id, lambda _: _output(), extractor_version="v2")
+        with pytest.raises(LibrarianError) as error:
+            reconcile_extraction(lib, "owner_a", capture_id, "v2")
+        assert error.value.code == "RECONCILIATION_REQUIRED"
+        assert lib.get("owner_a", "ReadingTrace", old[0]["id"])["status"] == "active"
+        assert lib.get("owner_a", "KnowledgeCandidate", candidate["id"])["status"] == "pending"
+
+
+def test_reextract_with_vocabulary_configuration_requires_review(tmp_path: Path) -> None:
+    with Library(tmp_path) as lib:
+        receipt = lib.ingest("owner_a", transport="gateway", account_id="account",
+                             conversation_id="chat", source_event_id="message-1",
+                             attachments=[{"source_item_id": "image-1", "mime_type": "image/png",
+                                           "data": _photo()}], idempotency_key="command-1")
+        capture_id = receipt["capture_ids"][0]
+        old = process_capture(lib, "owner_a", capture_id, lambda _: _output(), extractor_version="v1")
+        vocabulary = {"enabled": True, "version": "personal-v1",
+                      "mappings": {"!!": "promote_candidate"}}
+        with pytest.raises(LibrarianError, match="awaits reconciliation"):
+            process_capture(lib, "owner_a", capture_id, lambda _: _output(),
+                            extractor_version="v2", vocabulary=vocabulary)
+        with pytest.raises(LibrarianError) as error:
+            reconcile_extraction(lib, "owner_a", capture_id, "v2")
+        assert error.value.code == "RECONCILIATION_REQUIRED"
+        assert all(lib.get("owner_a", "ReadingTrace", item["id"])["status"] == "active"
+                   for item in old)
+
+
+def test_reextract_merge_of_old_mark_groups_requires_review(tmp_path: Path) -> None:
+    with Library(tmp_path) as lib:
+        receipt = lib.ingest("owner_a", transport="gateway", account_id="account",
+                             conversation_id="chat", source_event_id="message-1",
+                             attachments=[{"source_item_id": "image-1", "mime_type": "image/png",
+                                           "data": _photo()}], idempotency_key="command-1")
+        capture_id = receipt["capture_ids"][0]
+        old = process_capture(lib, "owner_a", capture_id, lambda _: _output(), extractor_version="v1")
+        updated = json.loads(_output())
+        updated["links"] = [{"from_id": "mark_1", "to_id": "note_1",
+                             "kind": "annotates", "confidence": .95}]
+        with pytest.raises(LibrarianError, match="awaits reconciliation"):
+            process_capture(lib, "owner_a", capture_id,
+                            lambda _: json.dumps(updated).encode(), extractor_version="v2")
+        with pytest.raises(LibrarianError) as error:
+            reconcile_extraction(lib, "owner_a", capture_id, "v2")
+        assert error.value.code == "RECONCILIATION_REQUIRED"
+        assert all(lib.get("owner_a", "ReadingTrace", item["id"])["status"] == "active"
+                   for item in old)
+
+
 def test_initial_index_failure_preserves_observation_and_retries_projection(tmp_path: Path,
                                                                              monkeypatch) -> None:
     from agents.librarian.runtime import pipeline
