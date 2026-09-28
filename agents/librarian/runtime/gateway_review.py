@@ -29,9 +29,22 @@ def pending_extractions(lib: Library, owner: str, capture_id: str | None = None)
     pending = [run for run in latest.values() if run["outcome"] == "pending" and
                "RECONCILIATION_REQUIRED" in run["issues"]]
     if capture_id is None:
-        return {"pending": [{"capture_id": run["capture_id"], "run_id": run["id"],
-                             "extractor_version": run["extractor_version"]}
-                            for run in pending[:30]], "more": len(pending) > 30}
+        summaries = []
+        for run in sorted(pending, key=lambda item: item["created_at"], reverse=True)[:10]:
+            item = {"capture_id": run["capture_id"], "run_id": run["id"],
+                    "extractor_version": run["extractor_version"]}
+            try:
+                detail = pending_extractions(lib, owner, run["capture_id"])
+                item.update({"current_count": detail["current_count"],
+                             "proposed_count": detail["proposed_count"],
+                             "book_title": detail["book_title"],
+                             "pages": sorted({str(trace["page"]["label"]) if trace["page"]
+                                              else "unknown" for trace in detail["proposed"]}),
+                             "ocr_gap_count": len(detail["ocr_gaps"])})
+            except LibrarianError:
+                item["summary_unavailable"] = True
+            summaries.append(item)
+        return {"pending": summaries, "more": len(pending) > 10}
     if not pending:
         raise LibrarianError("OBJECT_NOT_FOUND", "no pending extraction for capture")
     run = pending[0]
@@ -50,6 +63,9 @@ def pending_extractions(lib: Library, owner: str, capture_id: str | None = None)
         raise LibrarianError("RECONCILIATION_REQUIRED", "capture resolution missing")
     resolution = json.loads(row[0])
     resolution["pages"] = observation["pages"]
+    book_title = None
+    if resolution["work"]["value"]:
+        book_title = lib.get(owner, "Work", resolution["work"]["value"])["title"]
     state = "resolved" if all(resolution[key]["value"] for key in
                               ("session", "work", "edition", "book_instance")) else "unresolved"
     vocabulary = None
@@ -92,6 +108,7 @@ def pending_extractions(lib: Library, owner: str, capture_id: str | None = None)
     except (ValueError, TypeError, LibrarianError):
         ocr_gaps.append({"reason": "raw_ocr_unavailable"})
     return {"capture_id": capture_id, "pending_run_id": run["id"],
+            "book_title": book_title,
             "extractor_version": run["extractor_version"],
             "current_count": len(old), "proposed_count": len(proposed),
             "current": [brief(item) for item in old],
