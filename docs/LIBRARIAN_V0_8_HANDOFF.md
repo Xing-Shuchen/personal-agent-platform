@@ -53,5 +53,29 @@ Create `release-v0.8` only after the acceptance evidence below is complete.
 - Gateway plugin: `agents/librarian/openclaw-plugin/README.md`.
 - Current integration boundaries: `docs/LIBRARIAN_REPO_MAPPING.md`.
 
+## Continue on another PC
+
+1. Pull `main` from `origin` and read this document plus the runtime and
+   OpenClaw plugin READMEs. The handoff commit is on `main`; there is no
+   `release-v0.8` branch yet. Install the repo Python dependencies with
+   `python3 -m pip install -e .` in a virtual environment.
+2. Run `PYTHONPATH=. python3 -m pytest tests/test_librarian_vision.py
+   tests/test_librarian_pipeline.py tests/test_librarian_gateway_bridge.py -q`,
+   `python3 agents/librarian/runtime/tests/validate_contracts.py`, and
+   `node --test agents/librarian/openclaw-plugin/test.mjs` from the repo root.
+3. Install the local plugin using the commands in
+   `agents/librarian/openclaw-plugin/README.md`. Set that PC's absolute
+   `repoRoot` and private `stateRoot`. Keep `ownerMappings: []` until the
+   dedicated profile and trusted sender identity are ready.
+4. Runtime captures and SQLite data live under `var/librarian/`, outside Git.
+   Copy that private directory separately only if existing local captures must
+   be continued on the new PC; preserve file permissions and stop any writer
+   before copying. Provider credentials and OpenClaw settings are also local
+   machine configuration and are not in this repository.
+
+The original Obsidian Vault is likewise external to Git. Its path on this PC
+was `/home/cambricon/documents/Obsidian/Second_Brain`; configure the new PC's
+actual Vault path separately.
+
 Do not use the synthetic photo tests or fixture counts as proof of visual
 recognition accuracy or a finished release.
