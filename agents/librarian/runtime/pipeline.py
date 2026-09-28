@@ -81,7 +81,7 @@ def _failed_run(lib: Library, owner_id: str, capture_id: str, run_id: str,
               "extractor_version": extractor_version,
               "normalizer_version": normalizer_version,
               "revision": 1, "supersedes_revision": None}
-    with lib.db:
+    with lib.transaction():
         lib._put(record)
         if raw_asset:
             lib.db.execute("INSERT INTO extractor_attempts VALUES(?,?,?,?,?,?)",
@@ -151,10 +151,18 @@ def process_capture(lib: Library, owner_id: str, capture_id: str,
                     normalizer_version, "EXTRACTION_SCHEMA_INVALID", raw_asset)
         raise LibrarianError("EXTRACTION_SCHEMA_INVALID", f"extractor output invalid: {error}") from error
 
-    context = capture["submitted_context"]
+    prior_row = lib.db.execute("SELECT body FROM records WHERE owner_id=? AND model='CaptureResolution' "
+                               "AND current=1 AND json_extract(body,'$.capture_id')=?",
+                               (owner_id, capture_id)).fetchone()
+    prior_resolution = json.loads(prior_row["body"]) if prior_row else None
+    context = ({"session_id": prior_resolution["session"]["value"],
+                "work_id": prior_resolution["work"]["value"],
+                "edition_id": prior_resolution["edition"]["value"],
+                "book_instance_id": prior_resolution["book_instance"]["value"]}
+               if prior_resolution else capture["submitted_context"])
     session_id = context["session_id"]
-    basis = "explicit_session" if session_id else "unknown"
-    if not session_id:
+    basis = "user_confirmation" if prior_resolution else ("explicit_session" if session_id else "unknown")
+    if not session_id and not prior_resolution:
         inferred = lib.db.execute("SELECT session_id,basis FROM capture_context WHERE owner_id=? AND capture_id=?",
                                   (owner_id, capture_id)).fetchone()
         if inferred:
@@ -164,7 +172,7 @@ def process_capture(lib: Library, owner_id: str, capture_id: str,
     book_instance_id = context["book_instance_id"]
     if session_id:
         session = lib.get(owner_id, "ReadingSession", session_id)
-        if session["status"] == "closed":
+        if session["status"] == "closed" and not prior_resolution:
             raise LibrarianError("CONTEXT_CONFLICT", "closed session cannot silently receive captures")
         for key, value in (("work_id", work_id), ("edition_id", edition_id),
                            ("book_instance_id", book_instance_id)):
@@ -192,22 +200,35 @@ def process_capture(lib: Library, owner_id: str, capture_id: str,
                   "book_instance": _identity(book_instance_id, basis),
                   "pages": observation["pages"], "revision": 1,
                   "supersedes_revision": None}
+    store_resolution = True
+    if prior_resolution:
+        for field in ("session", "work", "edition", "book_instance"):
+            resolution[field] = prior_resolution[field]
+        resolution["id"] = prior_resolution["id"]
+        resolution["revision"] = prior_resolution["revision"] + 1
+        resolution["supersedes_revision"] = prior_resolution["revision"]
+        if prior_resolution["pages"]:
+            if {p["id"]: p["bbox"] for p in prior_resolution["pages"]} != {p["id"]: p["bbox"] for p in observation["pages"]}:
+                raise LibrarianError("CONTEXT_CONFLICT", "confirmed page regions differ from observation")
+            resolution = prior_resolution
+            store_resolution = False
     validate("CaptureResolution", resolution)
     traces = normalize(capture, observation, resolution, state, normalizer_version,
                        vocabulary=vocabulary)
     run = {"object_type": "ProcessingRun", "schema_version": "0.1.0",
            "id": run_id, "owner_id": owner_id, "created_at": _now(),
            "capture_id": capture_id, "checkpoint": "NORMALIZED",
-           "outcome": "success" if state == "resolved" and all(p["page"]["status"] == "resolved" for p in observation["pages"]) else "partial",
+           "outcome": "success" if state == "resolved" and all(p["page"]["status"] == "resolved" for p in resolution["pages"]) else "partial",
            "issues": ([] if state == "resolved" else ["NEEDS_BOOK_RESOLUTION"]) +
-                     (["NEEDS_PAGE_RESOLUTION"] if any(p["page"]["status"] != "resolved" for p in observation["pages"]) else []),
+                     (["NEEDS_PAGE_RESOLUTION"] if any(p["page"]["status"] != "resolved" for p in resolution["pages"]) else []),
            "extractor_version": extractor_version,
            "normalizer_version": normalizer_version,
            "revision": 1, "supersedes_revision": None}
-    with lib.db:
+    with lib.transaction():
         lib._put(run)
         lib._put(observation)
-        lib._put(resolution)
+        if store_resolution:
+            lib._put(resolution)
         lib.db.execute("INSERT INTO extractor_attempts VALUES(?,?,?,?,?,?)",
                        (owner_id, capture_id, run_id, _json(raw_asset), "success", None))
         for trace in traces:
@@ -229,7 +250,7 @@ def normalize(capture: dict[str, Any], observation: dict[str, Any],
               normalizer_version: str,
               *, vocabulary: dict[str, Any] | None = None) -> list[dict[str, Any]]:
     """Pure deterministic observation-to-trace projection for one capture."""
-    pages = {p["id"]: p for p in observation["pages"]}
+    pages = {p["id"]: p for p in resolution["pages"]}
     printed = {p["id"]: p for p in observation["printed_regions"]}
     marks = observation["marks"] + observation["annotations"] + observation["symbols"]
     by_id = {item["id"]: item for item in marks}
@@ -316,7 +337,7 @@ def normalize(capture: dict[str, Any], observation: dict[str, Any],
                  "source": {"kind": "physical", "capture_id": capture["id"],
                             "observation_id": observation["id"],
                             "resolution_id": resolution["id"],
-                            "resolution_revision": 1, "detection_ids": source_ids},
+                            "resolution_revision": resolution["revision"], "detection_ids": source_ids},
                  "provenance": [capture["asset"], observation["raw_output_asset"]],
                  "confidence": {"book_resolution": None,
                                 "page_number": page["page"]["confidence"]},
@@ -345,13 +366,13 @@ def _index_trace(lib: Library, trace: dict[str, Any]) -> None:
 def _traces_for_capture(lib: Library, owner_id: str, capture_id: str) -> list[dict[str, Any]]:
     rows = lib.db.execute("SELECT body FROM records WHERE owner_id=? AND model='ReadingTrace' AND current=1 ORDER BY rowid",
                           (owner_id,)).fetchall()
-    return [trace for row in rows if (trace := json.loads(row["body"]))["source"]["capture_id"] == capture_id]
+    return [trace for row in rows if (trace := json.loads(row["body"]))["source"].get("capture_id") == capture_id]
 
 
 def rebuild_index(lib: Library, owner_id: str) -> int:
     traces = [json.loads(row[0]) for row in lib.db.execute(
         "SELECT body FROM records WHERE owner_id=? AND model='ReadingTrace' AND current=1", (owner_id,))]
-    with lib.db:
+    with lib.transaction():
         lib.db.execute("DELETE FROM trace_index WHERE owner_id=?", (owner_id,))
         for trace in traces:
             if trace["status"] == "active":
@@ -384,7 +405,7 @@ def correct_trace(lib: Library, owner_id: str, trace_id: str, expected_revision:
         revised["content"][field] = {"text": value, "confidence": None,
                                       "basis": "user_statement" if value is not None else "unknown"}
     validate("ReadingTrace", revised)
-    with lib.db:
+    with lib.transaction():
         lib._put(revised)
         _index_trace(lib, revised)
         lib._event(owner_id, "reading.trace.corrected", "reading_trace", trace_id,
@@ -392,6 +413,105 @@ def correct_trace(lib: Library, owner_id: str, trace_id: str, expected_revision:
                    "previous_revision": expected_revision,
                    "revision": revised["revision"], "reason": reason}, trace_id)
     return revised
+
+
+def resolve_capture(lib: Library, owner_id: str, capture_id: str,
+                    expected_resolution_revision: int | None, *,
+                    session_id: object = ..., work_id: object = ...,
+                    edition_id: object = ..., book_instance_id: object = ...,
+                    pages: object = ...) -> dict[str, Any]:
+    """Append a user-confirmed resolution and revise affected current traces.
+
+    Omitting a context field keeps its last value; explicit None removes it.
+    Original capture bytes, receipt context and observations are never changed.
+    """
+    with lib.transaction():
+        lib.get(owner_id, "PageCapture", capture_id)
+        row = lib.db.execute("SELECT body FROM records WHERE owner_id=? AND model='CaptureResolution' "
+                             "AND current=1 AND json_extract(body,'$.capture_id')=?",
+                             (owner_id, capture_id)).fetchone()
+        prior = json.loads(row["body"]) if row else None
+        if (prior["revision"] if prior else None) != expected_resolution_revision:
+            raise LibrarianError("REVISION_CONFLICT", "resolution revision changed")
+        values = {field: (prior[field]["value"] if prior else None)
+                  for field in ("session", "work", "edition", "book_instance")}
+        supplied = {"session": session_id, "work": work_id,
+                    "edition": edition_id, "book_instance": book_instance_id}
+        for field, value in supplied.items():
+            if value is not ...:
+                if value is not None and (not isinstance(value, str) or not value.strip()):
+                    raise LibrarianError("VALIDATION_FAILED", "identity must be nonempty or null")
+                values[field] = value
+        if values["session"]:
+            session = lib.get(owner_id, "ReadingSession", values["session"])
+            for field, session_field in (("work", "work_id"), ("edition", "edition_id"),
+                                         ("book_instance", "book_instance_id")):
+                if values[field] and session[session_field] and values[field] != session[session_field]:
+                    raise LibrarianError("CONTEXT_CONFLICT", "session conflicts with catalog identity")
+                values[field] = values[field] or session[session_field]
+        if values["book_instance"]:
+            instance = lib.get(owner_id, "BookInstance", values["book_instance"])
+            if values["edition"] and values["edition"] != instance["edition_id"]:
+                raise LibrarianError("CONTEXT_CONFLICT", "instance and edition conflict")
+            values["edition"] = instance["edition_id"]
+        if values["edition"]:
+            edition = lib.get(owner_id, "Edition", values["edition"])
+            if values["work"] and values["work"] != edition["work_id"]:
+                raise LibrarianError("CONTEXT_CONFLICT", "edition and work conflict")
+            values["work"] = edition["work_id"]
+        if values["work"]:
+            lib.get(owner_id, "Work", values["work"])
+        if pages is ...:
+            page_regions = prior["pages"] if prior else []
+        else:
+            if not isinstance(pages, list):
+                raise LibrarianError("VALIDATION_FAILED", "pages must be a list")
+            page_regions = pages
+            if prior and ({p["id"]: p["bbox"] for p in prior["pages"]}
+                          != {p["id"]: p["bbox"] for p in page_regions}):
+                raise LibrarianError("CONTEXT_CONFLICT", "page region geometry cannot be overwritten")
+        fields = {field: _identity(value, "user_confirmation") for field, value in values.items()}
+        if prior:
+            for field, value in values.items():
+                if value == prior[field]["value"]:
+                    fields[field] = prior[field]
+        if prior and all(fields[field] == prior[field] for field in fields) and page_regions == prior["pages"]:
+            return prior
+        resolution = {"object_type": "CaptureResolution", "schema_version": "0.1.0",
+                      "id": prior["id"] if prior else _new("resolution"),
+                      "owner_id": owner_id, "created_at": _now(),
+                      "capture_id": capture_id, **fields, "pages": page_regions,
+                      "revision": prior["revision"] + 1 if prior else 1,
+                      "supersedes_revision": prior["revision"] if prior else None}
+        lib._put(resolution)
+        page_map = {page["id"]: page for page in page_regions}
+        state = "resolved" if all(values.values()) else "unresolved"
+        current_traces = _traces_for_capture(lib, owner_id, capture_id)
+        for trace in current_traces:
+            revised = json.loads(_json(trace))
+            revised["revision"] += 1
+            revised["supersedes_revision"] = trace["revision"]
+            revised["created_at"] = _now()
+            revised["context_state"] = state
+            revised["session_id"] = values["session"]
+            revised["work_id"] = values["work"]
+            revised["edition_id"] = values["edition"]
+            revised["book_instance_id"] = values["book_instance"]
+            revised["source"]["resolution_id"] = resolution["id"]
+            revised["source"]["resolution_revision"] = resolution["revision"]
+            region = page_map.get(revised["location"]["page_region_id"])
+            if region:
+                revised["location"]["page"] = region["page"]["value"]
+                revised["confidence"]["page_number"] = region["page"]["confidence"]
+            validate("ReadingTrace", revised)
+            lib._put(revised)
+            _index_trace(lib, revised)
+            lib._event(owner_id, "reading.trace.corrected", "reading_trace",
+                       revised["id"], revised["revision"],
+                       {"trace_id": revised["id"], "previous_revision": trace["revision"],
+                        "revision": revised["revision"], "reason": "capture resolution"},
+                       resolution["id"])
+        return resolution
 
 
 def search(lib: Library, owner_id: str, query: str, *, include_unresolved: bool = False,

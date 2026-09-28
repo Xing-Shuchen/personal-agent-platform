@@ -39,7 +39,7 @@ def test_18_entry_schemas_are_valid_and_reject_unknown_fields():
     resolver = RefResolver.from_schema(entry, store={schema["$id"]: schema})
     Draft202012Validator(entry, resolver=resolver).validate(work("owner_a"))
     module.validate("Work", work("owner_a"))
-    with pytest.raises(LibrarianError, match="Additional properties"):
+    with pytest.raises(LibrarianError, match="additionalProperties constraint"):
         module.validate("Work", work("owner_a") | {"imaginary": True})
 
 

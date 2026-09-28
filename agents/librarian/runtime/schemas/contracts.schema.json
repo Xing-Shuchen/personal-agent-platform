@@ -2031,8 +2031,13 @@
         },
         "vocabulary_version": {
           "anyOf": [
-            {"type": "string", "minLength": 1},
-            {"type": "null"}
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
           ]
         },
         "review": {
@@ -2470,7 +2475,217 @@
         "actor",
         "payload"
       ],
-      "additionalProperties": false
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "command": {
+                "const": "catalog.register_work"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/RegisterWorkPayload"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "command": {
+                "const": "catalog.register_edition"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/RegisterEditionPayload"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "command": {
+                "const": "catalog.register_book_instance"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/RegisterBookInstancePayload"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "command": {
+                "const": "reading.session.start"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/SessionStartPayload"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "command": {
+                "const": "reading.session.pause"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/SessionPausePayload"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "command": {
+                "const": "reading.session.resume"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/SessionResumePayload"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "command": {
+                "const": "reading.session.report_progress"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/SessionProgressPayload"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "command": {
+                "const": "reading.session.close"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/SessionClosePayload"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "command": {
+                "const": "reading.capture.ingest"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/CaptureIngestPayload"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "command": {
+                "const": "reading.capture.resolve"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/CaptureResolvePayload"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "command": {
+                "const": "reading.trace.correct"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/TraceCorrectPayload"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "command": {
+                "const": "reading.knowledge_candidate.approve"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/CandidateApprovePayload"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "command": {
+                "const": "reading.knowledge_candidate.reject"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/CandidateRejectPayload"
+              }
+            }
+          }
+        }
+      ]
     },
     "CommandReceipt": {
       "type": "object",
@@ -2820,6 +3035,453 @@
         "hits",
         "next_cursor",
         "index_state"
+      ],
+      "additionalProperties": false
+    },
+    "RegisterWorkPayload": {
+      "type": "object",
+      "properties": {
+        "record": {
+          "$ref": "#/$defs/Work"
+        }
+      },
+      "required": [
+        "record"
+      ],
+      "additionalProperties": false
+    },
+    "RegisterEditionPayload": {
+      "type": "object",
+      "properties": {
+        "record": {
+          "$ref": "#/$defs/Edition"
+        }
+      },
+      "required": [
+        "record"
+      ],
+      "additionalProperties": false
+    },
+    "RegisterBookInstancePayload": {
+      "type": "object",
+      "properties": {
+        "record": {
+          "$ref": "#/$defs/BookInstance"
+        }
+      },
+      "required": [
+        "record"
+      ],
+      "additionalProperties": false
+    },
+    "SessionStartPayload": {
+      "type": "object",
+      "properties": {
+        "book_instance_id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "started_at": {
+          "$ref": "#/$defs/TimeField"
+        },
+        "progress": {
+          "$ref": "#/$defs/ProgressReport"
+        },
+        "scope": {
+          "type": "array",
+          "prefixItems": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "string",
+              "minLength": 1
+            }
+          ],
+          "minItems": 3,
+          "maxItems": 3
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "SessionPausePayload": {
+      "type": "object",
+      "properties": {
+        "session_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "expected_revision": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "required": [
+        "session_id",
+        "expected_revision"
+      ],
+      "additionalProperties": false
+    },
+    "SessionResumePayload": {
+      "type": "object",
+      "properties": {
+        "session_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "expected_revision": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "required": [
+        "session_id",
+        "expected_revision"
+      ],
+      "additionalProperties": false
+    },
+    "SessionProgressPayload": {
+      "type": "object",
+      "properties": {
+        "session_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "expected_revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "progress": {
+          "$ref": "#/$defs/ProgressReport"
+        }
+      },
+      "required": [
+        "session_id",
+        "expected_revision",
+        "progress"
+      ],
+      "additionalProperties": false
+    },
+    "SessionClosePayload": {
+      "type": "object",
+      "properties": {
+        "session_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "expected_revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "progress": {
+          "$ref": "#/$defs/ProgressReport"
+        },
+        "ended_at": {
+          "$ref": "#/$defs/TimeField"
+        }
+      },
+      "required": [
+        "session_id",
+        "expected_revision"
+      ],
+      "additionalProperties": false
+    },
+    "CaptureIngestPayload": {
+      "type": "object",
+      "properties": {
+        "source": {
+          "type": "object",
+          "properties": {
+            "transport": {
+              "type": "string",
+              "minLength": 1
+            },
+            "account_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "conversation_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "source_event_id": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "transport",
+            "account_id",
+            "conversation_id",
+            "source_event_id"
+          ],
+          "additionalProperties": false
+        },
+        "attachments": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "source_item_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "mime_type": {
+                "type": "string",
+                "minLength": 1
+              },
+              "upload_ref": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "source_item_id",
+              "mime_type",
+              "upload_ref"
+            ],
+            "additionalProperties": false
+          },
+          "minItems": 1
+        },
+        "submitted_context": {
+          "type": "object",
+          "properties": {
+            "session_id": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "work_id": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "edition_id": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "book_instance_id": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "source",
+        "attachments"
+      ],
+      "additionalProperties": false
+    },
+    "CaptureResolvePayload": {
+      "type": "object",
+      "properties": {
+        "capture_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "expected_resolution_revision": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "session_id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "work_id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "edition_id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "book_instance_id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pages": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PageRegion"
+          }
+        }
+      },
+      "required": [
+        "capture_id",
+        "expected_resolution_revision"
+      ],
+      "additionalProperties": false
+    },
+    "TraceCorrectPayload": {
+      "type": "object",
+      "properties": {
+        "trace_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "expected_revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "correction": {
+          "type": "object",
+          "properties": {
+            "printed_text": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "annotation": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [],
+          "additionalProperties": false,
+          "minProperties": 1
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "trace_id",
+        "expected_revision",
+        "correction",
+        "reason"
+      ],
+      "additionalProperties": false
+    },
+    "CandidateApprovePayload": {
+      "type": "object",
+      "properties": {
+        "candidate_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "expected_revision": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "required": [
+        "candidate_id",
+        "expected_revision"
+      ],
+      "additionalProperties": false
+    },
+    "CandidateRejectPayload": {
+      "type": "object",
+      "properties": {
+        "candidate_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "expected_revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "candidate_id",
+        "expected_revision",
+        "reason"
       ],
       "additionalProperties": false
     }

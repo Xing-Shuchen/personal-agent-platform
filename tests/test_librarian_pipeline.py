@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 from PIL import Image
 
-from agents.librarian.runtime.pipeline import correct_trace, process_capture, rebuild_index, search
+from agents.librarian.runtime.pipeline import correct_trace, process_capture, rebuild_index, resolve_capture, search
 from agents.librarian.runtime.store import Library, LibrarianError, validate
 
 
@@ -200,6 +200,36 @@ def test_explicit_session_yields_resolved_trace_and_default_search(tmp_path: Pat
                                           lambda _: _output())
         assert all(t["session_id"] == session["id"] and t["context_state"] == "resolved"
                    for t in inferred_traces)
+        original_capture = lib.get("owner_a", "PageCapture", inferred["capture_ids"][0])
+        original_observation = lib.get("owner_a", "PageObservation",
+                                       inferred_traces[0]["source"]["observation_id"])
+        old_resolution = lib.get("owner_a", "CaptureResolution",
+                                 inferred_traces[0]["source"]["resolution_id"])
+        pages = json.loads(json.dumps(old_resolution["pages"]))
+        pages[0]["page"] = {"value": {"label": "172", "number": 172,
+                                       "scheme": "arabic"}, "confidence": None,
+                            "basis": "user_statement", "status": "resolved"}
+        resolution = resolve_capture(lib, "owner_a", inferred["capture_ids"][0], 1,
+                                     pages=pages)
+        assert resolution["revision"] == 2
+        revised = lib.get("owner_a", "ReadingTrace", inferred_traces[0]["id"])
+        assert revised["revision"] == 2 and revised["location"]["page"]["number"] == 172
+        assert revised["source"]["resolution_revision"] == 2
+        assert lib.get("owner_a", "PageCapture", inferred["capture_ids"][0]) == original_capture
+        assert lib.get("owner_a", "PageObservation", original_observation["id"]) == original_observation
+        with pytest.raises(LibrarianError) as error:
+            resolve_capture(lib, "owner_a", inferred["capture_ids"][0], 1, pages=pages)
+        assert error.value.code == "REVISION_CONFLICT"
+
+        unresolved_receipt = lib.ingest("owner_a", transport="gateway", account_id="a",
+                                        conversation_id="different-chat", source_event_id="m3",
+                                        attachments=[{"source_item_id": "i", "mime_type": "image/png",
+                                                      "data": _photo()}], idempotency_key="k3")
+        unresolved_id = unresolved_receipt["capture_ids"][0]
+        unresolved_trace = process_capture(lib, "owner_a", unresolved_id, lambda _: _output())[0]
+        assert unresolved_trace["context_state"] == "unresolved"
+        resolve_capture(lib, "owner_a", unresolved_id, 1, session_id=session["id"])
+        assert lib.get("owner_a", "ReadingTrace", unresolved_trace["id"])["context_state"] == "resolved"
 
 
 def test_trace_semantics_reject_fake_resolved_context_and_review(tmp_path: Path):
@@ -265,3 +295,24 @@ def test_opt_in_symbol_signal_and_important_content_review(tmp_path: Path):
         assert important["review"]["state"] == "pending"
         assert important["attribution"]["mark_author"] == "unknown"
         assert all("reread_target" not in trace["intent_signals"] for trace in enabled)
+
+
+def test_user_resolution_before_extraction_survives_processing(tmp_path: Path):
+    with Library(tmp_path) as lib:
+        session = lib.start_session("owner_a")
+        receipt = lib.ingest("owner_a", transport="gateway", account_id="a",
+                             conversation_id="c", source_event_id="m",
+                             attachments=[{"source_item_id": "i", "mime_type": "image/png",
+                                           "data": _photo()}], idempotency_key="k")
+        capture_id = receipt["capture_ids"][0]
+        first = resolve_capture(lib, "owner_a", capture_id, None,
+                                session_id=session["id"])
+        assert first["revision"] == 1
+        traces = process_capture(lib, "owner_a", capture_id, lambda _: _output())
+        resolution = lib.get("owner_a", "CaptureResolution", first["id"])
+        assert resolution["revision"] == 2
+        assert resolution["session"]["value"] == session["id"]
+        assert resolution["session"]["basis"] == "user_confirmation"
+        assert all(trace["source"]["resolution_id"] == first["id"] and
+                   trace["source"]["resolution_revision"] == 2 for trace in traces)
+        assert lib.get("owner_a", "PageCapture", capture_id)["submitted_context"]["session_id"] is None

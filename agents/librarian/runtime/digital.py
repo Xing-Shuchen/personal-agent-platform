@@ -188,7 +188,7 @@ def ingest_export(lib: Library, owner_id: str, medium: str, source_key: str,
                  "review": {"required": False, "state": "none", "reason": None}}
         validate("ReadingTrace", trace)
         traces.append(trace)
-    with lib.db:
+    with lib.transaction():
         if not existing:
             lib._put(work)
         for trace in traces:

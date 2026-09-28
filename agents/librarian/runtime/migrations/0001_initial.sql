@@ -87,3 +87,10 @@ CREATE TABLE IF NOT EXISTS capture_context (
   basis TEXT NOT NULL,
   PRIMARY KEY (owner_id, capture_id)
 );
+CREATE TABLE IF NOT EXISTS command_receipts (
+  owner_id TEXT NOT NULL,
+  idempotency_key TEXT NOT NULL,
+  fingerprint TEXT NOT NULL,
+  receipt TEXT NOT NULL,
+  PRIMARY KEY (owner_id, idempotency_key)
+);

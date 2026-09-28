@@ -12,6 +12,7 @@ import os
 import sqlite3
 import tempfile
 import uuid
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -57,7 +58,7 @@ def validate(model: str, value: dict[str, Any]) -> None:
     if errors:
         error = errors[0]
         location = ".".join(map(str, error.path)) or model
-        raise LibrarianError("VALIDATION_FAILED", f"{location}: {error.message}")
+        raise LibrarianError("VALIDATION_FAILED", f"{location}: {error.validator} constraint failed")
     _validate_semantics(model, value)
 
 
@@ -116,6 +117,24 @@ class Library:
     def __exit__(self, *_: object) -> None:
         self.close()
 
+    @contextmanager
+    def transaction(self):
+        """Compose domain operations without an inner commit escaping the caller."""
+        if not self.db.in_transaction:
+            with self.db:
+                self.db.execute("BEGIN IMMEDIATE")
+                yield
+            return
+        savepoint = "lib_" + uuid.uuid4().hex
+        self.db.execute(f"SAVEPOINT {savepoint}")
+        try:
+            yield
+            self.db.execute(f"RELEASE SAVEPOINT {savepoint}")
+        except BaseException:
+            self.db.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
+            self.db.execute(f"RELEASE SAVEPOINT {savepoint}")
+            raise
+
     def _get(self, owner_id: str, model: str, object_id: str) -> dict[str, Any]:
         row = self.db.execute("SELECT body FROM records WHERE owner_id=? AND model=? AND id=? AND current=1",
                               (owner_id, model, object_id)).fetchone()
@@ -164,7 +183,7 @@ class Library:
             self._get(owner_id, "Work", record["work_id"])
         elif model == "BookInstance":
             self._get(owner_id, "Edition", record["edition_id"])
-        with self.db:
+        with self.transaction():
             self._put(record)
         return record
 
@@ -185,7 +204,7 @@ class Library:
                   "status": "active", "started_at": started_at or _unknown_time(),
                   "ended_at": _unknown_time(), "progress": progress,
                   "session_note": None, "revision": 1, "supersedes_revision": None}
-        with self.db:
+        with self.transaction():
             self._put(record)
             if scope is not None:
                 if len(scope) != 3 or not all(scope):
@@ -220,7 +239,7 @@ class Library:
             record["progress"] = progress
         if action == "close" and ended_at is not None:
             record["ended_at"] = ended_at
-        with self.db:
+        with self.transaction():
             self._put(record)
             # A photographed page never changes reading progress. Only an
             # explicit report can update the held copy's current page.
@@ -310,7 +329,7 @@ class Library:
                    "batch_id": batch_id, "capture_ids": capture_ids, "object_id": None}
         validate("CommandReceipt", receipt)
         try:
-            with self.db:
+            with self.transaction():
                 self._put(batch)
                 for capture in captures:
                     self._put(capture)
