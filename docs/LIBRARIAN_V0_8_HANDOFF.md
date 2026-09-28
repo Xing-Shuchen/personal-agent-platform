@@ -18,6 +18,12 @@ Create `release-v0.8` only after the acceptance evidence below is complete.
   to one registered book key. An ephemeral Librarian import created 118 traces;
   replay made no new traces, and raw evidence, search and owner isolation
   passed. Private note contents and the acceptance store were not committed.
+- The configured Obsidian WeRead plugin's Agent API returned one real book with
+  38 highlights and one review. `runtime/weread_native.py` imported all 39
+  records into a temporary Library, retained exact JSON evidence, and replayed
+  with no duplicates. Owner-scoped search passed. Synthetic tests cover source
+  changes, removals, pagination, and correction conflicts. No private text,
+  book IDs, or API key were committed.
 - The OpenClaw intake plugin reports `loaded`, with one `message_received`
   typed hook and no diagnostics. Both plugin tests pass. On this PC, the
   dedicated `librarian` PAP profile and unbound OpenClaw agent are registered.
@@ -47,11 +53,10 @@ Create `release-v0.8` only after the acceptance evidence below is complete.
    an explicit OpenClaw channel/account/sender-to-owner mapping and reload
    Gateway. Verify one real inbound image batch and replay behavior. Leave
    mapping empty until the identity is known.
-4. Validate WeRead against real upstream payloads and live sync behavior.
-   Koodo native SQLite record mapping and replay have been exercised on this
-   PC; verify an actual app-driven create/edit/delete and periodic invocation
-   under the trusted owner before claiming live sync. Markdown exports remain
-   separate adapters.
+4. Verify actual app-driven create/edit/delete and periodic invocation under
+   the trusted owner for both WeRead and Koodo before claiming live sync.
+   Real upstream record mapping and replay were exercised on this PC for both
+   sources; Markdown exports remain separate adapters.
 5. Connect and verify an actual knowledge service writer if claiming the
    candidate promotion stage. The port exists but has no configured writer.
 6. Audit all AC-01 through AC-26 against runtime evidence, not solely schema
@@ -131,7 +136,7 @@ not mean the real-photo, live Gateway, upstream, or service acceptance is done.
 | 19–20 | Outbox retry and index rebuild tests | Local |
 | 21 | Owner-filtered search, review and evidence reads tested | Partial; adversarial cross-owner reference matrix pending |
 | 22 | `test_explicit_annotation_link_groups_trace_without_inventing_authorship` | Local |
-| 23 | `test_exports_converge_at_trace_and_retry_is_idempotent` and common search; actual Koodo SQLite records imported and searched in a temporary store | Koodo native record mapping verified; WeRead upstream and live cross-source sync pending |
+| 23 | `test_exports_converge_at_trace_and_retry_is_idempotent` and common search; 118 actual Koodo notes and 39 actual WeRead records imported and searched in temporary stores, with replay and raw evidence verified | Native record mapping verified for both; app-driven and periodic live sync pending |
 | 24 | Empty search behavior exists; profile instructs evidence-bound answers | Pending live answer test |
 | 25 | `test_source_correction_during_external_write_does_not_publish_promotion` | Local mock; actual knowledge writer pending |
 | 26 | `test_candidate_requires_explicit_trigger_and_promotion_confirms_external_write` | Local |

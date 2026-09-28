@@ -116,6 +116,27 @@ that identity is configured. An empty source will not retire every known note
 unless `--allow-empty-source` is supplied deliberately. Never edit the Koodo
 databases from Librarian.
 
+`weread_native.py` reads one WeRead book through the plugin's Agent API using
+`/book/bookmarklist` and paginated `/review/list/mine`. It stores native
+highlight and review IDs, chapter locators, timestamps, and each complete raw
+record as private evidence. The API key is read from
+`LIBRARIAN_WEREAD_API_KEY`; it is never stored in the repository. The initial
+read-only check on this PC imported 38 highlights and one review into a
+temporary Library. Replay created no duplicates, and raw evidence and
+owner-scoped search passed. Source edit/delete behavior has synthetic tests;
+an actual app-driven change and scheduled invocation remain unverified.
+
+```bash
+LIBRARIAN_WEREAD_API_KEY=... PYTHONPATH=. python3 -m agents.librarian.runtime.weread_native \
+  --root var/librarian --owner OWNER_ID --source-id personal_weread \
+  --book-id BOOK_ID
+```
+
+Use a trusted owner and stable account source ID. An empty snapshot requires
+`--allow-empty-source` to retire records. Changed source text on a
+user-corrected trace stays pending for `reconcile_weread_record`; deletion of
+a corrected trace requires reconciliation and does not proceed silently.
+
 Run the focused tests from the repo root:
 
 ```bash

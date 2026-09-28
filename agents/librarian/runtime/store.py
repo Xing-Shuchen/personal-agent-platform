@@ -143,6 +143,7 @@ class Library:
         self.db.execute("PRAGMA busy_timeout=5000")
         self.db.executescript((Path(__file__).parent / "migrations" / "0001_initial.sql").read_text(encoding="utf-8"))
         self.db.executescript((Path(__file__).parent / "migrations" / "0002_koodo_native.sql").read_text(encoding="utf-8"))
+        self.db.executescript((Path(__file__).parent / "migrations" / "0003_weread_native.sql").read_text(encoding="utf-8"))
 
     def close(self) -> None:
         self.db.close()
