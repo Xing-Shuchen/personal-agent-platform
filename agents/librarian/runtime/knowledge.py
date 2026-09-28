@@ -1,6 +1,7 @@
 """Explicit, provenance-bound candidate lifecycle; no automatic knowledge write."""
 from __future__ import annotations
 
+import json
 from typing import Any, Callable
 
 from .store import Library, LibrarianError, _new, _now, validate
@@ -9,7 +10,7 @@ from .store import Library, LibrarianError, _new, _now, validate
 def create_candidate(lib: Library, owner_id: str,
                      source_trace_refs: list[dict[str, Any]], *,
                      candidate_type: str, content: dict[str, Any],
-                     correlation_id: str) -> dict[str, Any]:
+                     correlation_id: str, trigger: str = "explicit") -> dict[str, Any]:
     """Create a candidate only when an explicit caller or enabled signal asks."""
     if not source_trace_refs or not correlation_id:
         raise LibrarianError("VALIDATION_FAILED", "candidate needs sources and correlation")
@@ -22,7 +23,7 @@ def create_candidate(lib: Library, owner_id: str,
               "revision": 1, "supersedes_revision": None,
               "source_trace_refs": source_trace_refs, "candidate_type": candidate_type,
               "content": content, "status": "pending", "knowledge_id": None,
-              "decision_reason": None}
+              "decision_reason": None, "trigger": trigger}
     validate("KnowledgeCandidate", record)
     with lib.transaction():
         lib._put(record)
@@ -31,6 +32,31 @@ def create_candidate(lib: Library, owner_id: str,
                    {"candidate_id": record["id"], "revision": 1,
                     "source_trace_refs": source_trace_refs}, correlation_id)
     return record
+
+
+def supersede_pending_for_trace(lib: Library, owner_id: str,
+                                old_trace: dict[str, Any], new_trace: dict[str, Any]) -> None:
+    """Retire stale pending interpretations; regenerate only symbol prompts."""
+    rows = lib.db.execute(
+        "SELECT body FROM records WHERE owner_id=? AND model='KnowledgeCandidate' AND current=1",
+        (owner_id,)).fetchall()
+    for row in rows:
+        current = json.loads(row["body"])
+        if current["status"] != "pending" or not any(
+                ref["trace_id"] == old_trace["id"] and ref["revision"] == old_trace["revision"]
+                for ref in current["source_trace_refs"]):
+            continue
+        revised = {**current, "revision": current["revision"] + 1,
+                   "supersedes_revision": current["revision"],
+                   "created_at": _now(), "status": "superseded"}
+        lib._put(revised)
+        if (current.get("trigger") == "symbol" and len(current["source_trace_refs"]) == 1
+                and "promote_candidate" in new_trace["intent_signals"]):
+            create_candidate(lib, owner_id,
+                             [{"trace_id": new_trace["id"], "revision": new_trace["revision"]}],
+                             candidate_type=current["candidate_type"],
+                             content={"text": None, "confidence": None, "basis": "unknown"},
+                             correlation_id=new_trace["id"], trigger="symbol")
 
 
 def decide_candidate(lib: Library, owner_id: str, candidate_id: str,

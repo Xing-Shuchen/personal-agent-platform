@@ -1868,6 +1868,13 @@
               "type": "null"
             }
           ]
+        },
+        "trigger": {
+          "type": "string",
+          "enum": [
+            "explicit",
+            "symbol"
+          ]
         }
       },
       "required": [

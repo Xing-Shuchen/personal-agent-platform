@@ -43,7 +43,10 @@ before or after extraction.
 `promote_candidate` symbol creates only a pending candidate; ordinary
 highlights do not. Approval checks exact current trace revisions. Promotion
 requires an idempotent external knowledge writer to confirm persistence before
-the candidate and success event advance; PAP has no configured writer yet.
+the candidate and success event advance. Trace corrections or capture
+resolutions supersede stale pending candidates; a symbol-triggered candidate
+is recreated against the new trace revision without carrying an old inferred
+claim forward. PAP has no configured writer yet.
 
 `gateway_bridge.py` accepts bounded staged image bytes over a trusted local
 stdin protocol and executes `reading.capture.ingest`. The linked OpenClaw

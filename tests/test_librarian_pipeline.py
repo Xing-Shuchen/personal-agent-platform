@@ -453,6 +453,12 @@ def test_opt_in_symbol_signal_and_important_content_review(tmp_path: Path):
                                   reason="user reviewed important content")
         assert corrected["review"]["state"] == "resolved"
         assert review_queues(lib, "owner_a")["content"] == []
+        assert lib.get("owner_a", "KnowledgeCandidate", candidates[0]["id"])["status"] == "superseded"
+        current_candidates = [json.loads(row[0]) for row in lib.db.execute(
+            "SELECT body FROM records WHERE model='KnowledgeCandidate' AND current=1")]
+        pending = [candidate for candidate in current_candidates if candidate["status"] == "pending"]
+        assert len(pending) == 1
+        assert pending[0]["source_trace_refs"] == [{"trace_id": important["id"], "revision": 2}]
 
 
 def test_content_review_stays_pending_until_all_uncertain_fields_are_checked(tmp_path: Path):

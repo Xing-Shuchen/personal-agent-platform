@@ -15,7 +15,7 @@ from typing import Any, Callable
 
 from PIL import Image, ImageOps, UnidentifiedImageError
 
-from .knowledge import create_candidate
+from .knowledge import create_candidate, supersede_pending_for_trace
 from .store import Library, LibrarianError, _json, _new, _now, _unknown_time, validate
 
 
@@ -304,7 +304,7 @@ def process_capture(lib: Library, owner_id: str, capture_id: str,
                                  [{"trace_id": trace["id"], "revision": 1}],
                                  candidate_type="concept",
                                  content={"text": None, "confidence": None, "basis": "unknown"},
-                                 correlation_id=run_id)
+                                 correlation_id=run_id, trigger="symbol")
         lib._event(owner_id, "reading.capture.processed", "processing_run", run_id, 1,
                    {"capture_id": capture_id, "processing_run_id": run_id,
                     "outcome": run["outcome"], "trace_refs":
@@ -492,6 +492,7 @@ def correct_trace(lib: Library, owner_id: str, trace_id: str, expected_revision:
     validate("ReadingTrace", revised)
     with lib.transaction():
         lib._put(revised)
+        supersede_pending_for_trace(lib, owner_id, prior, revised)
         _index_trace(lib, revised)
         lib._event(owner_id, "reading.trace.corrected", "reading_trace", trace_id,
                    revised["revision"], {"trace_id": trace_id,
@@ -590,6 +591,7 @@ def resolve_capture(lib: Library, owner_id: str, capture_id: str,
                 revised["confidence"]["page_number"] = region["page"]["confidence"]
             validate("ReadingTrace", revised)
             lib._put(revised)
+            supersede_pending_for_trace(lib, owner_id, trace, revised)
             _index_trace(lib, revised)
             lib._event(owner_id, "reading.trace.corrected", "reading_trace",
                        revised["id"], revised["revision"],

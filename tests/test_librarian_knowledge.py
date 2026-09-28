@@ -102,7 +102,7 @@ def test_rejection_reason_and_changed_trace_prevent_stale_approval(tmp_path):
                          {"candidate_id": stale["id"], "expected_revision": 1}, "approve-stale"),
                 trusted_owner_id="owner_a", trusted_actor_id="actor_a")
         assert changed.value.code == "REVISION_CONFLICT"
-        assert lib.get("owner_a", "KnowledgeCandidate", stale["id"])["status"] == "pending"
+        assert lib.get("owner_a", "KnowledgeCandidate", stale["id"])["status"] == "superseded"
 
 
 def test_source_correction_during_external_write_does_not_publish_promotion(tmp_path):
