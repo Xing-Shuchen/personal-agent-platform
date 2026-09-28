@@ -226,7 +226,7 @@ def openclaw_note_refiner(crop: bytes) -> tuple[str, dict]:
     return response, envelope
 
 
-def ocr_extractor(*, epub: Path, max_edge: int = 2000,
+def ocr_extractor(*, epub: Path | None = None, max_edge: int = 2000,
                   max_pixels: int = 2_000_000,
                   note_refiner: Callable[[bytes], tuple[str, dict]] | None = None):
     """Return a reusable local extractor; only evidence on the photo is traced."""
@@ -234,7 +234,7 @@ def ocr_extractor(*, epub: Path, max_edge: int = 2000,
     import cv2
     import numpy as np
 
-    groundtruth = EpubGroundTruth(epub)
+    groundtruth = EpubGroundTruth(epub) if epub else None
     engine = RapidOCR()
 
     def extract(original: bytes) -> ExtractionOutput:
@@ -258,14 +258,14 @@ def ocr_extractor(*, epub: Path, max_edge: int = 2000,
         for index, (quad, text, score) in enumerate(zip(boxes, texts, scores)):
             points = [[float(coord) for coord in point] for point in quad]
             box = _box(points, width, height)
-            epub_text, match = groundtruth.match(str(text))
+            epub_text, match = groundtruth.match(str(text)) if groundtruth else (None, 0.0)
             stroke_score, stroke_span = _underline_evidence(gray, points)
             lines.append({"id": index, "bbox": box, "quad": points, "ocr_text": str(text),
                           "ocr_score": round(float(score), 4), "epub_text": epub_text,
                           "epub_match": round(float(match), 4),
                           "underline_score": stroke_score,
                           "underline_span": stroke_span})
-        body = [line for line in lines if line["epub_text"] and
+        body = [line for line in lines if (line["epub_text"] or groundtruth is None) and
                 len(_compact(line["ocr_text"])) >= 15 and
                 line["bbox"][2] - line["bbox"][0] >= .28]
         observation: dict = {"image_space": {"width": width, "height": height,
@@ -422,7 +422,8 @@ def ocr_extractor(*, epub: Path, max_edge: int = 2000,
                         page_box[1] <= box[1] < box[3] <= page_box[3]):
                     continue
                 size = len(_compact(line["ocr_text"]))
-                if line["id"] in margin_ids or (not line["epub_text"] and
+                if line["id"] in margin_ids or (groundtruth is not None and
+                        not line["epub_text"] and
                         size >= 10 and (box[1] < top or box[3] > bottom - .01)):
                     note_rows.append(line)
             note_rows.sort(key=lambda line: line["bbox"][1])
@@ -475,7 +476,7 @@ def ocr_extractor(*, epub: Path, max_edge: int = 2000,
                         item["side"] = {"left": "right", "right": "left"}.get(
                             item["side"], item["side"])
             observation["warnings"].append("Upside-down scan analyzed after 180-degree rotation")
-        raw = {"engine": "RapidOCR", "epub_sha256": groundtruth.sha256,
+        raw = {"engine": "RapidOCR", "epub_sha256": groundtruth.sha256 if groundtruth else None,
                "analysis_rotation_degrees": 180 if rotated else 0,
                "image_space": observation["image_space"], "lines": lines,
                "page_markers": locals().get("markers", []),

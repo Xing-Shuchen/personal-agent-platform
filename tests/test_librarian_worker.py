@@ -270,6 +270,53 @@ def test_interior_photo_without_epub_or_vault_persists_partial_trace(tmp_path: P
     assert calls == ["fixture/vision"]
 
 
+def test_generic_local_ocr_mark_skips_full_page_model(tmp_path: Path, monkeypatch) -> None:
+    from agents.librarian.runtime import worker
+    from agents.librarian.runtime.pipeline import ExtractionOutput
+
+    image = BytesIO()
+    Image.new("RGB", (100, 100), "white").save(image, "PNG")
+    original = image.getvalue()
+    state = tmp_path / "state"
+    with Library(state) as lib:
+        receipt = lib.ingest("owner", transport="feishu", account_id="librarian",
+                             conversation_id="chat", source_event_id="interior-ocr",
+                             attachments=[{"source_item_id": "image", "mime_type": "image/png",
+                                           "data": original}], idempotency_key="interior-ocr")
+    monkeypatch.setattr(worker, "_book_for_cover", lambda *_: None)
+    monkeypatch.setattr(worker, "_book_for_page", lambda *_: None)
+    observation = {"image_space": {"width": 100, "height": 100,
+                                    "basis": "exif_oriented_original"},
+                   "pages": [{"id": "page_0", "bbox": [0, 0, 1, 1], "side": "unknown",
+                              "page": {"value": None, "confidence": None,
+                                       "basis": "unknown", "status": "unresolved"}}],
+                   "printed_regions": [{"id": "print_0", "page_region_id": "page_0",
+                                        "bbox": [.1, .2, .8, .3], "kind": "printed",
+                                        "text": {"text": "照片上可见的完整句子。", "confidence": .9,
+                                                 "basis": "vision"},
+                                        "confidence": .9, "linked_text_region_ids": [],
+                                        "link_confidence": None}],
+                   "marks": [{"id": "mark_0", "page_region_id": "page_0",
+                              "bbox": [.1, .29, .8, .31], "kind": "underline", "text": None,
+                              "confidence": .8, "linked_text_region_ids": ["print_0"],
+                              "link_confidence": .9}],
+                   "annotations": [], "symbols": [], "links": [], "warnings": []}
+    monkeypatch.setattr(worker, "ocr_extractor", lambda **_: lambda _raw: ExtractionOutput(
+        raw=b'{}', observation=json.dumps(observation).encode(), derivative=original,
+        derivative_width=100, derivative_height=100, operations=("exif_transpose",)))
+    calls = []
+    monkeypatch.setattr(worker, "openclaw_extractor", lambda **_: lambda _raw:
+                        calls.append("full-page-model") or pytest.fail("model should not run"))
+    monkeypatch.setattr(worker, "_now", lambda: "2099-01-01T00:00:00+00:00")
+    result = worker.run(state, None, "owner")
+    assert result[0]["status"] == "partial"
+    assert result[0]["traces"] == 1
+    assert calls == []
+    with Library(state) as lib:
+        traces = _current(lib, "owner", "ReadingTrace")
+        assert traces[0]["source"]["capture_id"] == receipt["capture_ids"][0]
+
+
 def test_physical_processing_is_independent_of_slow_digital_sync(tmp_path: Path,
                                                                   monkeypatch) -> None:
     from agents.librarian.runtime import worker

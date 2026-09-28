@@ -689,8 +689,17 @@ def _process_batch(lib: Library, root: Path, vault: Path | None, owner: str,
         extractor = ocr_extractor(epub=epub, note_refiner=openclaw_note_refiner)
     else:
         title = "待确认书籍"
-        version = f"openclaw-physical-v1:{vision_model}"
-        extractor = openclaw_extractor(model=vision_model)
+        version = f"rapidocr-generic-v1:{vision_model}"
+        local_extractor = ocr_extractor(note_refiner=openclaw_note_refiner)
+        vision_extractor = openclaw_extractor(model=vision_model)
+
+        def extractor(original: bytes):
+            local = local_extractor(original)
+            observation = json.loads(local.observation)
+            if (observation["marks"] or observation["annotations"] or
+                    observation["symbols"]):
+                return local
+            return vision_extractor(original)
     runs = [run for run in _current(lib, owner, "ProcessingRun")
             if run["capture_id"] in batch["capture_ids"] and
             run["extractor_version"] == version and
