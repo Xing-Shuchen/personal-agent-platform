@@ -241,6 +241,14 @@ def test_failed_batch_retries_with_backoff_then_stops(tmp_path: Path, monkeypatc
     clock[0] = "2099-01-02T00:00:00+00:00"
     assert worker.run(state, None, "owner") == []
     assert len(calls) == 3
+    assert len(worker.run(state, None, "owner", vision_model="fixture/new-model")) == 1
+    assert json.loads(status_file.read_text())["retry_attempts"] == 1
+    source_books = state / "source-books"
+    source_books.mkdir()
+    (source_books / "9787208171411.epub").write_bytes(b"new ground truth")
+    assert len(worker.run(state, None, "owner", vision_model="fixture/new-model")) == 1
+    assert json.loads(status_file.read_text())["retry_attempts"] == 1
+    assert len(calls) == 5
 
 
 def test_partial_extractor_failure_is_throttled_and_success_resets_retry(tmp_path: Path,

@@ -266,11 +266,20 @@ _RETRYABLE_CODES = {"WORKER_FAILED", "EXTRACTOR_UNAVAILABLE",
                     "EXTRACTION_SCHEMA_INVALID"}
 
 
-def _retry_due(status_file: Path, now: str) -> tuple[bool, int]:
+def _retry_fingerprint(root: Path, vision_model: str) -> str:
+    sources = [(path.name, hashlib.sha256(path.read_bytes()).hexdigest())
+               for path in sorted((root / "source-books").glob("*.epub"))]
+    return hashlib.sha256(json.dumps({"vision_model": vision_model,
+                                      "sources": sources}, sort_keys=True).encode()).hexdigest()[:16]
+
+
+def _retry_due(status_file: Path, now: str, fingerprint: str) -> tuple[bool, int]:
     if not status_file.exists():
         return True, 0
     try:
         previous = json.loads(status_file.read_text(encoding="utf-8"))
+        if previous.get("retry_fingerprint") != fingerprint:
+            return True, 0
         attempts = previous.get("retry_attempts", 0)
         if not isinstance(attempts, int) or attempts < 0:
             return True, 0
@@ -284,19 +293,21 @@ def _retry_due(status_file: Path, now: str) -> tuple[bool, int]:
         return True, 0
 
 
-def _status_with_retry(outcome: dict, previous_attempts: int, now: str) -> dict:
+def _status_with_retry(outcome: dict, previous_attempts: int, now: str,
+                       fingerprint: str) -> dict:
     codes = ({outcome.get("code")} |
              {issue.get("code") for issue in outcome.get("issues", [])
               if isinstance(issue, dict)})
     if not codes.intersection(_RETRYABLE_CODES):
         return {"at": now, **outcome, "retry_attempts": 0,
-                "next_retry_at": None, "retry_exhausted": False}
+                "next_retry_at": None, "retry_exhausted": False,
+                "retry_fingerprint": fingerprint}
     attempts = previous_attempts + 1
     exhausted = attempts >= len(_RETRY_DELAYS)
     return {"at": now, **outcome, "retry_attempts": attempts,
             "next_retry_at": None if exhausted else
             (datetime.fromisoformat(now) + timedelta(seconds=_RETRY_DELAYS[attempts - 1])).isoformat(),
-            "retry_exhausted": exhausted}
+            "retry_exhausted": exhausted, "retry_fingerprint": fingerprint}
 
 
 def _trace_marker(trace_id: str, revision: int) -> str:
@@ -824,6 +835,7 @@ def run(root: Path, vault: Path | None, owner: str, *,
                 with Library(root) as lib:
                     _repair_legacy_auto_affinity(lib, owner)
                     _repair_trace_index_best_effort(lib, owner)
+                    retry_fingerprint = _retry_fingerprint(root, vision_model)
                     for batch in _processing_batches(_current(lib, owner, "CaptureBatch")):
                         if batch["origin"]["transport"] != "feishu":
                             continue
@@ -835,20 +847,23 @@ def run(root: Path, vault: Path | None, owner: str, *,
                             continue
                         status_file = root / "batch-status" / f"{batch['id']}.json"
                         now = _now()
-                        due, previous_attempts = _retry_due(status_file, now)
+                        due, previous_attempts = _retry_due(status_file, now,
+                                                            retry_fingerprint)
                         if not due:
                             continue
                         try:
                             outcome = _process_batch(lib, root, vault, owner, batch, vision_model)
                             if outcome["status"] != "unchanged":
                                 _atomic_write(status_file, json.dumps(
-                                    _status_with_retry(outcome, previous_attempts, _now())).encode())
+                                    _status_with_retry(outcome, previous_attempts, _now(),
+                                                       retry_fingerprint)).encode())
                                 results.append(outcome)
                         except Exception as error:
                             outcome = {"batch_id": batch["id"], "status": "error",
                                        "code": error.code if isinstance(error, LibrarianError) else "WORKER_FAILED"}
                             _atomic_write(status_file, json.dumps(
-                                _status_with_retry(outcome, previous_attempts, _now())).encode())
+                                _status_with_retry(outcome, previous_attempts, _now(),
+                                                   retry_fingerprint)).encode())
                             results.append(outcome)
     if not physical_only and (koodo or weread):
         with (root / "digital-worker.lock").open("w") as lock:
