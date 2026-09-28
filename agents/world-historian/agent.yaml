@@ -50,6 +50,9 @@ spec:
         runner: command
         command:
           - /home/xingzeng/personal-agent-platform/scripts/sync_chronicle_snapshot.sh
+        # 2026-09-28 用户要求：从 vault 移除 Chronicle 快照（改为直接交付 DB 文件），
+        # 故暂停本任务；重新指向新落点时把 enabled 改回 true 即可。
+        enabled: false
       - name: world-follow-normal
         schedule: "43 3,13,21 * * *"
         skill: news-follow
