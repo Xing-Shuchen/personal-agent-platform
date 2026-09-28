@@ -8,7 +8,7 @@ import pytest
 from PIL import Image
 
 from agents.librarian.runtime.digital import ingest_export
-from agents.librarian.runtime.pipeline import correct_trace, process_capture, reconcile_extraction, rebuild_index, render_trace_crop, resolve_capture, search, search_response
+from agents.librarian.runtime.pipeline import bind_fingerprint_context, correct_trace, process_capture, reconcile_extraction, rebuild_index, render_trace_crop, resolve_capture, search, search_response
 from agents.librarian.runtime.knowledge import create_candidate, decide_candidate, promote_candidate
 from agents.librarian.runtime.review import review_queues
 from agents.librarian.runtime.store import Library, LibrarianError, validate
@@ -73,6 +73,54 @@ def test_reextract_keeps_promoted_knowledge_source_active(tmp_path: Path) -> Non
         assert error.value.code == "RECONCILIATION_REQUIRED"
         assert lib.get("owner_a", "ReadingTrace", old[0]["id"])["status"] == "active"
         assert lib.get("owner_a", "KnowledgeCandidate", candidate["id"])["status"] == "promoted"
+
+
+def test_late_edition_fingerprint_binds_unknown_capture_without_reextracting(tmp_path: Path) -> None:
+    from zipfile import ZipFile
+    from agents.librarian.runtime.worker import _catalog
+
+    epub = tmp_path / "9787208171411.epub"
+    with ZipFile(epub, "w") as archive:
+        archive.writestr("content.opf", "<package xmlns:dc='http://purl.org/dc/elements/1.1/'>"
+                         "<metadata><dc:title>Test Work</dc:title></metadata></package>")
+    with Library(tmp_path / "state") as lib:
+        receipt = lib.ingest("owner_a", transport="feishu", account_id="librarian",
+                             conversation_id="chat", source_event_id="message",
+                             attachments=[{"source_item_id": "image", "mime_type": "image/png",
+                                           "data": _photo()}], idempotency_key="command")
+        capture_id = receipt["capture_ids"][0]
+        traces = process_capture(lib, "owner_a", capture_id, lambda _: _output())
+        assert all(trace["work_id"] is None for trace in traces)
+        _catalog(lib, "owner_a", epub.stem, epub,
+                 {"capture_ids": [capture_id], "origin": {"transport": "feishu",
+                  "account_id": "librarian", "conversation_id": "chat"},
+                  "received_at": "2026-09-28T00:00:00+00:00"})
+        before = lib.db.execute("SELECT COUNT(*) FROM records WHERE model='PageObservation'").fetchone()[0]
+        resolution = bind_fingerprint_context(lib, "owner_a", capture_id)
+        assert resolution["work"]["basis"] == "edition_fingerprint"
+        assert resolution["session"]["value"] is not None
+        current = [lib.get("owner_a", "ReadingTrace", trace["id"]) for trace in traces]
+        assert all(trace["revision"] == 2 and trace["context_state"] == "resolved"
+                   and trace["work_id"] is not None for trace in current)
+        assert lib.db.execute("SELECT COUNT(*) FROM records WHERE model='PageObservation'").fetchone()[0] == before
+        assert bind_fingerprint_context(lib, "owner_a", capture_id) is None
+
+        second = lib.ingest("owner_a", transport="feishu", account_id="librarian",
+                            conversation_id="chat", source_event_id="message-2",
+                            attachments=[{"source_item_id": "image", "mime_type": "image/png",
+                                          "data": _photo()}], idempotency_key="command-2")
+        second_id = second["capture_ids"][0]
+        second_traces = process_capture(lib, "owner_a", second_id, lambda _: _output())
+        corrected = correct_trace(lib, "owner_a", second_traces[0]["id"], 1,
+                                  printed_text="user checked", reason="review")
+        with lib.transaction():
+            lib.db.execute("INSERT INTO capture_context VALUES(?,?,?,?)",
+                           ("owner_a", second_id, resolution["session"]["value"],
+                            "edition_fingerprint"))
+        with pytest.raises(LibrarianError) as error:
+            bind_fingerprint_context(lib, "owner_a", second_id)
+        assert error.value.code == "RECONCILIATION_REQUIRED"
+        assert lib.get("owner_a", "ReadingTrace", corrected["id"])["work_id"] is None
 
 
 def test_reextract_keeps_pending_candidate_source_active(tmp_path: Path) -> None:

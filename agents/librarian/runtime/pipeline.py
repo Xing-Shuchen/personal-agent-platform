@@ -791,12 +791,15 @@ def resolve_capture(lib: Library, owner_id: str, capture_id: str,
                     expected_resolution_revision: int | None, *,
                     session_id: object = ..., work_id: object = ...,
                     edition_id: object = ..., book_instance_id: object = ...,
-                    pages: object = ...) -> dict[str, Any]:
+                    pages: object = ...,
+                    _basis: str = "user_confirmation") -> dict[str, Any]:
     """Append a user-confirmed resolution and revise affected current traces.
 
     Omitting a context field keeps its last value; explicit None removes it.
     Original capture bytes, receipt context and observations are never changed.
     """
+    if _basis not in {"user_confirmation", "edition_fingerprint"}:
+        raise LibrarianError("VALIDATION_FAILED", "unsupported resolution basis")
     with lib.transaction():
         lib.get(owner_id, "PageCapture", capture_id)
         row = lib.db.execute("SELECT body FROM records WHERE owner_id=? AND model='CaptureResolution' "
@@ -842,7 +845,7 @@ def resolve_capture(lib: Library, owner_id: str, capture_id: str,
             if prior and ({p["id"]: p["bbox"] for p in prior["pages"]}
                           != {p["id"]: p["bbox"] for p in page_regions}):
                 raise LibrarianError("CONTEXT_CONFLICT", "page region geometry cannot be overwritten")
-        fields = {field: _identity(value, "user_confirmation") for field, value in values.items()}
+        fields = {field: _identity(value, _basis) for field, value in values.items()}
         if prior:
             for field, value in values.items():
                 if value == prior[field]["value"]:
@@ -885,6 +888,44 @@ def resolve_capture(lib: Library, owner_id: str, capture_id: str,
                         "revision": revised["revision"], "reason": "capture resolution"},
                        resolution["id"])
         return resolution
+
+
+def bind_fingerprint_context(lib: Library, owner_id: str, capture_id: str) -> dict[str, Any] | None:
+    """Promote a previously unknown capture using a trusted edition fingerprint.
+
+    This only revises unedited, unbound traces. It reuses their immutable
+    observation and does not invoke OCR or a model.
+    """
+    row = lib.db.execute("SELECT body FROM records WHERE owner_id=? AND model='CaptureResolution' "
+                         "AND current=1 AND json_extract(body,'$.capture_id')=?",
+                         (owner_id, capture_id)).fetchone()
+    if row is None:
+        return None
+    prior = json.loads(row["body"])
+    fields = ("session", "work", "edition", "book_instance")
+    if any(prior[field]["value"] is not None or prior[field]["basis"] == "user_confirmation"
+           for field in fields):
+        return None
+    context = lib.db.execute("SELECT session_id,basis FROM capture_context "
+                             "WHERE owner_id=? AND capture_id=?", (owner_id, capture_id)).fetchone()
+    if context is None or context["basis"] != "edition_fingerprint":
+        return None
+    session = lib.get(owner_id, "ReadingSession", context["session_id"])
+    if session["status"] == "closed":
+        raise LibrarianError("CONTEXT_CONFLICT", "closed session cannot bind an unknown capture")
+    traces = _traces_for_capture(lib, owner_id, capture_id)
+    if any(trace["revision"] != 1 for trace in traces):
+        raise LibrarianError("RECONCILIATION_REQUIRED", "edited trace needs human context review")
+    refs = {(trace["id"], trace["revision"]) for trace in traces}
+    for candidate_row in lib.db.execute("SELECT body FROM records WHERE owner_id=? "
+                                        "AND model='KnowledgeCandidate' AND current=1", (owner_id,)):
+        candidate = json.loads(candidate_row["body"])
+        if candidate["status"] in {"pending", "approved", "promoted"} and any(
+                (ref["trace_id"], ref["revision"]) in refs
+                for ref in candidate["source_trace_refs"]):
+            raise LibrarianError("RECONCILIATION_REQUIRED", "knowledge candidate needs human context review")
+    return resolve_capture(lib, owner_id, capture_id, prior["revision"],
+                           session_id=context["session_id"], _basis="edition_fingerprint")
 
 
 def search(lib: Library, owner_id: str, query: str, *, include_unresolved: bool = False,

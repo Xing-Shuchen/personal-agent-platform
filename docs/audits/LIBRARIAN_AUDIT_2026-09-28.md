@@ -260,3 +260,5 @@ v7 正式 worker 已重处理两组照片：旧 5 图组仍为 10 条 trace、3 
 按摘要去重的 worker 再运行后，为两组各生成一条 2026-09-28 16:35 UTC 的修订通知回执；`openclaw message send` 返回成功并写入 marker。两组在这次修订分别投送了一条，用户端展示和点击审阅尚未核验。后续同一摘要不会重复投送。
 
 F06 恢复补充：批次重试状态现包含配置指纹（视觉模型及 `source-books` 内 EPUB 内容摘要）。失败批次耗尽三次自动尝试后保持停止；模型变更或 EPUB 增补会自动重置该批重试计数。故障注入测试覆盖耗尽、相同配置不重跑及两类配置变更恢复，避免要求生产环境手工删除状态文件。
+
+F01/F04 迟到书籍绑定补充：只读检查发现 86 条纸书活跃 trace 中有 12 条 Work 未绑定，分布在 3 张照片；其中 2 张已有 v7 成功提取和 `edition_fingerprint` capture_context，早期全 unknown 的 CaptureResolution 仍挡住书籍身份。新增 `bind_fingerprint_context` 仅在既有 resolution 未含任何确认值、trace 未经用户修订、没有活跃知识候选依赖，且指纹 session 仍开放时，复用原 observation 与 trace 作带来源标记的修订；不调用 OCR 或模型。合成测试证明新版本绑定、原观察数量不变、重复调用幂等及用户修订保护。生产三张照片的实际回填结果需继续核对。

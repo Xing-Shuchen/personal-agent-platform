@@ -25,7 +25,8 @@ from xml.etree import ElementTree as ET
 from PIL import Image, ImageOps
 
 from .ocr import ocr_extractor, openclaw_note_refiner
-from .pipeline import process_capture, reconcile_extraction, _repair_trace_index_best_effort
+from .pipeline import (process_capture, reconcile_extraction, bind_fingerprint_context,
+                       _repair_trace_index_best_effort)
 from .vision import openclaw_extractor
 from .store import Library, LibrarianError, _new, _now, _unknown_time
 from .koodo_native import sync_koodo_sqlite
@@ -729,7 +730,10 @@ def _process_batch(lib: Library, root: Path, vault: Path | None, owner: str,
             run["extractor_version"] == version and
             run["outcome"] in {"success", "partial"}]
     revised_notice = any((root / "notifications").glob(f"{batch['id']}-revision*.json"))
-    if notified and revised_notice and len({run["capture_id"] for run in runs}) == len(batch["capture_ids"]):
+    unbound = any(trace["work_id"] is None for trace in _current(lib, owner, "ReadingTrace")
+                  if trace["status"] == "active" and
+                  trace["source"].get("capture_id") in batch["capture_ids"])
+    if notified and revised_notice and not unbound and len({run["capture_id"] for run in runs}) == len(batch["capture_ids"]):
         existing = [trace for trace in _current(lib, owner, "ReadingTrace")
                     if trace["status"] == "active" and
                     trace["source"].get("capture_id") in batch["capture_ids"]]
@@ -757,6 +761,11 @@ def _process_batch(lib: Library, root: Path, vault: Path | None, owner: str,
             _atomic_write(snapshot, json.dumps(old_traces, ensure_ascii=False).encode())
     extraction_issues = []
     for capture_id in batch["capture_ids"]:
+        if match:
+            try:
+                bind_fingerprint_context(lib, owner, capture_id)
+            except LibrarianError as error:
+                extraction_issues.append({"capture_id": capture_id, "code": error.code})
         try:
             process_capture(lib, owner, capture_id, extractor,
                             extractor_version=version)
