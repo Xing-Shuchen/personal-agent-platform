@@ -21,7 +21,9 @@ matching channel, account and sender. Its arguments contain a query and limit,
 never an owner ID. With `ownerMappings: []`, the tool is absent. A normal CLI
 agent turn also has no mapped sender and cannot read the private store.
 `librarian_session` applies an explicit reading-session instruction using the
-trusted inbound message ID and conversation scope. The model supplies only
+trusted inbound message ID and canonical session key as conversation scope.
+The hook's `conversationId` is optional, so session commands do not depend on
+that field. The model supplies only
 the requested action, title or reported page. `librarian_evidence` reads an
 owner-scoped physical trace, sends a temporary cropped original to the
 current bound conversation, then removes the temporary file; originals remain

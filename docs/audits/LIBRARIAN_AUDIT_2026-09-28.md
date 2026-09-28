@@ -284,3 +284,5 @@ v8 本地 OCR 局部重试：强划线而整页 OCR 无法匹配 EPUB 的正文�
 07:40 真实重试验证：同一受信飞书 sender 的「查看待审核提取」进入 librarian 会话；trajectory `context.compiled.tools` 含 `librarian_review`、`librarian_search`、`librarian_evidence`、`session_status`，随后出现一次 `tool.call librarian_review`（空参数）与成功 `tool.result`，返回 5 个 v8 待对账 capture。agent 回复也列出这 5 个 ID，未声称已入库。故只读审核工具的真实入站调用已验证；但回复只给不透明 ID，缺少页码和差异摘要，人工审阅体验不足。`librarian_session` 未出现在这次工具列表，尽管配置授权，具体原因与真实 `/lib read` 仍未验证。证据取自本机 OpenClaw trajectory SQLite 和 Gateway 日志，不能据此宣称所有 agent 工具闭环完成。
 
 审核列表后续改为单次只读桥调用就返回书名、印刷页、现有/候选组数与 OCR 缺口数；生产库当前五项摘要为页 65/66/unknown 4→5（1 处缺口）、unknown 4→4、45 页 0→1、41 页 3→3、39/40 页 5→3。agent 指令改为用这些信息直接向人说明，避免要求用户从不透明 ID 中选一项。该展示改动已用生产库只读调用检查；真实飞书第二轮展示尚待验证。
+
+`librarian_session` 缺席的下一步诊断：OpenClaw 的 `message_received` hook 契约把 `conversationId` 定义为可选，却保证规范 `sessionKey` 与 agent run 一致；现有临时入站绑定错误地要求前者。插件改用受信 `sessionKey` 作会话 scope，同时继续要求真实 inbound message ID、映射 sender/account/channel 和 10 分钟时限。8 项 Node 插件测试通过，其中包含 hook 无 `conversationId` 的情形；增加仅记录布尔值的运行时诊断。此项尚未经过真实 `/lib read` 消息验证，且进程内 hook/tool registry 是否共享临时映射仍待运行时观察。

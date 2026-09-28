@@ -104,7 +104,8 @@ test("worker runs without a Vault and binds a configurable vision model", () => 
 
 test("session tool carries only trusted inbound source identity", async () => {
   const recent = new Map();
-  const inbound = { ...ctx, sessionKey: "agent:librarian:chat" };
+  const inbound = { channelId: "telegram", accountId: "bot",
+    sessionKey: "agent:librarian:chat" };
   rememberInboundSession(config, recent, { senderId: "person", messageId: "msg-77" }, inbound, 1000);
   const trusted = { agentId: "librarian", sessionKey: inbound.sessionKey,
     requesterSenderId: "person", messageChannel: "telegram", agentAccountId: "bot" };
@@ -114,7 +115,8 @@ test("session tool carries only trusted inbound source identity", async () => {
   assert.equal(tool.name, "librarian_session");
   await tool.execute("call", { action: "start", book: "Synthetic Work" });
   assert.deepEqual(seen, { owner_id: "owner_fixture", actor_id: "person",
-    source: { transport: "telegram", account_id: "bot", conversation_id: "chat",
+    source: { transport: "telegram", account_id: "bot",
+      conversation_id: "agent:librarian:chat",
       source_event_id: "msg-77" }, action: "start", book: "Synthetic Work", page: undefined });
   assert.equal(librarianSessionTool(config, { ...trusted, requesterSenderId: "other" },
     recent, bridge, 1001), null);

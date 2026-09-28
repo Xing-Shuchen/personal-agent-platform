@@ -188,13 +188,13 @@ export function librarianReviewTool(config, ctx, bridge = runReviewBridge) {
 
 export function rememberInboundSession(config, recent, event, ctx, now = Date.now()) {
   const ownerId = ownerFor(config, event, ctx);
-  if (!ownerId || !ctx.sessionKey || !ctx.conversationId || !event.messageId) return;
+  if (!ownerId || !ctx.sessionKey || !event.messageId) return;
   for (const [key, entry] of recent) {
     if (now - entry.at > 10 * 60_000) recent.delete(key);
   }
   recent.set(ctx.sessionKey, { ownerId, senderId: event.senderId,
     channelId: ctx.channelId, accountId: ctx.accountId,
-    conversationId: ctx.conversationId, messageId: event.messageId, at: now });
+    conversationId: ctx.sessionKey, messageId: event.messageId, at: now });
 }
 
 export function librarianSessionTool(config, ctx, recent, bridge = runSessionBridge,
@@ -276,8 +276,13 @@ export default {
       return tool;
     },
       { name: "librarian_search" });
-    api.registerTool((ctx) => librarianSessionTool(config, ctx, recentInbound),
-      { name: "librarian_session" });
+    api.registerTool((ctx) => {
+      const tool = librarianSessionTool(config, ctx, recentInbound);
+      if (ctx?.agentId === "librarian") api.logger.info(
+        `Librarian session tool scope: recent=${Boolean(recentInbound.get(ctx.sessionKey))} ` +
+        `available=${Boolean(tool)}`);
+      return tool;
+    }, { name: "librarian_session" });
     api.registerTool((ctx) => librarianEvidenceTool(config, ctx),
       { name: "librarian_evidence" });
     api.registerTool((ctx) => librarianReviewTool(config, ctx),
@@ -299,6 +304,7 @@ export default {
         if (ctx.accountId === "librarian") api.logger.info(
           `Librarian inbound: sender=${Boolean(event.senderId)} ` +
           `message=${Boolean(event.messageId)} session=${Boolean(ctx.sessionKey)} ` +
+          `conversation=${Boolean(ctx.conversationId)} ` +
           `media=${Array.isArray(event.media) ? event.media.length : "absent"} ` +
           `staging=${Boolean(event.mediaStagingPending)}`);
         rememberInboundSession(config, recentInbound, event, ctx);
