@@ -12,7 +12,7 @@ import os
 import sqlite3
 import tempfile
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -37,6 +37,14 @@ def _json(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
 
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 _SCHEMA = json.loads((Path(__file__).parent / "schemas" / "contracts.schema.json").read_text(encoding="utf-8"))
 
 
@@ -50,6 +58,40 @@ def validate(model: str, value: dict[str, Any]) -> None:
         error = errors[0]
         location = ".".join(map(str, error.path)) or model
         raise LibrarianError("VALIDATION_FAILED", f"{location}: {error.message}")
+    _validate_semantics(model, value)
+
+
+def _validate_semantics(model: str, value: dict[str, Any]) -> None:
+    """Cross-field constraints complement, rather than duplicate, JSON Schema."""
+    revision = value.get("revision")
+    if revision is not None and value.get("supersedes_revision") != (revision - 1 if revision > 1 else None):
+        raise LibrarianError("VALIDATION_FAILED", "revision and supersedes_revision disagree")
+    if model == "CaptureBatch" and len(set(value["capture_ids"])) != len(value["capture_ids"]):
+        raise LibrarianError("VALIDATION_FAILED", "capture IDs must be unique")
+    if model == "CaptureResolution":
+        for field in ("session", "work", "edition", "book_instance"):
+            identity = value[field]
+            if (identity["status"] == "resolved") != (identity["value"] is not None):
+                raise LibrarianError("VALIDATION_FAILED", f"{field} resolution status/value disagree")
+        for region in value["pages"]:
+            page = region["page"]
+            if (page["status"] == "resolved") != (page["value"] is not None):
+                raise LibrarianError("VALIDATION_FAILED", "page status/value disagree")
+    if model == "ReadingTrace":
+        medium = value["medium"]
+        if medium == "physical":
+            if value["location"]["kind"] != "physical" or value["source"]["kind"] != "physical":
+                raise LibrarianError("VALIDATION_FAILED", "physical trace needs physical source and location")
+            if value["context_state"] == "resolved" and not all(
+                    value[field] for field in ("work_id", "edition_id", "book_instance_id", "session_id")):
+                raise LibrarianError("VALIDATION_FAILED", "resolved physical context requires full chain")
+        elif value["location"]["kind"] != "digital" or value["source"]["kind"] != medium:
+            raise LibrarianError("VALIDATION_FAILED", "digital trace source and medium disagree")
+        if value["review"]["state"] == "pending" and not value["review"]["required"]:
+            raise LibrarianError("VALIDATION_FAILED", "pending review must be required")
+    if model == "KnowledgeCandidate":
+        if (value["status"] == "promoted") != (value["knowledge_id"] is not None):
+            raise LibrarianError("VALIDATION_FAILED", "promoted candidate needs a knowledge ID")
 
 
 class Library:
@@ -129,6 +171,7 @@ class Library:
     def start_session(self, owner_id: str, book_instance_id: str | None = None,
                       *, started_at: dict[str, Any] | None = None,
                       progress: dict[str, Any] | None = None,
+                      scope: tuple[str, str, str] | None = None,
                       correlation_id: str | None = None) -> dict[str, Any]:
         work_id = edition_id = None
         if book_instance_id:
@@ -144,6 +187,13 @@ class Library:
                   "session_note": None, "revision": 1, "supersedes_revision": None}
         with self.db:
             self._put(record)
+            if scope is not None:
+                if len(scope) != 3 or not all(scope):
+                    raise LibrarianError("VALIDATION_FAILED", "session scope requires transport, account and conversation")
+                self.db.execute("UPDATE session_scope SET selected=0 WHERE owner_id=? AND transport=? AND account_id=? AND conversation_id=?",
+                                (owner_id, *scope))
+                self.db.execute("INSERT INTO session_scope VALUES(?,?,?,?,?,?,?)",
+                                (owner_id, *scope, record["id"], 1, None))
             self._event(owner_id, "reading.session.started", "reading_session", record["id"], 1,
                         {"session_id": record["id"], "revision": 1, "medium": "physical",
                          "book_instance_id": book_instance_id}, correlation_id or record["id"])
@@ -216,6 +266,8 @@ class Library:
                            ("book_instance_id", "BookInstance")):
             if context[key]:
                 self._get(owner_id, model, context[key])
+        scope = (owner_id, transport, account_id, conversation_id)
+        chosen_session, chosen_basis = self._choose_session(scope, context["session_id"])
         fingerprint = hashlib.sha256(_json({"source": [transport, account_id, conversation_id,
                                                         source_event_id], "context": context,
                                            "attachments": [(item["source_item_id"], item["mime_type"],
@@ -259,6 +311,9 @@ class Library:
                 self._put(batch)
                 for capture in captures:
                     self._put(capture)
+                    if chosen_session:
+                        self.db.execute("INSERT INTO capture_context VALUES(?,?,?,?)",
+                                        (owner_id, capture["id"], chosen_session, chosen_basis))
                     origin = capture["origin"]
                     self.db.execute("INSERT INTO source_items(owner_id,transport,account_id,source_event_id,source_item_id,capture_id) VALUES(?,?,?,?,?,?)",
                                     (owner_id, transport, account_id, source_event_id,
@@ -267,14 +322,68 @@ class Library:
                                 (owner_id, idempotency_key, fingerprint, _json(receipt)))
                 self._event(owner_id, "reading.capture.received", "capture_batch", batch_id, 1,
                             {"batch_id": batch_id, "capture_ids": capture_ids}, idempotency_key)
+                if chosen_session:
+                    self._remember_session(scope, chosen_session, received_at,
+                                           chosen_basis == "active_session")
         except sqlite3.IntegrityError as error:
             raise LibrarianError("IDEMPOTENCY_CONFLICT", "source item or idempotency key already accepted") from error
         return receipt
+
+    def _choose_session(self, scope: tuple[str, str, str, str],
+                        explicit_id: str | None) -> tuple[str | None, str]:
+        if explicit_id:
+            return explicit_id, "explicit_session"
+        rows = self.db.execute("SELECT session_id,selected,last_assigned_at FROM session_scope "
+                               "WHERE owner_id=? AND transport=? AND account_id=? AND conversation_id=?",
+                               scope).fetchall()
+        active = []
+        for row in rows:
+            try:
+                session = self._get(scope[0], "ReadingSession", row["session_id"])
+            except LibrarianError:
+                continue
+            if session["status"] == "active":
+                active.append(row)
+        selected = [row for row in active if row["selected"]]
+        if len(selected) == 1:
+            return selected[0]["session_id"], "active_session"
+        if len(selected) > 1:
+            return None, "unknown"
+        recent = []
+        now = datetime.now(timezone.utc)
+        for row in active:
+            if row["last_assigned_at"]:
+                age = now - datetime.fromisoformat(row["last_assigned_at"])
+                if timedelta(0) <= age <= timedelta(minutes=90):
+                    recent.append(row)
+        if len(recent) == 1:
+            return recent[0]["session_id"], "recent_affinity"
+        return None, "unknown"
+
+    def _remember_session(self, scope: tuple[str, str, str, str], session_id: str,
+                          at: str, selected: bool) -> None:
+        # A per-message explicit hint is not a long-lived selection. It
+        # replaces a stale selected session, then grants only soft affinity.
+        prior = self.db.execute("SELECT selected FROM session_scope WHERE owner_id=? AND transport=? AND account_id=? AND conversation_id=? AND session_id=?",
+                                (*scope, session_id)).fetchone()
+        selected = selected or bool(prior and prior["selected"])
+        if not selected:
+            self.db.execute("UPDATE session_scope SET selected=0 WHERE owner_id=? AND transport=? AND account_id=? AND conversation_id=?",
+                            scope)
+        self.db.execute("INSERT INTO session_scope(owner_id,transport,account_id,conversation_id,session_id,selected,last_assigned_at) "
+                        "VALUES(?,?,?,?,?,?,?) ON CONFLICT(owner_id,transport,account_id,conversation_id,session_id) "
+                        "DO UPDATE SET selected=excluded.selected,last_assigned_at=excluded.last_assigned_at",
+                        (*scope, session_id, int(selected), at))
 
     def _save_object(self, data: bytes, mime_type: str) -> dict[str, Any]:
         digest = hashlib.sha256(data).hexdigest()
         target = self.objects / digest[:2] / digest
         target.parent.mkdir(exist_ok=True)
+        if target.is_symlink():
+            raise LibrarianError("OBJECT_STORE_UNAVAILABLE", "object path is not a regular file")
+        if target.exists():
+            if _sha256_file(target) != digest or target.stat().st_size != len(data):
+                raise LibrarianError("OBJECT_STORE_UNAVAILABLE", "existing object failed integrity check")
         if not target.exists():
             fd, temp_name = tempfile.mkstemp(dir=target.parent, prefix=".incoming-")
             try:

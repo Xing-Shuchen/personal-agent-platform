@@ -62,3 +62,28 @@ CREATE TABLE IF NOT EXISTS trace_index (
   trace_types TEXT NOT NULL,
   PRIMARY KEY (owner_id, trace_id)
 );
+CREATE TABLE IF NOT EXISTS digital_exports (
+  owner_id TEXT NOT NULL,
+  medium TEXT NOT NULL,
+  source_key TEXT NOT NULL,
+  payload_sha256 TEXT NOT NULL,
+  trace_ids TEXT NOT NULL,
+  PRIMARY KEY (owner_id, medium, source_key)
+);
+CREATE TABLE IF NOT EXISTS session_scope (
+  owner_id TEXT NOT NULL,
+  transport TEXT NOT NULL,
+  account_id TEXT NOT NULL,
+  conversation_id TEXT NOT NULL,
+  session_id TEXT NOT NULL,
+  selected INTEGER NOT NULL CHECK (selected IN (0, 1)),
+  last_assigned_at TEXT,
+  PRIMARY KEY (owner_id, transport, account_id, conversation_id, session_id)
+);
+CREATE TABLE IF NOT EXISTS capture_context (
+  owner_id TEXT NOT NULL,
+  capture_id TEXT NOT NULL,
+  session_id TEXT NOT NULL,
+  basis TEXT NOT NULL,
+  PRIMARY KEY (owner_id, capture_id)
+);

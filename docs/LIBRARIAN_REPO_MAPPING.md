@@ -14,7 +14,7 @@ and validation report did not accompany the standalone file in this worktree.
 | Domain events | `pap/artifact.py` and `paplog` are observability/inter-agent records, not transactional domain outboxes | Store domain outbox rows in the same SQLite transaction as trace/session changes. A publisher can bridge events later. |
 | Migrations | World Historian has an agent-specific SQLite migration pattern | Use agent-local SQLite migrations. Do not insert reading entities into Chronicle. |
 | Search | `pap/cognition.py` indexes Markdown evidence, with WeRead note recognition | Librarian needs a current-trace, owner-filtered index with original image provenance. Existing cognition indexing does not provide it. |
-| Digital adapters | Vault has WeRead and Koodo Markdown exports; `pap/cognition.py` recognizes some WeRead headings | Inspect actual exports before writing a typed adapter. Markdown shape is not proof of platform API or source payload semantics. |
+| Digital adapters | Vault has WeRead and Koodo Markdown exports; `pap/cognition.py` recognizes some WeRead headings | `agents/librarian/runtime/digital.py` parses observed export shapes into ReadingTrace. Markdown shape is not proof of platform API or live sync semantics. |
 | Knowledge promotion | Cognition stores retrieval evidence; no Librarian KnowledgeObject write port | Keep candidates separate and optional. No automatic promotion from ordinary highlights. |
 
 ## Immediate integration decisions

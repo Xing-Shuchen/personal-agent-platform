@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import sqlite3
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -132,3 +133,57 @@ def test_capture_all_or_retry_on_invalid_attachment(tmp_path: Path):
         assert err.value.code == "VALIDATION_FAILED"
         assert not lib.pending_events("owner_a")
         assert lib.db.execute("SELECT COUNT(*) FROM records").fetchone()[0] == 0
+
+
+def test_corrupt_deduplicated_blob_cannot_be_accepted(tmp_path: Path):
+    import hashlib
+    photo = b"original photo"
+    digest = hashlib.sha256(photo).hexdigest()
+    target = tmp_path / "objects" / digest[:2] / digest
+    target.parent.mkdir(parents=True)
+    target.write_bytes(b"corrupt")
+    with Library(tmp_path) as lib:
+        with pytest.raises(LibrarianError) as err:
+            lib.ingest("owner_a", transport="gateway", account_id="a",
+                       conversation_id="c", source_event_id="m", idempotency_key="k",
+                       attachments=[{"source_item_id": "i", "mime_type": "image/jpeg",
+                                     "data": photo}])
+        assert err.value.code == "OBJECT_STORE_UNAVAILABLE"
+        assert lib.db.execute("SELECT COUNT(*) FROM records").fetchone()[0] == 0
+
+
+def test_session_selection_and_soft_affinity_stay_in_conversation_scope(tmp_path: Path):
+    def accept(lib: Library, source: str, conversation: str = "c",
+               context: dict | None = None) -> str:
+        receipt = lib.ingest("owner_a", transport="gateway", account_id="a",
+                             conversation_id=conversation, source_event_id=source,
+                             attachments=[{"source_item_id": "image", "mime_type": "image/jpeg",
+                                           "data": b"photo"}], idempotency_key=source,
+                             submitted_context=context)
+        return receipt["capture_ids"][0]
+
+    with Library(tmp_path) as lib:
+        selected = lib.start_session("owner_a", scope=("gateway", "a", "c"))
+        first = accept(lib, "m1")
+        context = lib.db.execute("SELECT session_id,basis FROM capture_context WHERE capture_id=?",
+                                 (first,)).fetchone()
+        assert tuple(context) == (selected["id"], "active_session")
+        assert lib.get("owner_a", "PageCapture", first)["submitted_context"]["session_id"] is None
+        assert lib.db.execute("SELECT COUNT(*) FROM capture_context WHERE capture_id=?",
+                              (accept(lib, "m2", "other-chat"),)).fetchone()[0] == 0
+
+        # A per-message explicit context grants at most 90-minute affinity.
+        soft = lib.start_session("owner_a")
+        explicit = accept(lib, "m3", "affinity-chat", context={"session_id": soft["id"]})
+        assert lib.db.execute("SELECT basis FROM capture_context WHERE capture_id=?",
+                              (explicit,)).fetchone()[0] == "explicit_session"
+        following = accept(lib, "m4", "affinity-chat")
+        assert lib.db.execute("SELECT basis FROM capture_context WHERE capture_id=?",
+                              (following,)).fetchone()[0] == "recent_affinity"
+        old = (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat()
+        lib.db.execute("UPDATE session_scope SET last_assigned_at=? WHERE conversation_id='affinity-chat'", (old,))
+        lib.db.commit()
+        expired = accept(lib, "m5", "affinity-chat")
+        assert lib.db.execute("SELECT COUNT(*) FROM capture_context WHERE capture_id=?",
+                              (expired,)).fetchone()[0] == 0
+        assert lib.get("owner_a", "ReadingSession", soft["id"])["status"] == "active"

@@ -112,6 +112,12 @@ def process_capture(lib: Library, owner_id: str, capture_id: str,
 
     context = capture["submitted_context"]
     session_id = context["session_id"]
+    basis = "explicit_session" if session_id else "unknown"
+    if not session_id:
+        inferred = lib.db.execute("SELECT session_id,basis FROM capture_context WHERE owner_id=? AND capture_id=?",
+                                  (owner_id, capture_id)).fetchone()
+        if inferred:
+            session_id, basis = inferred["session_id"], inferred["basis"]
     work_id = context["work_id"]
     edition_id = context["edition_id"]
     book_instance_id = context["book_instance_id"]
@@ -139,10 +145,10 @@ def process_capture(lib: Library, owner_id: str, capture_id: str,
     state = "resolved" if all((session_id, work_id, edition_id, book_instance_id)) else "unresolved"
     resolution = {"object_type": "CaptureResolution", "schema_version": "0.1.0",
                   "id": _new("resolution"), "owner_id": owner_id, "created_at": _now(),
-                  "capture_id": capture_id, "session": _identity(session_id, "explicit_session"),
-                  "work": _identity(work_id, "explicit_session"),
-                  "edition": _identity(edition_id, "explicit_session"),
-                  "book_instance": _identity(book_instance_id, "explicit_session"),
+                  "capture_id": capture_id, "session": _identity(session_id, basis),
+                  "work": _identity(work_id, basis),
+                  "edition": _identity(edition_id, basis),
+                  "book_instance": _identity(book_instance_id, basis),
                   "pages": observation["pages"], "revision": 1,
                   "supersedes_revision": None}
     validate("CaptureResolution", resolution)
@@ -334,3 +340,60 @@ def search(lib: Library, owner_id: str, query: str, *, include_unresolved: bool 
                           (owner_id, include_unresolved, work_id, work_id,
                            f"%{escaped}%", f"%{escaped}%", limit)).fetchall()
     return [lib.get(owner_id, "ReadingTrace", row["trace_id"]) for row in rows]
+
+
+def search_response(lib: Library, request: dict[str, Any], *, trusted_owner_id: str) -> dict[str, Any]:
+    """Return the shared provenance-first SearchResponse contract."""
+    validate("SearchRequest", request)
+    if request["owner_id"] != trusted_owner_id:
+        raise LibrarianError("UNAUTHORIZED", "search owner differs from trusted identity")
+    filters = request["filters"]
+    cursor = request["cursor"]
+    if cursor is not None and (not cursor.isdecimal() or int(cursor) > 1_000_000):
+        raise LibrarianError("VALIDATION_FAILED", "invalid search cursor")
+    offset = int(cursor or 0)
+    terms = ["owner_id=?", "(printed_text LIKE ? ESCAPE '\\' OR annotation LIKE ? ESCAPE '\\')"]
+    escaped = request["query"].replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    params: list[Any] = [trusted_owner_id, f"%{escaped}%", f"%{escaped}%"]
+    if not filters["include_unresolved"]:
+        terms.append("context_state='resolved'")
+    for column in ("work_id", "edition_id", "book_instance_id", "session_id", "medium"):
+        if filters[column] is not None:
+            terms.append(f"{column}=?")
+            params.append(filters[column])
+    if filters["trace_types"]:
+        terms.append("EXISTS (SELECT 1 FROM json_each(trace_types) WHERE value IN (" +
+                     ",".join("?" for _ in filters["trace_types"]) + "))")
+        params.extend(filters["trace_types"])
+    sql = ("SELECT trace_id FROM trace_index WHERE " + " AND ".join(terms) +
+           " ORDER BY rowid DESC LIMIT ? OFFSET ?")
+    rows = lib.db.execute(sql, (*params, request["limit"] + 1, offset)).fetchall()
+    hits = []
+    for row in rows[:request["limit"]]:
+        trace = lib.get(trusted_owner_id, "ReadingTrace", row["trace_id"])
+        title = (lib.get(trusted_owner_id, "Work", trace["work_id"])["title"]
+                 if trace["work_id"] else None)
+        hit = {"trace_id": trace["id"], "revision": trace["revision"],
+               "medium": trace["medium"], "context_state": trace["context_state"],
+               "title": title, "location": trace["location"],
+               "content": trace["content"], "channels": ["lexical"],
+               "rank_score": 1.0, "evidence": trace["provenance"],
+               "warnings": (["book unresolved"] if trace["context_state"] != "resolved" else [])}
+        validate("SearchHit", hit)
+        hits.append(hit)
+    stale = lib.db.execute(
+        "SELECT COUNT(*) FROM records r LEFT JOIN trace_index i "
+        "ON i.owner_id=r.owner_id AND i.trace_id=r.id "
+        "WHERE r.owner_id=? AND r.model='ReadingTrace' AND r.current=1 "
+        "AND json_extract(r.body,'$.status')='active' "
+        "AND (i.trace_id IS NULL OR i.revision<>r.revision)",
+        (trusted_owner_id,)).fetchone()[0]
+    current = lib.db.execute("SELECT COUNT(*) FROM records WHERE owner_id=? AND model='ReadingTrace' AND current=1 AND json_extract(body,'$.status')='active'",
+                             (trusted_owner_id,)).fetchone()[0]
+    indexed = lib.db.execute("SELECT COUNT(*) FROM trace_index WHERE owner_id=?",
+                             (trusted_owner_id,)).fetchone()[0]
+    response = {"hits": hits,
+                "next_cursor": str(offset + request["limit"]) if len(rows) > request["limit"] else None,
+                "index_state": "ready" if current == indexed and stale == 0 else "lagging"}
+    validate("SearchResponse", response)
+    return response

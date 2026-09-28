@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from agents.librarian.runtime.pipeline import correct_trace, process_capture, rebuild_index, search
-from agents.librarian.runtime.store import Library, LibrarianError
+from agents.librarian.runtime.store import Library, LibrarianError, validate
 
 
 def _detection(identifier: str, kind: str, text: str | None,
@@ -161,7 +161,7 @@ def test_explicit_session_yields_resolved_trace_and_default_search(tmp_path: Pat
                    "reading_status": {"state": "reading", "current_page": None,
                                       "progress_evidence_ref": None},
                    "revision": 1, "supersedes_revision": None})
-        session = lib.start_session("owner_a", "bookinst_one")
+        session = lib.start_session("owner_a", "bookinst_one", scope=("gateway", "a", "c"))
         receipt = lib.ingest("owner_a", transport="gateway", account_id="a",
                              conversation_id="c", source_event_id="m",
                              attachments=[{"source_item_id": "i", "mime_type": "image/jpeg",
@@ -173,3 +173,28 @@ def test_explicit_session_yields_resolved_trace_and_default_search(tmp_path: Pat
         assert all(t["work_id"] == "work_one" and t["edition_id"] == "edition_one"
                    and t["book_instance_id"] == "bookinst_one" for t in traces)
         assert len(search(lib, "owner_a", "Parsons")) == 2
+        inferred = lib.ingest("owner_a", transport="gateway", account_id="a",
+                              conversation_id="c", source_event_id="m2",
+                              attachments=[{"source_item_id": "i", "mime_type": "image/jpeg",
+                                            "data": b"second photo"}], idempotency_key="k2")
+        inferred_traces = process_capture(lib, "owner_a", inferred["capture_ids"][0],
+                                          lambda _: _output())
+        assert all(t["session_id"] == session["id"] and t["context_state"] == "resolved"
+                   for t in inferred_traces)
+
+
+def test_trace_semantics_reject_fake_resolved_context_and_review(tmp_path: Path):
+    with Library(tmp_path) as lib:
+        receipt = lib.ingest("owner_a", transport="gateway", account_id="a",
+                             conversation_id="c", source_event_id="m",
+                             attachments=[{"source_item_id": "i", "mime_type": "image/jpeg",
+                                           "data": b"photo"}], idempotency_key="k")
+        trace = process_capture(lib, "owner_a", receipt["capture_ids"][0],
+                                lambda _: _output())[0]
+        false_resolution = dict(trace, context_state="resolved")
+        with pytest.raises(LibrarianError, match="full chain"):
+            validate("ReadingTrace", false_resolution)
+        false_review = json.loads(json.dumps(trace))
+        false_review["review"] = {"required": False, "state": "pending", "reason": "unclear"}
+        with pytest.raises(LibrarianError, match="pending review"):
+            validate("ReadingTrace", false_review)
