@@ -6,6 +6,7 @@ import test from "node:test";
 
 import { acceptMessage, librarianEvidenceTool, librarianReviewTool, librarianSearchTool, librarianSessionTool,
   rememberInboundSession, workerArgs } from "./index.js";
+import librarianPlugin from "./index.js";
 
 const config = { ownerMappings: [{ channelId: "telegram", accountId: "bot",
   senderId: "person", ownerId: "owner_fixture" }] };
@@ -123,6 +124,26 @@ test("session tool carries only trusted inbound source identity", async () => {
   assert.equal(librarianSessionTool(config, trusted, recent, bridge, 601001), null);
   assert.equal(librarianSessionTool(config, { ...trusted, agentAccountId: "other" },
     recent, bridge, 1001), null);
+});
+
+test("inbound binding survives separate hook and tool plugin registrations", async () => {
+  const registrations = [];
+  for (let i = 0; i < 2; i++) {
+    const hooks = new Map();
+    const tools = new Map();
+    librarianPlugin.register({ pluginConfig: config, logger: { info() {}, warn() {} },
+      registerTool(factory, options) { tools.set(options.name, factory); },
+      registerService() {}, on(name, handler) { hooks.set(name, handler); } });
+    registrations.push({ hooks, tools });
+  }
+  const sessionKey = "agent:librarian:cross-registration-fixture";
+  await registrations[0].hooks.get("message_received")(
+    { senderId: "person", messageId: "msg-cross-registration" },
+    { channelId: "telegram", accountId: "bot", sessionKey });
+  const tool = registrations[1].tools.get("librarian_session")({
+    agentId: "librarian", sessionKey, requesterSenderId: "person",
+    messageChannel: "telegram", agentAccountId: "bot" });
+  assert.equal(tool?.name, "librarian_session");
 });
 
 test("evidence tool sends only to the bound route and removes temporary media", async () => {

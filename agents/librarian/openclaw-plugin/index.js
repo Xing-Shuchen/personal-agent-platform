@@ -4,6 +4,13 @@ import { delimiter, dirname, isAbsolute, resolve } from "node:path";
 
 const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
 const MAX_BATCH_BYTES = 100 * 1024 * 1024;
+const INBOUND_SESSIONS = Symbol.for("pap.librarian.inboundSessions");
+
+// OpenClaw can load hook and tool registrations through separate plugin instances.
+// Keep the short-lived inbound binding in the process realm shared by both.
+function inboundSessions() {
+  return globalThis[INBOUND_SESSIONS] ??= new Map();
+}
 
 const configuredOwnerIds = (config) =>
   [...new Set((config.ownerMappings ?? []).map((entry) => entry.ownerId))];
@@ -261,7 +268,7 @@ export default {
     const config = api.pluginConfig ?? {};
     let recoveryTimer;
     let intakeTimer;
-    const recentInbound = new Map();
+    const recentInbound = inboundSessions();
     api.registerTool((ctx) => {
       const tool = librarianSearchTool(config, ctx);
       if (ctx?.agentId === "librarian") api.logger.info(
@@ -280,6 +287,7 @@ export default {
       const tool = librarianSessionTool(config, ctx, recentInbound);
       if (ctx?.agentId === "librarian") api.logger.info(
         `Librarian session tool scope: recent=${Boolean(recentInbound.get(ctx.sessionKey))} ` +
+        `entries=${recentInbound.size} ` +
         `available=${Boolean(tool)}`);
       return tool;
     }, { name: "librarian_session" });
@@ -308,6 +316,9 @@ export default {
           `media=${Array.isArray(event.media) ? event.media.length : "absent"} ` +
           `staging=${Boolean(event.mediaStagingPending)}`);
         rememberInboundSession(config, recentInbound, event, ctx);
+        if (ctx.accountId === "librarian") api.logger.info(
+          `Librarian inbound binding: owner=${Boolean(ownerFor(config, event, ctx))} ` +
+          `saved=${Boolean(recentInbound.get(ctx.sessionKey))} entries=${recentInbound.size}`);
         const receipt = await acceptMessage(config, event, ctx);
         if (receipt) {
           api.logger.info(`Librarian accepted ${receipt.capture_ids.length} image(s)`);

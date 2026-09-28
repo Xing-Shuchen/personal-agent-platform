@@ -286,3 +286,5 @@ v8 本地 OCR 局部重试：强划线而整页 OCR 无法匹配 EPUB 的正文�
 审核列表后续改为单次只读桥调用就返回书名、印刷页、现有/候选组数与 OCR 缺口数；生产库当前五项摘要为页 65/66/unknown 4→5（1 处缺口）、unknown 4→4、45 页 0→1、41 页 3→3、39/40 页 5→3。agent 指令改为用这些信息直接向人说明，避免要求用户从不透明 ID 中选一项。该展示改动已用生产库只读调用检查；真实飞书第二轮展示尚待验证。
 
 `librarian_session` 缺席的下一步诊断：OpenClaw 的 `message_received` hook 契约把 `conversationId` 定义为可选，却保证规范 `sessionKey` 与 agent run 一致；现有临时入站绑定错误地要求前者。插件改用受信 `sessionKey` 作会话 scope，同时继续要求真实 inbound message ID、映射 sender/account/channel 和 10 分钟时限。8 项 Node 插件测试通过，其中包含 hook 无 `conversationId` 的情形；增加仅记录布尔值的运行时诊断。此项尚未经过真实 `/lib read` 消息验证，且进程内 hook/tool registry 是否共享临时映射仍待运行时观察。
+
+07:47 首次真实 `/lib read 社会理论二十讲` 验证失败：飞书入站成功，hook 见到 sender、message ID、sessionKey、conversationId，但 tool factory 报 `recent=false available=false`；trajectory 的工具列表仍不含 `librarian_session`，模型明确回复未执行 start，数据库会话未因此改变。这排除了缺少 `conversationId` 是本次唯一原因。插件把 10 分钟临时入站映射放到同一 Node realm 的 `globalThis`，覆盖 hook 和 tool 的独立插件注册实例，并增加 binding 是否写入、映射条数的非敏感日志。新增跨注册实例回归，Node 插件测试 9/9 通过。尚待 Gateway 重启及下一条真实入站证明此修复有效；不能把本地回归算作生产会话成功。
