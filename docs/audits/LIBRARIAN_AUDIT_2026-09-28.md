@@ -272,3 +272,5 @@ F07 配置身份与 lineage 补充：新 ProcessingRun 将 `normalizer_version`�
 首本书剩余分组冲突只读诊断：`capture_92f01023e12541aeb64c135ec543a6ba` 的旧视觉 observation 当前有 5 个活跃空文本下划线 trace；v7 待对账 observation 检出 8 个定位下划线，其中较上方两段旧版未覆盖。两代 mark ID 与数量均不同，且旧 trace 已有上下文绑定修订；自动替换会破坏可追溯性，继续保持 `RECONCILIATION_REQUIRED`。下一步需要可展示候选与明确人工裁定的操作入口，不能靠调低自动对账门槛消除该冲突。
 
 2026-09-29 调试补充：新增只读 `librarian_review` 工具与 owner 范围桥。无参数时仅列每张照片最新 ProcessingRun 仍待对账的项目，避免旧 v4/v5/v6 pending 记录误报；带 capture ID 时对比当前 trace 与待入库 normalize 候选，不修改数据库。生产库结果仅余上述一张照片：5 条当前 trace 对应 v7 的 3 个划线组（8 个检测点），候选印刷页 39、39、40，候选文字有缺行，仍需人工对照原图和 EPUB。插件能力已重新登记、配置校验通过，Gateway 启动并建立飞书长连接；真实飞书调用与明确裁定仍未验收。
+
+同张照片的 OCR 原始行复核：第二组中间 y≈0.577 的正文行有明显划线（局部得分 0.1722），但本地 OCR 文本无法匹配 EPUB，故 normalize 候选遗漏该行。审核预览现在返回 `ocr_gaps`，定位这类有划线却无可靠印刷文字的行，防止候选以表面完整的句号掩盖中间缺失。该结果仍需原图确认，不能自动从 EPUB 补字。

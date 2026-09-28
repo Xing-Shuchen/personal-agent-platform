@@ -68,11 +68,35 @@ def pending_extractions(lib: Library, owner: str, capture_id: str | None = None)
                 "detection_ids": trace["source"]["detection_ids"]}
 
     old = _traces_for_capture(lib, owner, capture_id)
+    ocr_gaps = []
+    try:
+        raw = json.loads(lib._read_object(observation["raw_output_asset"]))
+        printed_boxes = [item["bbox"] for item in observation["printed_regions"]]
+        for line in raw.get("lines", []):
+            if (line.get("underline_score", 0) < .065 or
+                    line.get("epub_match", 0) >= .85):
+                continue
+            box = line.get("bbox")
+            if not isinstance(box, list) or len(box) != 4:
+                continue
+            if box[2] - box[0] < .28:
+                continue
+            middle = (box[1] + box[3]) / 2
+            if not any(page["bbox"][1] <= middle <= page["bbox"][3]
+                       for page in observation["pages"]):
+                continue
+            if any(abs(box[1] - printed[1]) < .012 for printed in printed_boxes):
+                continue
+            ocr_gaps.append({"bbox": box, "underline_score": line["underline_score"],
+                             "reason": "visible_ink_without_reliable_print_text"})
+    except (ValueError, TypeError, LibrarianError):
+        ocr_gaps.append({"reason": "raw_ocr_unavailable"})
     return {"capture_id": capture_id, "pending_run_id": run["id"],
             "extractor_version": run["extractor_version"],
             "current_count": len(old), "proposed_count": len(proposed),
             "current": [brief(item) for item in old],
             "proposed": [brief(item) for item in proposed],
+            "ocr_gaps": ocr_gaps[:20],
             "decision": "human_review_required"}
 
 
