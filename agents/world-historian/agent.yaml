@@ -78,11 +78,12 @@ spec:
         attach_to_session: false
         delivery: local
       - name: world-morning-brief
-        schedule: "0 8 * * *"
+        schedule: "0 7 * * *"
         skill: news-morning-brief
         args: {}
         attach_to_session: true
         delivery: user-home
+        deliver_at: "08:00"
       - name: world-daily-report
         schedule: "0 0 * * *"
         skill: news-daily-stats
@@ -91,7 +92,7 @@ spec:
         attach_to_session: true
         delivery: user-home
       - name: world-weekly-report
-        schedule: "0 20 * * 0"
+        schedule: "0 22 * * 0"
         skill: news-synthesize
         model: qwen/qwen3.8-max
         args:

@@ -7,7 +7,7 @@ spec:
   profile:
     name: intelligence
     source: profile
-  model: zai-intelligence-serendipity/glm-5.2
+  model: zai-intelligence-serendipity/glm-5.3
   model_fallback: true
   capabilities:
     - personal_context.read
@@ -20,7 +20,7 @@ spec:
     desired_jobs:
       - name: intelligence-pulse
         enabled: true
-        schedule: "10 1,7,13,19 * * *"
+        schedule: "10 1,7,13,19,22 * * *"
         skill: intelligence-brief
         runtime: cognition
         attach_to_session: true

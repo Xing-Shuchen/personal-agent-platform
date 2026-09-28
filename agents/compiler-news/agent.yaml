@@ -19,7 +19,7 @@ spec:
     class: conversational
     desired_jobs:
       - name: compiler-hpc-brief
-        schedule: "5 8 * * *"
+        schedule: "0 7 * * *"
         skill: compiler-hpc-brief
         model: qwen/qwen3.8-max
         args: {}

@@ -30,6 +30,7 @@ class ProactiveJob:
     delivery: str = "user-home"
     runtime: str | None = None
     timezone: str | None = None
+    deliver_at: str | None = None
     # A synthesis job may need a stronger model than the agent's routine work.
     # When absent, the agent-level model remains the policy default.
     model: str | None = None
@@ -69,6 +70,23 @@ def _require(spec_path: Path, obj: dict[str, Any], key: str, where: str) -> Any:
     if key not in obj or obj[key] is None:
         raise _err(spec_path, f"{where}: missing required key '{key}'")
     return obj[key]
+
+
+def parse_deliver_at(value: str) -> tuple[int, int, str | None]:
+    """Validate and split a deferred-delivery local clock value."""
+    match = re.fullmatch(r"(\d{2}):(\d{2})(?: tz (\S+))?", value)
+    if not match:
+        raise ValueError("must be 'HH:MM' or 'HH:MM tz Area/Location'")
+    hour, minute = int(match.group(1)), int(match.group(2))
+    if hour > 23 or minute > 59:
+        raise ValueError("hour must be 00-23 and minute must be 00-59")
+    zone = match.group(3)
+    if zone:
+        try:
+            ZoneInfo(zone)
+        except (ZoneInfoNotFoundError, ValueError) as exc:
+            raise ValueError(f"unknown timezone {zone!r}") from exc
+    return hour, minute, zone
 
 
 def load_spec(path: Path) -> AgentSpec:
@@ -179,6 +197,14 @@ def load_spec(path: Path) -> AgentSpec:
                         ZoneInfo(timezone)
                     except ZoneInfoNotFoundError as exc:
                         raise _err(path, f"{where}.timezone: unknown timezone {timezone!r}") from exc
+                deliver_at = raw.get("deliver_at")
+                if deliver_at is not None:
+                    if not isinstance(deliver_at, str):
+                        raise _err(path, f"{where}.deliver_at: must be 'HH:MM' or 'HH:MM tz Area/Location'")
+                    try:
+                        parse_deliver_at(deliver_at)
+                    except ValueError as exc:
+                        raise _err(path, f"{where}.deliver_at: {exc}") from exc
                 job_model = raw.get("model")
                 if job_model is not None and (
                     not isinstance(job_model, str) or not job_model.strip()
@@ -218,6 +244,7 @@ def load_spec(path: Path) -> AgentSpec:
                         delivery=delivery,
                         runtime=runtime,
                         timezone=timezone,
+                        deliver_at=deliver_at,
                         model=job_model,
                         runner=job_runner,
                         command=list(command) if command is not None else None,

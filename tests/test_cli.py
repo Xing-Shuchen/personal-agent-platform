@@ -97,9 +97,9 @@ def test_install_agents_list_only():
         capture_output=True, text=True, cwd=REPO)
     assert r.returncode == 0, r.stderr
     assert "agent: serendipity" in r.stdout
-    assert "15 2,8,14,20 * * *" in r.stdout
+    assert "15 2,8,14,20,23 * * *" in r.stdout
     assert "agent: intelligence" in r.stdout
-    assert "10 1,7,13,19 * * *" in r.stdout
+    assert "10 1,7,13,19,22 * * *" in r.stdout
     assert "platform job serendipity-pulse" in r.stdout
     assert "platform job intelligence-pulse" in r.stdout
     assert "platform job world-follow-high" in r.stdout

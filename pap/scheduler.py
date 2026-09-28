@@ -14,15 +14,17 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable, Iterator
+from zoneinfo import ZoneInfo
 
 from .run import RunResult, invoke, is_retryable, normalize_terminal_response
 from .schedule import matches_schedule
-from .spec import AgentSpec, ProactiveJob, load_platform
+from .spec import AgentSpec, ProactiveJob, load_platform, parse_deliver_at
 from .state import append_jsonl, load_json, save_json
 from paplog import observe as paplog
 from paplog.core import ulid
 
 DEFAULT_SCHEDULER_STATE = Path("var/state/scheduler-state.json")
+DEFAULT_DELIVERY_QUEUE = Path("var/state/delivery-queue.json")
 MAX_CATCHUP = timedelta(hours=24)
 RESERVATION_TTL = timedelta(hours=6)  # 必须大于最长单次运行时长（PAP_RUN_TIMEOUT_SECONDS=14400s，2026-09-21 由 3600s 上调），否则超长运行会被后续 tick 重复认领
 RETRY_DELAY = timedelta(minutes=5)
@@ -62,6 +64,27 @@ def _locked_state(path: Path) -> Iterator[dict[str, Any]]:
         state.setdefault("jobs", {})
         yield state
         save_json(path, state)
+        fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
+
+
+@contextmanager
+def _locked_delivery_queue(path: Path) -> Iterator[list[dict[str, Any]]]:
+    """Locked read-modify-write access to deferred user-message entries."""
+    lock_path = path.with_suffix(path.suffix + ".lock")
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(lock_path, "a+", encoding="utf-8") as lock:
+        fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+        try:
+            raw = load_json(path, {"version": 1, "entries": []})
+            entries = raw.get("entries", [])
+            if not isinstance(entries, list):
+                raise ValueError("entries must be a list")
+        except (OSError, ValueError) as exc:
+            paplog.event("pap.delivery.queue", kind="operation", phase="failed", severity="ERROR",
+                         outcome={"status": "error"}, error={"type": type(exc).__name__, "message": str(exc)})
+            entries = []
+        yield entries
+        save_json(path, {"version": 1, "entries": entries})
         fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
 
 
@@ -276,26 +299,14 @@ def _looks_like_leaked_output(text: str) -> bool:
     return "```python" in text
 
 
-def _deliver(
-    result: RunResult,
-    job: ProactiveJob,
+def _send_message(
+    response: str,
     *,
+    run_id: str,
     target: str | None,
     sender: Callable[..., subprocess.CompletedProcess[str]] | None = None,
 ) -> str:
-    """Deliver user-facing run output through the OpenClaw Gateway CLI."""
-    # Defense in depth for callers or older records that bypassed invoke().
-    response, _ = normalize_terminal_response(result.response)
-    if result.status != "success":
-        return "not-attempted"
-    if not response or _intentional_silence(response):
-        return "silent"
-    if _requests_silence(response):
-        return "silence-suppressed"
-    if _looks_like_leaked_output(response):
-        return "leaked-suppressed"
-    if job.delivery == "local":
-        return "local"
+    """Send one already-approved user-facing message through OpenClaw."""
     if not target:
         return "unconfigured"
     command_runner = sender or subprocess.run
@@ -304,7 +315,7 @@ def _deliver(
     openclaw_bin = os.environ.get("PAP_OPENCLAW_BIN", "openclaw")
     started = time.monotonic()
     message_action_id = ulid()
-    message_execution = {"run_id": result.run_id, "operation_id": result.run_id, "action_id": message_action_id}
+    message_execution = {"run_id": run_id, "operation_id": run_id, "action_id": message_action_id}
     message_metadata = {"channel": channel, "account": account, "target": target,
                         "content": {"sha256": hashlib.sha256(response.encode("utf-8")).hexdigest(), "bytes": len(response.encode("utf-8"))},
                         "action.effect": "send", "action.scope": "external"}
@@ -337,6 +348,78 @@ def _deliver(
     return "sent" if sent.returncode == 0 else "failed"
 
 
+def _deliver(
+    result: RunResult,
+    job: ProactiveJob,
+    *,
+    target: str | None,
+    sender: Callable[..., subprocess.CompletedProcess[str]] | None = None,
+) -> str:
+    """Deliver user-facing run output through the OpenClaw Gateway CLI."""
+    # Defense in depth for callers or older records that bypassed invoke().
+    response, _ = normalize_terminal_response(result.response)
+    if result.status != "success":
+        return "not-attempted"
+    if not response or _intentional_silence(response):
+        return "silent"
+    if _requests_silence(response):
+        return "silence-suppressed"
+    if _looks_like_leaked_output(response):
+        return "leaked-suppressed"
+    if job.delivery == "local":
+        return "local"
+    return _send_message(response, run_id=result.run_id, target=target, sender=sender)
+
+
+def _delivery_deadline(job: ProactiveJob, completed_at: datetime) -> datetime:
+    hour, minute, explicit_zone = parse_deliver_at(job.deliver_at or "")
+    zone = ZoneInfo(explicit_zone) if explicit_zone else (
+        ZoneInfo(job.timezone) if job.timezone else _now().tzinfo
+    )
+    local_completed = completed_at.astimezone(zone)
+    return local_completed.replace(hour=hour, minute=minute, second=0, microsecond=0)
+
+
+def _queue_deferred_delivery(
+    path: Path, *, run_id: str, job_key: str, response: str, deliver_at: datetime,
+) -> None:
+    with _locked_delivery_queue(path) as entries:
+        entries.append({"run_id": run_id, "job_key": job_key, "response": response,
+                        "deliver_at": deliver_at.isoformat(),
+                        "created_at": _now().isoformat(timespec="seconds")})
+
+
+def _drain_deferred_deliveries(
+    path: Path, *, now: datetime, run_log: Path, target: str | None,
+    sender: Callable[..., subprocess.CompletedProcess[str]] | None,
+) -> None:
+    if not path.exists():
+        return
+    with _locked_delivery_queue(path) as entries:
+        remaining = []
+        for entry in entries:
+            if not isinstance(entry, dict):
+                paplog.event("pap.delivery.queue", kind="operation", phase="failed", severity="ERROR",
+                             outcome={"status": "error"}, error={"type": "ValueError", "message": "queue entry must be a mapping"})
+                continue
+            run_id, job_key = entry.get("run_id"), entry.get("job_key")
+            response, deliver_at = entry.get("response"), _parse_time(entry.get("deliver_at"))
+            if (not isinstance(run_id, str) or not isinstance(job_key, str)
+                    or not isinstance(response, str) or deliver_at is None):
+                paplog.event("pap.delivery.queue", kind="operation", phase="failed", severity="ERROR",
+                             outcome={"status": "error"}, error={"type": "ValueError", "message": "malformed queue entry"})
+                continue
+            if deliver_at > now:
+                remaining.append(entry)
+                continue
+            sent = _send_message(response, run_id=run_id, target=target, sender=sender)
+            delivery = "deferred-sent" if sent == "sent" else "deferred-failed"
+            append_jsonl(run_log, {"event": "run.delivery", "run_id": run_id,
+                                   "delivery": delivery,
+                                   "delivery_target_configured": bool(target)})
+        entries[:] = remaining
+
+
 def tick(
     root: Path,
     *,
@@ -351,6 +434,7 @@ def tick(
     """Run one scheduler tick. A claimed slot is never executed twice."""
     root = Path(root).resolve()
     state_path = Path(state_path or root / DEFAULT_SCHEDULER_STATE)
+    delivery_queue_path = root / DEFAULT_DELIVERY_QUEUE
     run_log = Path(run_log or root / "var/state/runs.jsonl")
     target = delivery_target or os.environ.get("PAP_OPENCLAW_DELIVERY_TARGET")
     jobs = due_jobs(root, now=now, state_path=state_path, reserve=not dry_run)
@@ -361,6 +445,9 @@ def tick(
             for due in jobs
         ]
 
+    tick_now = now or _now()
+    _drain_deferred_deliveries(delivery_queue_path, now=tick_now, run_log=run_log,
+                              target=target, sender=sender)
     results: list[TickResult] = []
     for due in jobs:
         dispatched_at = _now()
@@ -388,7 +475,18 @@ def tick(
             runner_backend=due.job.runner,
             command=due.job.command,
         )
-        delivery = _deliver(result, due.job, target=target, sender=sender)
+        response, _ = normalize_terminal_response(result.response)
+        completed_at = _parse_time(result.completed_at) or _now()
+        deadline = _delivery_deadline(due.job, completed_at) if due.job.deliver_at else None
+        if (deadline is not None and completed_at < deadline and result.status == "success"
+                and response and not _intentional_silence(response)
+                and not _requests_silence(response) and not _looks_like_leaked_output(response)
+                and due.job.delivery != "local"):
+            _queue_deferred_delivery(delivery_queue_path, run_id=result.run_id, job_key=due.key,
+                                    response=response, deliver_at=deadline)
+            delivery = "deferred"
+        else:
+            delivery = _deliver(result, due.job, target=target, sender=sender)
         append_jsonl(run_log, {
             "event": "run.delivery",
             "run_id": result.run_id,

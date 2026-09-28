@@ -81,6 +81,27 @@ def test_job_model_override(tmp_path: Path):
     assert spec.jobs[0].model == "deepseek/deepseek-v4-pro"
 
 
+@pytest.mark.parametrize("deliver_at", ["08:00", "08:00 tz Asia/Shanghai"])
+def test_job_deliver_at_is_loaded(tmp_path: Path, deliver_at: str):
+    body = VALID.replace(
+        "            skill: test-skill",
+        f"            skill: test-skill\n            deliver_at: {deliver_at}",
+    )
+    path = write_agent(tmp_path, "test-agent", body)
+    assert load_spec(path).jobs[0].deliver_at == deliver_at
+
+
+@pytest.mark.parametrize("deliver_at", ["8:00", "24:00", "08:60", "08:00 UTC", "08:00 tz Not/AZone"])
+def test_job_deliver_at_rejects_malformed_values(tmp_path: Path, deliver_at: str):
+    body = VALID.replace(
+        "            skill: test-skill",
+        f"            skill: test-skill\n            deliver_at: {deliver_at}",
+    )
+    path = write_agent(tmp_path, "test-agent", body)
+    with pytest.raises(SpecError, match="deliver_at"):
+        load_spec(path)
+
+
 def test_job_codex_runner(tmp_path: Path):
     body = VALID.replace(
         "            skill: test-skill",

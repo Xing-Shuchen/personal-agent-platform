@@ -12,7 +12,10 @@ from paplog import observe
 CST = timezone(timedelta(hours=8))
 
 
-def make_platform(root: Path, schedule: str = "* * * * *") -> None:
+def make_platform(
+    root: Path, schedule: str = "* * * * *", *, delivery: str = "local",
+    deliver_at: str | None = None, timezone_name: str | None = None,
+) -> None:
     skill = root / "agents/sample/profile/skills/sample-skill"
     skill.mkdir(parents=True)
     (skill / "SKILL.md").write_text(
@@ -35,7 +38,10 @@ spec:
       - name: sample-job
         schedule: "{schedule}"
         skill: sample-skill
-        delivery: local
+        delivery: {delivery}
+""" + (f"        deliver_at: {deliver_at}\n" if deliver_at else "") + (
+            f"        timezone: {timezone_name}\n" if timezone_name else ""
+        ) + """
 """,
         encoding="utf-8",
     )
@@ -89,6 +95,66 @@ def test_dry_run_does_not_create_scheduler_state(tmp_path):
     assert len(result) == 1
     assert result[0].delivery == "dry-run"
     assert not (tmp_path / "var/state/scheduler-state.json").exists()
+
+
+def test_deferred_delivery_queues_then_sends_once_at_the_clock(tmp_path, monkeypatch):
+    make_platform(
+        tmp_path, "0 7 * * *", delivery="user-home", deliver_at="08:00",
+        timezone_name="Asia/Shanghai",
+    )
+    monkeypatch.setattr("pap.scheduler.JITTER_MAX_MINUTES", 0)
+    before = datetime(2026, 8, 31, 7, 0, tzinfo=CST)
+    monkeypatch.setattr("pap.run._now", lambda: before)
+    sent = []
+
+    def runner(command, **kwargs):
+        return subprocess.CompletedProcess(command, 0, stdout="morning brief", stderr="")
+
+    def sender(command, **kwargs):
+        sent.append(command)
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    first = tick(tmp_path, now=before, command_runner=runner,
+                 delivery_target="ou_test", sender=sender)
+    queue_path = tmp_path / "var/state/delivery-queue.json"
+    assert first[0].delivery == "deferred"
+    assert sent == []
+    assert json.loads(queue_path.read_text(encoding="utf-8"))["entries"][0]["response"] == "morning brief"
+
+    second = tick(tmp_path, now=before.replace(hour=8), command_runner=runner,
+                  delivery_target="ou_test", sender=sender)
+    assert second == []
+    assert len(sent) == 1
+    assert json.loads(queue_path.read_text(encoding="utf-8"))["entries"] == []
+
+    third = tick(tmp_path, now=before.replace(hour=8, minute=1), command_runner=runner,
+                 delivery_target="ou_test", sender=sender)
+    assert third == []
+    assert len(sent) == 1
+
+
+def test_delivery_at_or_after_clock_delivers_immediately(tmp_path, monkeypatch):
+    make_platform(
+        tmp_path, "0 8 * * *", delivery="user-home", deliver_at="08:00",
+        timezone_name="Asia/Shanghai",
+    )
+    monkeypatch.setattr("pap.scheduler.JITTER_MAX_MINUTES", 0)
+    at_clock = datetime(2026, 8, 31, 8, 0, tzinfo=CST)
+    monkeypatch.setattr("pap.run._now", lambda: at_clock)
+    sent = []
+
+    def sender(command, **kwargs):
+        sent.append(command)
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    result = tick(
+        tmp_path, now=at_clock,
+        command_runner=lambda command, **kwargs: subprocess.CompletedProcess(command, 0, "on time", ""),
+        delivery_target="ou_test", sender=sender,
+    )
+    assert result[0].delivery == "sent"
+    assert len(sent) == 1
+    assert not (tmp_path / "var/state/delivery-queue.json").exists()
 
 
 def test_slot_jitter_is_stable_and_stays_within_five_minutes():

@@ -18,7 +18,7 @@ spec:
     desired_jobs:
       - name: serendipity-pulse
         enabled: true
-        schedule: "15 2,8,14,20 * * *"
+        schedule: "15 2,8,14,20,23 * * *"
         skill: proactive-serendipity
         runtime: cognition
         attach_to_session: true
