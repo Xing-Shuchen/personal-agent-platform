@@ -958,6 +958,15 @@ def search_response(lib: Library, request: dict[str, Any], *, trusted_owner_id: 
         params.extend((f"%{escaped}%", f"%{escaped}%"))
     if not filters["include_unresolved"]:
         terms.append("context_state='resolved'")
+    if filters.get("page_number") is not None:
+        terms.append("EXISTS (SELECT 1 FROM records page_record WHERE "
+                     "page_record.owner_id=trace_index.owner_id AND "
+                     "page_record.model='ReadingTrace' AND "
+                     "page_record.id=trace_index.trace_id AND "
+                     "page_record.revision=trace_index.revision AND "
+                     "page_record.current=1 AND "
+                     "json_extract(page_record.body,'$.location.page.number')=?)")
+        params.append(filters["page_number"])
     for column in ("work_id", "edition_id", "book_instance_id", "session_id", "medium"):
         if filters[column] is not None:
             terms.append(f"{column}=?")

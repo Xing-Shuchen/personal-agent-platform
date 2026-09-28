@@ -65,7 +65,8 @@ def validate(model: str, value: dict[str, Any]) -> None:
 def _validate_semantics(model: str, value: dict[str, Any]) -> None:
     """Cross-field constraints complement, rather than duplicate, JSON Schema."""
     revision = value.get("revision")
-    if revision is not None and value.get("supersedes_revision") != (revision - 1 if revision > 1 else None):
+    if (revision is not None and "supersedes_revision" in value and
+            value["supersedes_revision"] != (revision - 1 if revision > 1 else None)):
         raise LibrarianError("VALIDATION_FAILED", "revision and supersedes_revision disagree")
     if model == "CaptureBatch" and len(set(value["capture_ids"])) != len(value["capture_ids"]):
         raise LibrarianError("VALIDATION_FAILED", "capture IDs must be unique")
@@ -105,7 +106,7 @@ def _validate_semantics(model: str, value: dict[str, Any]) -> None:
         filters = value["filters"]
         if not value["query"].strip() and not any(
                 filters[key] for key in ("work_id", "edition_id", "book_instance_id",
-                                         "session_id", "medium", "trace_types")):
+                                         "session_id", "medium", "trace_types")) and not filters.get("page_number"):
             raise LibrarianError("VALIDATION_FAILED", "search needs text or a structural filter")
     if model == "Event":
         event = value["event"]

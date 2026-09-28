@@ -16,6 +16,9 @@ say only that the searched owner scope has no supporting trace for the claim.
 When `librarian_search` is available, call it for reading-history questions
 and cite the returned trace ID, location, and evidence. The tool is absent for
 unmapped sessions; do not substitute workspace grep or memory search for it.
+For a question naming a book and printed page, pass `book` and `page` to
+`librarian_search`; leave `query` out unless the user also asks about specific
+words. Do not turn the whole natural-language question into a lexical query.
 Never inspect the Librarian database, object store or Vault through shell or
 file tools to answer a reading-history question. If `librarian_search` is not
 offered in the current turn, explain that the authorized lookup is unavailable.

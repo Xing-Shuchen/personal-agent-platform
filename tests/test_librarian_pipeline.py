@@ -77,6 +77,7 @@ def test_reextract_keeps_promoted_knowledge_source_active(tmp_path: Path) -> Non
 
 def test_late_edition_fingerprint_binds_unknown_capture_without_reextracting(tmp_path: Path) -> None:
     from zipfile import ZipFile
+    from agents.librarian.runtime.gateway_search import search_inbound
     from agents.librarian.runtime.worker import _catalog
 
     epub = tmp_path / "9787208171411.epub"
@@ -104,6 +105,10 @@ def test_late_edition_fingerprint_binds_unknown_capture_without_reextracting(tmp
                    and trace["work_id"] is not None for trace in current)
         assert lib.db.execute("SELECT COUNT(*) FROM records WHERE model='PageObservation'").fetchone()[0] == before
         assert bind_fingerprint_context(lib, "owner_a", capture_id) is None
+        page_hits = search_inbound(lib, {"owner_id": "owner_a", "book": "《Test Work》",
+                                         "page": 171})["hits"]
+        assert {hit["trace_id"] for hit in page_hits} == {trace["id"] for trace in traces}
+        assert all(hit["title"] == "Test Work" for hit in page_hits)
 
         second = lib.ingest("owner_a", transport="feishu", account_id="librarian",
                             conversation_id="chat", source_event_id="message-2",
@@ -246,6 +251,27 @@ def test_index_failure_recovers_after_reopen_without_reextracting(tmp_path: Path
         assert search_response(lib, request, trusted_owner_id="owner_a")["index_state"] == "ready"
         assert [row[0] for row in lib.db.execute(
             "SELECT event_id FROM outbox WHERE owner_id='owner_a' ORDER BY rowid")] == event_ids
+
+
+def test_search_response_accepts_corrected_trace_revision(tmp_path: Path) -> None:
+    with Library(tmp_path) as lib:
+        receipt = lib.ingest("owner_a", transport="gateway", account_id="account",
+                             conversation_id="chat", source_event_id="message",
+                             attachments=[{"source_item_id": "image", "mime_type": "image/png",
+                                           "data": _photo()}], idempotency_key="command")
+        trace = process_capture(lib, "owner_a", receipt["capture_ids"][0],
+                                lambda _: _output())[0]
+        corrected = correct_trace(lib, "owner_a", trace["id"], 1,
+                                  printed_text="Corrected Parsons", reason="user checked")
+        request = {"owner_id": "owner_a", "query": "Corrected Parsons",
+                   "filters": {"work_id": None, "edition_id": None,
+                               "book_instance_id": None, "session_id": None,
+                               "medium": None, "trace_types": [],
+                               "include_unresolved": True},
+                   "limit": 10, "cursor": None}
+        response = search_response(lib, request, trusted_owner_id="owner_a")
+        assert [(hit["trace_id"], hit["revision"]) for hit in response["hits"]] == [
+            (trace["id"], corrected["revision"])]
 
 
 def test_reconciliation_index_failure_never_serves_superseded_trace(tmp_path: Path,

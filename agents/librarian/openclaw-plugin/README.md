@@ -14,7 +14,8 @@ the background worker; a Gateway service periodically recovers unfinished
 batches. The ordinary chat turn can continue.
 
 The same mapping gates `librarian_search`, a read-only agent tool that queries
-the current trace index through `runtime/gateway_search.py`. The tool is
+the current trace index through `runtime/gateway_search.py` by text, book title
+and/or printed page number. The tool is
 created only for the dedicated `librarian` agent when OpenClaw supplies a
 matching channel, account and sender. Its arguments contain a query and limit,
 never an owner ID. With `ownerMappings: []`, the tool is absent. A normal CLI

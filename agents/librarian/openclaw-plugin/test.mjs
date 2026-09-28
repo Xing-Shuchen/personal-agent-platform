@@ -61,7 +61,11 @@ test("search tool requires exact trusted sender, account, channel and agent", as
   assert.equal(tool.name, "librarian_search");
   const result = await tool.execute("tool-call", { query: "Parsons", limit: 5 });
   assert.deepEqual(result.details.hits, []);
-  assert.deepEqual(calls, [{ owner_id: "owner_fixture", query: "Parsons", limit: 5 }]);
+  assert.deepEqual(calls, [{ owner_id: "owner_fixture", query: "Parsons",
+    book: undefined, page: undefined, limit: 5 }]);
+  await tool.execute("page-call", { book: "社会理论二十讲", page: 39 });
+  assert.deepEqual(calls[1], { owner_id: "owner_fixture", query: undefined,
+    book: "社会理论二十讲", page: 39, limit: 10 });
   for (const changed of [
     { requesterSenderId: "stranger" }, { agentAccountId: "other" },
     { messageChannel: "discord" }, { agentId: "main" },

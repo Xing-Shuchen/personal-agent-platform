@@ -107,14 +107,18 @@ export function librarianSearchTool(config, ctx, bridge = runSearchBridge) {
   return {
     name: "librarian_search",
     label: "Librarian search",
-    description: "Search this authenticated sender's stored Librarian reading traces. Return provenance-backed hits or no supporting hits in this owner scope.",
+    description: "Search this authenticated sender's reading traces by quoted text, book title, and/or printed page number. For questions like 'what did I underline on page 39 of this book', pass book and page without inventing a text query. Return provenance-backed hits or no supporting hits in this owner scope.",
     parameters: { type: "object", properties: {
       query: { type: "string", minLength: 1, maxLength: 256 },
+      book: { type: "string", minLength: 1, maxLength: 200 },
+      page: { type: "integer", minimum: 1, maximum: 9999 },
       limit: { type: "integer", minimum: 1, maximum: 20 },
-    }, required: ["query"], additionalProperties: false },
+    }, anyOf: [{ required: ["query"] }, { required: ["book"] },
+      { required: ["page"] }], additionalProperties: false },
     async execute(_id, params) {
       const result = await bridge(config, { owner_id: ownerId,
-        query: params.query, limit: params.limit ?? 10 });
+        query: params.query, book: params.book, page: params.page,
+        limit: params.limit ?? 10 });
       return { content: [{ type: "text", text: JSON.stringify(result) }],
         details: result };
     },

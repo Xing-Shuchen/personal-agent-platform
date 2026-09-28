@@ -262,3 +262,7 @@ v7 正式 worker 已重处理两组照片：旧 5 图组仍为 10 条 trace、3 
 F06 恢复补充：批次重试状态现包含配置指纹（视觉模型及 `source-books` 内 EPUB 内容摘要）。失败批次耗尽三次自动尝试后保持停止；模型变更或 EPUB 增补会自动重置该批重试计数。故障注入测试覆盖耗尽、相同配置不重跑及两类配置变更恢复，避免要求生产环境手工删除状态文件。
 
 F01/F04 迟到书籍绑定补充：只读检查发现 86 条纸书活跃 trace 中有 12 条 Work 未绑定，分布在 3 张照片；其中 2 张已有 v7 成功提取和 `edition_fingerprint` capture_context，早期全 unknown 的 CaptureResolution 仍挡住书籍身份。新增 `bind_fingerprint_context` 仅在既有 resolution 未含任何确认值、trace 未经用户修订、没有活跃知识候选依赖，且指纹 session 仍开放时，复用原 observation 与 trace 作带来源标记的修订；不调用 OCR 或模型。合成测试证明新版本绑定、原观察数量不变、重复调用幂等及用户修订保护。生产三张照片的实际回填结果需继续核对。
+
+迟到绑定正式 worker 运行后，86 条活跃纸书 trace 的 Work 未绑定数从 12 降为 0，索引仍为 208/208。随后真实数据库搜索暴露一个 P1：`SearchHit` 的 revision >1 被错误套用存储对象的 `supersedes_revision` 语义校验，导致查询直接报错。现将该语义约束限于实际带 `supersedes_revision` 的记录，增加修订 trace 搜索回归；生产库「帕森斯」检索返回 20 条、`index_state=ready`，包含 revision 2。真实飞书 agent 入站仍待验。
+
+AC-24 按书页检索补充：`librarian_search` 现接受 `book` 和 `page`，允许不带关键词查某本书的印刷页；按 owner 解析唯一 Work，并在索引查询中按 trace 当前 location 的页码过滤。生产库只读查询《社会理论二十讲》39 页命中 1 条、23 页命中 2 条，索引均 ready；本地测试涵盖书名、页码、未知书、无权 owner。模型是否在真实飞书提问中正确调用该工具仍需入站验收。

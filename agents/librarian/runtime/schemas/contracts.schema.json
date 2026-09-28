@@ -3897,6 +3897,18 @@
         },
         "include_unresolved": {
           "type": "boolean"
+        },
+        "page_number": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9999
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [

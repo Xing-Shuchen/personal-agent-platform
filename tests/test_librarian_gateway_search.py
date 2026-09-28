@@ -29,10 +29,16 @@ def test_gateway_search_reads_only_mapped_owner_scope(tmp_path: Path):
         result = search_inbound(lib, {"owner_id": "owner_a", "query": "Parsons"})
         assert [hit["trace_id"] for hit in result["hits"]] == [trace["id"]]
         assert result["hits"][0]["content"]["printed_text"]["text"] == "Weber and Parsons"
+        assert [hit["trace_id"] for hit in search_inbound(
+            lib, {"owner_id": "owner_a", "book": "Search Bridge Book"})["hits"]] == [trace["id"]]
+        assert search_inbound(lib, {"owner_id": "owner_a", "book": "Unknown Book"})["hits"] == []
+        assert search_inbound(lib, {"owner_id": "owner_a", "book": "Search Bridge Book",
+                                     "page": 171})["hits"] == []
         assert search_inbound(lib, {"owner_id": "owner_b", "query": "Parsons"})["hits"] == []
         for message in ({"owner_id": "owner_a", "query": ""},
                         {"owner_id": "owner_a", "query": "Parsons", "limit": 100},
-                        {"owner_id": "owner_a", "query": "x" * 257}):
+                        {"owner_id": "owner_a", "query": "x" * 257},
+                        {"owner_id": "owner_a", "book": "Search Bridge Book", "page": 0}):
             with pytest.raises(LibrarianError) as error:
                 search_inbound(lib, message)
             assert error.value.code == "VALIDATION_FAILED"
