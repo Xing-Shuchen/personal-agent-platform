@@ -27,9 +27,12 @@ owner-scoped physical trace, sends a temporary cropped original to the
 current bound conversation, then removes the temporary file; originals remain
 in the private object store and never enter the Vault. `librarian_review` lists
 pending extraction conflicts and compares current traces with proposed groups
-without changing stored records. Configure the dedicated
-OpenClaw agent with `tools.allow` set to
-`["librarian_search", "librarian_session", "librarian_evidence", "librarian_review", "session_status"]`. Image intake and background processing run through the
+without changing stored records. Configure the dedicated OpenClaw agent with
+`tools.profile: "minimal"` and `tools.alsoAllow` containing the four
+`librarian_*` tool names. The minimal profile supplies `session_status`.
+Do not combine `allow` and `alsoAllow` in the same agent scope. The global
+`coding` profile filters out plugin tools even when they appear in an agent
+`allow` list. Image intake and background processing run through the
 plugin service, so the chat agent needs no shell or filesystem tool. This
 prevents a model from bypassing owner-scoped search through local SQLite.
 
