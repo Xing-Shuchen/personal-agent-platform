@@ -4,8 +4,9 @@ This directory implements an early, local slice of
 [`SPEC_v0.8_Librarian.md`](../../../docs/SPEC_v0.8_Librarian.md).
 `schemas/contracts.schema.json` is the sole model definition; the 18
 `<Model>.schema.json` files are entry points into it. The current schema has
-59 definitions. This does **not** yet satisfy the draft's 77-definition,
-42-positive/43-negative-fixture contract package claim.
+59 definitions. The offline package now has 42 positive and 43 negative
+synthetic fixtures, all 18 model entries, and a validation report. It still
+does **not** satisfy the draft's 77-definition claim.
 
 `store.py` provides owner-scoped Work/Edition/BookInstance registration,
 versioned sessions, scope-limited active session and 90-minute affinity,
@@ -47,12 +48,18 @@ Run the focused tests from the repo root:
 PYTHONPATH=. python3 -m pytest tests/test_librarian_store.py tests/test_librarian_pipeline.py tests/test_librarian_digital.py tests/test_librarian_commands.py tests/test_librarian_events.py -q
 ```
 
+Run the offline contract verifier from this directory with
+`python3 tests/validate_contracts.py`. It writes
+`tests/validation-report.json` and checks the 42/43 examples plus domain
+reference links without fetching remote schemas. These examples are synthetic
+contract cases, not annotated photos or live platform payloads.
+
 Runtime files belong under `var/librarian/` or another private state
 directory. There is no scheduled job or public gateway route yet. The caller
 must supply a trusted `owner_id`; passing arbitrary owner strings to these
 Python methods is not an authentication mechanism.
 
-Remaining work includes full contract fixtures and semantic checks; stronger
+Remaining work includes the missing schema definitions and broader semantic checks; stronger
 batch book/page conflict resolution; actual image extraction with annotated-photo tests;
 Gateway upload identity and authorization; page/edition conflict handling;
 review exception workflows; complete search

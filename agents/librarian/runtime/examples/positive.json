@@ -1,0 +1,1152 @@
+[
+  {
+    "id": "model-Work",
+    "model": "Work",
+    "value": {
+      "object_type": "Work",
+      "schema_version": "0.1.0",
+      "id": "work_fixture",
+      "owner_id": "owner_fixture",
+      "created_at": "2026-09-28T00:00:00+00:00",
+      "title": "Synthetic Work",
+      "original_title": null,
+      "authors": [],
+      "identifiers": [],
+      "revision": 1,
+      "supersedes_revision": null
+    }
+  },
+  {
+    "id": "model-Edition",
+    "model": "Edition",
+    "value": {
+      "object_type": "Edition",
+      "schema_version": "0.1.0",
+      "id": "edition_fixture",
+      "owner_id": "owner_fixture",
+      "created_at": "2026-09-28T00:00:00+00:00",
+      "work_id": "work_fixture",
+      "edition_label": null,
+      "publisher": null,
+      "publication_year": null,
+      "isbn": {
+        "isbn13": null,
+        "isbn10": null
+      },
+      "language": null,
+      "page_count": null,
+      "volume_label": null,
+      "revision": 1,
+      "supersedes_revision": null
+    }
+  },
+  {
+    "id": "model-BookInstance",
+    "model": "BookInstance",
+    "value": {
+      "object_type": "BookInstance",
+      "schema_version": "0.1.0",
+      "id": "bookinst_fixture",
+      "owner_id": "owner_fixture",
+      "created_at": "2026-09-28T00:00:00+00:00",
+      "edition_id": "edition_fixture",
+      "medium": "physical",
+      "acquired_at": {
+        "value": null,
+        "confidence": null,
+        "basis": "exif"
+      },
+      "ownership_status": "owned",
+      "physical": {
+        "qr_id": null,
+        "shelf": null
+      },
+      "reading_status": {
+        "state": "unknown",
+        "current_page": null,
+        "progress_evidence_ref": null
+      },
+      "revision": 1,
+      "supersedes_revision": null
+    }
+  },
+  {
+    "id": "model-ReadingSession",
+    "model": "ReadingSession",
+    "value": {
+      "object_type": "ReadingSession",
+      "schema_version": "0.1.0",
+      "id": "session_fixture",
+      "owner_id": "owner_fixture",
+      "created_at": "2026-09-28T00:00:00+00:00",
+      "work_id": "work_fixture",
+      "edition_id": "edition_fixture",
+      "book_instance_id": "bookinst_fixture",
+      "medium": "physical",
+      "status": "active",
+      "started_at": {
+        "value": null,
+        "confidence": null,
+        "basis": "exif"
+      },
+      "ended_at": {
+        "value": null,
+        "confidence": null,
+        "basis": "exif"
+      },
+      "progress": null,
+      "session_note": null,
+      "revision": 1,
+      "supersedes_revision": null
+    }
+  },
+  {
+    "id": "model-CaptureBatch",
+    "model": "CaptureBatch",
+    "value": {
+      "object_type": "CaptureBatch",
+      "schema_version": "0.1.0",
+      "id": "batch_fixture",
+      "owner_id": "owner_fixture",
+      "created_at": "2026-09-28T00:00:00+00:00",
+      "origin": {
+        "transport": "fixture",
+        "account_id": "account_fixture",
+        "conversation_id": "conversation_fixture",
+        "source_event_id": "message_fixture"
+      },
+      "received_at": "2026-09-28T00:00:00+00:00",
+      "capture_ids": [
+        "capture_fixture"
+      ],
+      "status": "received",
+      "revision": 1,
+      "supersedes_revision": null
+    }
+  },
+  {
+    "id": "model-PageCapture",
+    "model": "PageCapture",
+    "value": {
+      "object_type": "PageCapture",
+      "schema_version": "0.1.0",
+      "id": "capture_fixture",
+      "owner_id": "owner_fixture",
+      "created_at": "2026-09-28T00:00:00+00:00",
+      "batch_id": "batch_fixture",
+      "received_at": "2026-09-28T00:00:00+00:00",
+      "captured_at": {
+        "value": null,
+        "confidence": null,
+        "basis": "unknown"
+      },
+      "asset": {
+        "object_key": "synthetic/original.png",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "mime_type": "image/png",
+        "byte_size": 1
+      },
+      "origin": {
+        "transport": "fixture",
+        "account_id": "account_fixture",
+        "conversation_id": "conversation_fixture",
+        "source_event_id": "message_fixture",
+        "source_item_id": "image_fixture"
+      },
+      "submitted_context": {
+        "session_id": null,
+        "work_id": null,
+        "edition_id": null,
+        "book_instance_id": null
+      }
+    }
+  },
+  {
+    "id": "model-CaptureResolution",
+    "model": "CaptureResolution",
+    "value": {
+      "object_type": "CaptureResolution",
+      "schema_version": "0.1.0",
+      "id": "resolution_fixture",
+      "owner_id": "owner_fixture",
+      "created_at": "2026-09-28T00:00:00+00:00",
+      "capture_id": "capture_fixture",
+      "session": {
+        "value": null,
+        "confidence": null,
+        "basis": "unknown",
+        "status": "unresolved"
+      },
+      "work": {
+        "value": null,
+        "confidence": null,
+        "basis": "unknown",
+        "status": "unresolved"
+      },
+      "edition": {
+        "value": null,
+        "confidence": null,
+        "basis": "unknown",
+        "status": "unresolved"
+      },
+      "book_instance": {
+        "value": null,
+        "confidence": null,
+        "basis": "unknown",
+        "status": "unresolved"
+      },
+      "pages": [],
+      "revision": 1,
+      "supersedes_revision": null
+    }
+  },
+  {
+    "id": "model-ProcessingRun",
+    "model": "ProcessingRun",
+    "value": {
+      "object_type": "ProcessingRun",
+      "schema_version": "0.1.0",
+      "id": "run_fixture",
+      "owner_id": "owner_fixture",
+      "created_at": "2026-09-28T00:00:00+00:00",
+      "capture_id": "capture_fixture",
+      "checkpoint": "EXTRACTED",
+      "outcome": "partial",
+      "issues": [
+        "NEEDS_BOOK_RESOLUTION"
+      ],
+      "extractor_version": "fixture-v1",
+      "normalizer_version": null,
+      "revision": 1,
+      "supersedes_revision": null
+    }
+  },
+  {
+    "id": "model-PageObservation",
+    "model": "PageObservation",
+    "value": {
+      "object_type": "PageObservation",
+      "schema_version": "0.1.0",
+      "id": "observation_fixture",
+      "owner_id": "owner_fixture",
+      "created_at": "2026-09-28T00:00:00+00:00",
+      "capture_id": "capture_fixture",
+      "processing_run_id": "run_fixture",
+      "extractor": "fixture-v1",
+      "raw_output_asset": {
+        "object_key": "synthetic/observation.json",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "mime_type": "application/json",
+        "byte_size": 1
+      },
+      "image_space": {
+        "width": 1,
+        "height": 1,
+        "basis": "exif_oriented_original"
+      },
+      "pages": [],
+      "printed_regions": [],
+      "marks": [],
+      "annotations": [],
+      "symbols": [],
+      "links": [],
+      "warnings": []
+    }
+  },
+  {
+    "id": "model-ReadingTrace",
+    "model": "ReadingTrace",
+    "value": {
+      "attribution": {
+        "basis": "unknown",
+        "mark_author": "unknown"
+      },
+      "book_instance_id": null,
+      "confidence": {
+        "book_resolution": null,
+        "page_number": null
+      },
+      "content": {
+        "annotation": {
+          "basis": "unknown",
+          "confidence": null,
+          "text": null
+        },
+        "printed_text": {
+          "basis": "source_payload",
+          "confidence": null,
+          "text": "Weber and Parsons"
+        },
+        "symbols": []
+      },
+      "context_state": "resolved",
+      "created_at": "2026-09-28T09:01:24+00:00",
+      "edition_id": null,
+      "id": "rt_a37c7f6641ac3115d478837d9821f9c6",
+      "intent_signals": [],
+      "location": {
+        "chapter": "Chapter One",
+        "epub_cfi": null,
+        "kind": "digital",
+        "paragraph": null,
+        "source_locator": "book-42-1-10-20"
+      },
+      "marked_at": {
+        "basis": "unknown",
+        "confidence": null,
+        "value": null
+      },
+      "medium": "weread",
+      "object_type": "ReadingTrace",
+      "owner_id": "owner_fixture",
+      "provenance": [
+        {
+          "byte_size": 154,
+          "mime_type": "text/markdown",
+          "object_key": "objects/f1/f1bc8209d2e15439f71df0a7102d011c2c3087aa51098572582fe409eadf5b35",
+          "sha256": "f1bc8209d2e15439f71df0a7102d011c2c3087aa51098572582fe409eadf5b35"
+        }
+      ],
+      "review": {
+        "reason": null,
+        "required": false,
+        "state": "none"
+      },
+      "revision": 1,
+      "schema_version": "0.1.0",
+      "session_id": null,
+      "source": {
+        "kind": "weread",
+        "raw_payload": {
+          "byte_size": 154,
+          "mime_type": "text/markdown",
+          "object_key": "objects/f1/f1bc8209d2e15439f71df0a7102d011c2c3087aa51098572582fe409eadf5b35",
+          "sha256": "f1bc8209d2e15439f71df0a7102d011c2c3087aa51098572582fe409eadf5b35"
+        },
+        "source_record_id": "book-42-1-10-20"
+      },
+      "status": "active",
+      "supersedes_revision": null,
+      "trace_types": [
+        "highlight"
+      ],
+      "vocabulary_version": null,
+      "work_id": "work_2ae10661976b7bc9212a7a9c8e879aa6"
+    }
+  },
+  {
+    "id": "model-KnowledgeCandidate",
+    "model": "KnowledgeCandidate",
+    "value": {
+      "object_type": "KnowledgeCandidate",
+      "schema_version": "0.1.0",
+      "id": "candidate_fixture",
+      "owner_id": "owner_fixture",
+      "created_at": "2026-09-28T00:00:00+00:00",
+      "revision": 1,
+      "supersedes_revision": null,
+      "source_trace_refs": [
+        {
+          "trace_id": "rt_a37c7f6641ac3115d478837d9821f9c6",
+          "revision": 1
+        }
+      ],
+      "candidate_type": "concept",
+      "content": {
+        "text": "Synthetic candidate",
+        "confidence": null,
+        "basis": "model_inference"
+      },
+      "status": "pending",
+      "knowledge_id": null
+    }
+  },
+  {
+    "id": "model-TraceRelation",
+    "model": "TraceRelation",
+    "value": {
+      "object_type": "TraceRelation",
+      "schema_version": "0.1.0",
+      "id": "relation_fixture",
+      "owner_id": "owner_fixture",
+      "created_at": "2026-09-28T00:00:00+00:00",
+      "revision": 1,
+      "supersedes_revision": null,
+      "source_trace_ref": {
+        "trace_id": "rt_a37c7f6641ac3115d478837d9821f9c6",
+        "revision": 1
+      },
+      "relation": "reminds_of",
+      "target": {
+        "type": "trace",
+        "id": "rt_a37c7f6641ac3115d478837d9821f9c6",
+        "revision": 1
+      },
+      "provenance": "synthetic user statement",
+      "confidence": null
+    }
+  },
+  {
+    "id": "model-Event",
+    "model": "Event",
+    "value": {
+      "event": "reading.capture.received",
+      "version": 1,
+      "event_id": "evt_reading_capture_received",
+      "owner_id": "owner_fixture",
+      "occurred_at": "2026-09-28T00:00:00+00:00",
+      "producer": "librarian",
+      "correlation_id": "cmd_fixture",
+      "causation_id": null,
+      "aggregate": {
+        "type": "capture_batch",
+        "id": "example",
+        "revision": 1
+      },
+      "payload": {
+        "batch_id": "example",
+        "capture_ids": [
+          "example"
+        ]
+      }
+    }
+  },
+  {
+    "id": "model-Command",
+    "model": "Command",
+    "value": {
+      "command": "catalog.register_work",
+      "version": 1,
+      "command_id": "cmd_catalog_register_work",
+      "owner_id": "owner_fixture",
+      "issued_at": "2026-09-28T00:00:00+00:00",
+      "idempotency_key": "key_catalog_register_work",
+      "actor": {
+        "type": "user",
+        "id": "actor_fixture"
+      },
+      "payload": {
+        "record": {
+          "object_type": "Work",
+          "schema_version": "0.1.0",
+          "id": "id_example",
+          "owner_id": "example",
+          "created_at": "2026-09-28T00:00:00+00:00",
+          "title": "example",
+          "original_title": null,
+          "authors": [],
+          "identifiers": [],
+          "revision": 1,
+          "supersedes_revision": null
+        }
+      }
+    }
+  },
+  {
+    "id": "model-CommandReceipt",
+    "model": "CommandReceipt",
+    "value": {
+      "command_id": "example",
+      "status": "accepted",
+      "batch_id": null,
+      "capture_ids": [],
+      "object_id": null
+    }
+  },
+  {
+    "id": "model-ErrorResult",
+    "model": "ErrorResult",
+    "value": {
+      "code": "IDEMPOTENCY_CONFLICT",
+      "stage": "example",
+      "retryable": false,
+      "message": "example",
+      "details": {}
+    }
+  },
+  {
+    "id": "model-SearchRequest",
+    "model": "SearchRequest",
+    "value": {
+      "owner_id": "owner_fixture",
+      "query": "example",
+      "filters": {
+        "work_id": null,
+        "edition_id": null,
+        "book_instance_id": null,
+        "session_id": null,
+        "medium": null,
+        "trace_types": [],
+        "include_unresolved": false
+      },
+      "limit": 1,
+      "cursor": null
+    }
+  },
+  {
+    "id": "model-SearchResponse",
+    "model": "SearchResponse",
+    "value": {
+      "hits": [],
+      "next_cursor": null,
+      "index_state": "ready"
+    }
+  },
+  {
+    "id": "event-reading.capture.processed",
+    "model": "Event",
+    "value": {
+      "event": "reading.capture.processed",
+      "version": 1,
+      "event_id": "evt_reading_capture_processed",
+      "owner_id": "owner_fixture",
+      "occurred_at": "2026-09-28T00:00:00+00:00",
+      "producer": "librarian",
+      "correlation_id": "cmd_fixture",
+      "causation_id": null,
+      "aggregate": {
+        "type": "processing_run",
+        "id": "example",
+        "revision": 1
+      },
+      "payload": {
+        "capture_id": "example",
+        "processing_run_id": "example",
+        "outcome": "success",
+        "trace_refs": [],
+        "issues": []
+      }
+    }
+  },
+  {
+    "id": "event-reading.session.started",
+    "model": "Event",
+    "value": {
+      "event": "reading.session.started",
+      "version": 1,
+      "event_id": "evt_reading_session_started",
+      "owner_id": "owner_fixture",
+      "occurred_at": "2026-09-28T00:00:00+00:00",
+      "producer": "librarian",
+      "correlation_id": "cmd_fixture",
+      "causation_id": null,
+      "aggregate": {
+        "type": "reading_session",
+        "id": "example",
+        "revision": 1
+      },
+      "payload": {
+        "session_id": "example",
+        "revision": 1,
+        "medium": "physical",
+        "book_instance_id": null
+      }
+    }
+  },
+  {
+    "id": "event-reading.session.progressed",
+    "model": "Event",
+    "value": {
+      "event": "reading.session.progressed",
+      "version": 1,
+      "event_id": "evt_reading_session_progressed",
+      "owner_id": "owner_fixture",
+      "occurred_at": "2026-09-28T00:00:00+00:00",
+      "producer": "librarian",
+      "correlation_id": "cmd_fixture",
+      "causation_id": null,
+      "aggregate": {
+        "type": "reading_session",
+        "id": "example",
+        "revision": 1
+      },
+      "payload": {
+        "session_id": "example",
+        "revision": 1,
+        "progress": {
+          "start_page": null,
+          "end_page": null,
+          "basis": "user_statement",
+          "reported_at": "2026-09-28T00:00:00+00:00",
+          "evidence_ref": "example"
+        }
+      }
+    }
+  },
+  {
+    "id": "event-reading.session.closed",
+    "model": "Event",
+    "value": {
+      "event": "reading.session.closed",
+      "version": 1,
+      "event_id": "evt_reading_session_closed",
+      "owner_id": "owner_fixture",
+      "occurred_at": "2026-09-28T00:00:00+00:00",
+      "producer": "librarian",
+      "correlation_id": "cmd_fixture",
+      "causation_id": null,
+      "aggregate": {
+        "type": "reading_session",
+        "id": "example",
+        "revision": 1
+      },
+      "payload": {
+        "session_id": "example",
+        "revision": 1,
+        "progress": null
+      }
+    }
+  },
+  {
+    "id": "event-reading.trace.created",
+    "model": "Event",
+    "value": {
+      "event": "reading.trace.created",
+      "version": 1,
+      "event_id": "evt_reading_trace_created",
+      "owner_id": "owner_fixture",
+      "occurred_at": "2026-09-28T00:00:00+00:00",
+      "producer": "librarian",
+      "correlation_id": "cmd_fixture",
+      "causation_id": null,
+      "aggregate": {
+        "type": "reading_trace",
+        "id": "example",
+        "revision": 1
+      },
+      "payload": {
+        "trace_id": "example",
+        "revision": 1,
+        "medium": "physical",
+        "book_instance_id": null
+      }
+    }
+  },
+  {
+    "id": "event-reading.trace.corrected",
+    "model": "Event",
+    "value": {
+      "event": "reading.trace.corrected",
+      "version": 1,
+      "event_id": "evt_reading_trace_corrected",
+      "owner_id": "owner_fixture",
+      "occurred_at": "2026-09-28T00:00:00+00:00",
+      "producer": "librarian",
+      "correlation_id": "cmd_fixture",
+      "causation_id": null,
+      "aggregate": {
+        "type": "reading_trace",
+        "id": "example",
+        "revision": 2
+      },
+      "payload": {
+        "trace_id": "example",
+        "previous_revision": 1,
+        "revision": 2,
+        "reason": "example"
+      }
+    }
+  },
+  {
+    "id": "event-reading.knowledge_candidate.created",
+    "model": "Event",
+    "value": {
+      "event": "reading.knowledge_candidate.created",
+      "version": 1,
+      "event_id": "evt_reading_knowledge_candidate_created",
+      "owner_id": "owner_fixture",
+      "occurred_at": "2026-09-28T00:00:00+00:00",
+      "producer": "librarian",
+      "correlation_id": "cmd_fixture",
+      "causation_id": null,
+      "aggregate": {
+        "type": "knowledge_candidate",
+        "id": "example",
+        "revision": 1
+      },
+      "payload": {
+        "candidate_id": "example",
+        "revision": 1,
+        "source_trace_refs": [
+          {
+            "trace_id": "example",
+            "revision": 1
+          }
+        ]
+      }
+    }
+  },
+  {
+    "id": "event-reading.knowledge.promoted",
+    "model": "Event",
+    "value": {
+      "event": "reading.knowledge.promoted",
+      "version": 1,
+      "event_id": "evt_reading_knowledge_promoted",
+      "owner_id": "owner_fixture",
+      "occurred_at": "2026-09-28T00:00:00+00:00",
+      "producer": "librarian",
+      "correlation_id": "cmd_fixture",
+      "causation_id": null,
+      "aggregate": {
+        "type": "knowledge_candidate",
+        "id": "example",
+        "revision": 1
+      },
+      "payload": {
+        "candidate_id": "example",
+        "revision": 1,
+        "knowledge_id": "example",
+        "source_trace_refs": [
+          {
+            "trace_id": "example",
+            "revision": 1
+          }
+        ]
+      }
+    }
+  },
+  {
+    "id": "command-catalog.register_edition",
+    "model": "Command",
+    "value": {
+      "command": "catalog.register_edition",
+      "version": 1,
+      "command_id": "cmd_catalog_register_edition",
+      "owner_id": "owner_fixture",
+      "issued_at": "2026-09-28T00:00:00+00:00",
+      "idempotency_key": "key_catalog_register_edition",
+      "actor": {
+        "type": "user",
+        "id": "actor_fixture"
+      },
+      "payload": {
+        "record": {
+          "object_type": "Edition",
+          "schema_version": "0.1.0",
+          "id": "id_example",
+          "owner_id": "example",
+          "created_at": "2026-09-28T00:00:00+00:00",
+          "work_id": "example",
+          "edition_label": null,
+          "publisher": null,
+          "publication_year": null,
+          "isbn": {
+            "isbn13": null,
+            "isbn10": null
+          },
+          "language": null,
+          "page_count": null,
+          "volume_label": null,
+          "revision": 1,
+          "supersedes_revision": null
+        }
+      }
+    }
+  },
+  {
+    "id": "command-catalog.register_book_instance",
+    "model": "Command",
+    "value": {
+      "command": "catalog.register_book_instance",
+      "version": 1,
+      "command_id": "cmd_catalog_register_book_instance",
+      "owner_id": "owner_fixture",
+      "issued_at": "2026-09-28T00:00:00+00:00",
+      "idempotency_key": "key_catalog_register_book_instance",
+      "actor": {
+        "type": "user",
+        "id": "actor_fixture"
+      },
+      "payload": {
+        "record": {
+          "object_type": "BookInstance",
+          "schema_version": "0.1.0",
+          "id": "id_example",
+          "owner_id": "example",
+          "created_at": "2026-09-28T00:00:00+00:00",
+          "edition_id": "example",
+          "medium": "physical",
+          "acquired_at": {
+            "value": null,
+            "confidence": null,
+            "basis": "exif"
+          },
+          "ownership_status": "owned",
+          "physical": {
+            "qr_id": null,
+            "shelf": null
+          },
+          "reading_status": {
+            "state": "unknown",
+            "current_page": null,
+            "progress_evidence_ref": null
+          },
+          "revision": 1,
+          "supersedes_revision": null
+        }
+      }
+    }
+  },
+  {
+    "id": "command-reading.session.start",
+    "model": "Command",
+    "value": {
+      "command": "reading.session.start",
+      "version": 1,
+      "command_id": "cmd_reading_session_start",
+      "owner_id": "owner_fixture",
+      "issued_at": "2026-09-28T00:00:00+00:00",
+      "idempotency_key": "key_reading_session_start",
+      "actor": {
+        "type": "user",
+        "id": "actor_fixture"
+      },
+      "payload": {}
+    }
+  },
+  {
+    "id": "command-reading.session.pause",
+    "model": "Command",
+    "value": {
+      "command": "reading.session.pause",
+      "version": 1,
+      "command_id": "cmd_reading_session_pause",
+      "owner_id": "owner_fixture",
+      "issued_at": "2026-09-28T00:00:00+00:00",
+      "idempotency_key": "key_reading_session_pause",
+      "actor": {
+        "type": "user",
+        "id": "actor_fixture"
+      },
+      "payload": {
+        "session_id": "example",
+        "expected_revision": 1
+      }
+    }
+  },
+  {
+    "id": "command-reading.session.resume",
+    "model": "Command",
+    "value": {
+      "command": "reading.session.resume",
+      "version": 1,
+      "command_id": "cmd_reading_session_resume",
+      "owner_id": "owner_fixture",
+      "issued_at": "2026-09-28T00:00:00+00:00",
+      "idempotency_key": "key_reading_session_resume",
+      "actor": {
+        "type": "user",
+        "id": "actor_fixture"
+      },
+      "payload": {
+        "session_id": "example",
+        "expected_revision": 1
+      }
+    }
+  },
+  {
+    "id": "command-reading.session.report_progress",
+    "model": "Command",
+    "value": {
+      "command": "reading.session.report_progress",
+      "version": 1,
+      "command_id": "cmd_reading_session_report_progress",
+      "owner_id": "owner_fixture",
+      "issued_at": "2026-09-28T00:00:00+00:00",
+      "idempotency_key": "key_reading_session_report_progress",
+      "actor": {
+        "type": "user",
+        "id": "actor_fixture"
+      },
+      "payload": {
+        "session_id": "example",
+        "expected_revision": 1,
+        "progress": {
+          "start_page": null,
+          "end_page": null,
+          "basis": "user_statement",
+          "reported_at": "2026-09-28T00:00:00+00:00",
+          "evidence_ref": "example"
+        }
+      }
+    }
+  },
+  {
+    "id": "command-reading.session.close",
+    "model": "Command",
+    "value": {
+      "command": "reading.session.close",
+      "version": 1,
+      "command_id": "cmd_reading_session_close",
+      "owner_id": "owner_fixture",
+      "issued_at": "2026-09-28T00:00:00+00:00",
+      "idempotency_key": "key_reading_session_close",
+      "actor": {
+        "type": "user",
+        "id": "actor_fixture"
+      },
+      "payload": {
+        "session_id": "example",
+        "expected_revision": 1
+      }
+    }
+  },
+  {
+    "id": "command-reading.capture.ingest",
+    "model": "Command",
+    "value": {
+      "command": "reading.capture.ingest",
+      "version": 1,
+      "command_id": "cmd_reading_capture_ingest",
+      "owner_id": "owner_fixture",
+      "issued_at": "2026-09-28T00:00:00+00:00",
+      "idempotency_key": "key_reading_capture_ingest",
+      "actor": {
+        "type": "user",
+        "id": "actor_fixture"
+      },
+      "payload": {
+        "source": {
+          "transport": "example",
+          "account_id": "example",
+          "conversation_id": "example",
+          "source_event_id": "example"
+        },
+        "attachments": [
+          {
+            "source_item_id": "example",
+            "mime_type": "example",
+            "upload_ref": "example"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "id": "command-reading.capture.resolve",
+    "model": "Command",
+    "value": {
+      "command": "reading.capture.resolve",
+      "version": 1,
+      "command_id": "cmd_reading_capture_resolve",
+      "owner_id": "owner_fixture",
+      "issued_at": "2026-09-28T00:00:00+00:00",
+      "idempotency_key": "key_reading_capture_resolve",
+      "actor": {
+        "type": "user",
+        "id": "actor_fixture"
+      },
+      "payload": {
+        "capture_id": "example",
+        "expected_resolution_revision": null
+      }
+    }
+  },
+  {
+    "id": "command-reading.trace.correct",
+    "model": "Command",
+    "value": {
+      "command": "reading.trace.correct",
+      "version": 1,
+      "command_id": "cmd_reading_trace_correct",
+      "owner_id": "owner_fixture",
+      "issued_at": "2026-09-28T00:00:00+00:00",
+      "idempotency_key": "key_reading_trace_correct",
+      "actor": {
+        "type": "user",
+        "id": "actor_fixture"
+      },
+      "payload": {
+        "trace_id": "example",
+        "expected_revision": 1,
+        "correction": {
+          "annotation": "Synthetic correction"
+        },
+        "reason": "example"
+      }
+    }
+  },
+  {
+    "id": "command-reading.knowledge_candidate.approve",
+    "model": "Command",
+    "value": {
+      "command": "reading.knowledge_candidate.approve",
+      "version": 1,
+      "command_id": "cmd_reading_knowledge_candidate_approve",
+      "owner_id": "owner_fixture",
+      "issued_at": "2026-09-28T00:00:00+00:00",
+      "idempotency_key": "key_reading_knowledge_candidate_approve",
+      "actor": {
+        "type": "user",
+        "id": "actor_fixture"
+      },
+      "payload": {
+        "candidate_id": "example",
+        "expected_revision": 1
+      }
+    }
+  },
+  {
+    "id": "command-reading.knowledge_candidate.reject",
+    "model": "Command",
+    "value": {
+      "command": "reading.knowledge_candidate.reject",
+      "version": 1,
+      "command_id": "cmd_reading_knowledge_candidate_reject",
+      "owner_id": "owner_fixture",
+      "issued_at": "2026-09-28T00:00:00+00:00",
+      "idempotency_key": "key_reading_knowledge_candidate_reject",
+      "actor": {
+        "type": "user",
+        "id": "actor_fixture"
+      },
+      "payload": {
+        "candidate_id": "example",
+        "expected_revision": 1,
+        "reason": "example"
+      }
+    }
+  },
+  {
+    "id": "work-second-revision",
+    "model": "Work",
+    "value": {
+      "object_type": "Work",
+      "schema_version": "0.1.0",
+      "id": "work_fixture",
+      "owner_id": "owner_fixture",
+      "created_at": "2026-09-28T00:00:00+00:00",
+      "title": "Synthetic Work",
+      "original_title": null,
+      "authors": [],
+      "identifiers": [],
+      "revision": 2,
+      "supersedes_revision": 1
+    }
+  },
+  {
+    "id": "edition-second-revision",
+    "model": "Edition",
+    "value": {
+      "object_type": "Edition",
+      "schema_version": "0.1.0",
+      "id": "edition_fixture",
+      "owner_id": "owner_fixture",
+      "created_at": "2026-09-28T00:00:00+00:00",
+      "work_id": "work_fixture",
+      "edition_label": null,
+      "publisher": null,
+      "publication_year": null,
+      "isbn": {
+        "isbn13": null,
+        "isbn10": null
+      },
+      "language": null,
+      "page_count": null,
+      "volume_label": null,
+      "revision": 2,
+      "supersedes_revision": 1
+    }
+  },
+  {
+    "id": "search-small-page",
+    "model": "SearchRequest",
+    "value": {
+      "owner_id": "owner_fixture",
+      "query": "example",
+      "filters": {
+        "work_id": null,
+        "edition_id": null,
+        "book_instance_id": null,
+        "session_id": null,
+        "medium": null,
+        "trace_types": [],
+        "include_unresolved": false
+      },
+      "limit": 1,
+      "cursor": null
+    }
+  },
+  {
+    "id": "trace-second-revision",
+    "model": "ReadingTrace",
+    "value": {
+      "attribution": {
+        "basis": "unknown",
+        "mark_author": "unknown"
+      },
+      "book_instance_id": null,
+      "confidence": {
+        "book_resolution": null,
+        "page_number": null
+      },
+      "content": {
+        "annotation": {
+          "basis": "unknown",
+          "confidence": null,
+          "text": null
+        },
+        "printed_text": {
+          "basis": "source_payload",
+          "confidence": null,
+          "text": "Weber and Parsons"
+        },
+        "symbols": []
+      },
+      "context_state": "resolved",
+      "created_at": "2026-09-28T09:01:24+00:00",
+      "edition_id": null,
+      "id": "rt_a37c7f6641ac3115d478837d9821f9c6",
+      "intent_signals": [],
+      "location": {
+        "chapter": "Chapter One",
+        "epub_cfi": null,
+        "kind": "digital",
+        "paragraph": null,
+        "source_locator": "book-42-1-10-20"
+      },
+      "marked_at": {
+        "basis": "unknown",
+        "confidence": null,
+        "value": null
+      },
+      "medium": "weread",
+      "object_type": "ReadingTrace",
+      "owner_id": "owner_fixture",
+      "provenance": [
+        {
+          "byte_size": 154,
+          "mime_type": "text/markdown",
+          "object_key": "objects/f1/f1bc8209d2e15439f71df0a7102d011c2c3087aa51098572582fe409eadf5b35",
+          "sha256": "f1bc8209d2e15439f71df0a7102d011c2c3087aa51098572582fe409eadf5b35"
+        }
+      ],
+      "review": {
+        "reason": null,
+        "required": false,
+        "state": "none"
+      },
+      "revision": 2,
+      "schema_version": "0.1.0",
+      "session_id": null,
+      "source": {
+        "kind": "weread",
+        "raw_payload": {
+          "byte_size": 154,
+          "mime_type": "text/markdown",
+          "object_key": "objects/f1/f1bc8209d2e15439f71df0a7102d011c2c3087aa51098572582fe409eadf5b35",
+          "sha256": "f1bc8209d2e15439f71df0a7102d011c2c3087aa51098572582fe409eadf5b35"
+        },
+        "source_record_id": "book-42-1-10-20"
+      },
+      "status": "active",
+      "supersedes_revision": 1,
+      "trace_types": [
+        "highlight"
+      ],
+      "vocabulary_version": null,
+      "work_id": "work_2ae10661976b7bc9212a7a9c8e879aa6"
+    }
+  }
+]

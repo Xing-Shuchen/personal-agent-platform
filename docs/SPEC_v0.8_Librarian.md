@@ -17,11 +17,11 @@
 | 规范性数据契约 | `schemas/contracts.schema.json` 及其 18 个模型入口 |
 | 基础材料 | 用户提供的《PAP Librarian — Physical Reading Ingestion Specification v0.1》 |
 
-> PAP 仓库落地状态与现有组件映射见 [`LIBRARIAN_REPO_MAPPING.md`](LIBRARIAN_REPO_MAPPING.md)。本文件描述目标契约和验收条件，不代表这些条件已经通过。仓库当前的 Schema 位于 `agents/librarian/runtime/schemas/`；原稿所述 `references/`、`examples/` 和完整契约验证报告尚未随此文件提供。
+> PAP 仓库落地状态与现有组件映射见 [`LIBRARIAN_REPO_MAPPING.md`](LIBRARIAN_REPO_MAPPING.md)。本文件描述目标契约和验收条件，不代表这些条件已经通过。当前 Schema、合成 examples 和离线验证报告位于 `agents/librarian/runtime/`；原稿的 `references/source-design.txt` 未随此文件提供。
 
 ### 0.1 本文与底稿的关系
 
-本文沿用底稿第 0–41 节的组织、术语和设计方向，把描述性设计展开为数据约束、应用命令、处理步骤、事件语义和验收条件。底稿副本见 [`references/source-design.txt`](references/source-design.txt)。本文中的「底稿 §N」均指该文件对应章节。
+本文沿用底稿第 0–41 节的组织、术语和设计方向，把描述性设计展开为数据约束、应用命令、处理步骤、事件语义和验收条件。原稿所称 `references/source-design.txt` 未随独立规格文件提供；本文中的「底稿 §N」均指该原稿对应章节。
 
 来源与决策性质必须区分：
 
@@ -119,7 +119,7 @@ PAP 已有的 blob/object/event infrastructure 必须优先复用。不存在时
 
 ### 5.1 共同约定
 
-**[实现提案]** 规范文件使用 JSON Schema Draft 2020-12。主文件有 77 个定义，默认根对象为 `ReadingTrace`；其他类型通过 `schemas/<Model>.schema.json` 入口校验，或选择主文件中的对应 `$defs`。
+**[实现提案]** 规范文件使用 JSON Schema Draft 2020-12。目标主文件有 77 个定义；当前仓库实现有 59 个定义，默认根对象为 `ReadingTrace`。其他类型通过 `schemas/<Model>.schema.json` 入口校验，或选择主文件中的对应 `$defs`。
 
 所有持久领域记录包含 `object_type`、`schema_version`、`id`、`owner_id`、`created_at`。`schema_version` 在本稿固定为 `0.1.0`。业务对象 ID 是带前缀的不透明字符串；调用方不能从 ID 推断题名、页码、时序或所有者。
 
@@ -559,7 +559,7 @@ ReadingSourceAdapter.provenance(source_event) → Provenance
 | `reading.knowledge_candidate.approve` | candidate、expected revision | approved，再委托知识服务；不等于自动成功晋升 | 后续 |
 | `reading.knowledge_candidate.reject` | candidate、expected revision、reason | rejected candidate | 后续 |
 
-完整 payload 见 Schema 与 `examples/07-commands.json`。`correction` 中省略的字段保持不变，显式 `null` 表示改为未知；不能用省略/空值混淆覆盖语义。
+当前 payload 见运行时 Schema 与 `examples/positive.json` 中的命令案例。`correction` 中省略的字段保持不变，显式 `null` 表示改为未知；不能用省略/空值混淆覆盖语义。
 
 本稿不强制 HTTP 路径。底稿中的 `POST /librarian/sessions/start` 可以由现有 API 映射到相应应用命令；没有检查当前路由前，不新增一套与现有 Gateway 重复的 API。
 
@@ -820,7 +820,7 @@ reported_progress = 用户或可靠来源报告的起止位置，属于阅读进
 
 ### 38.3 契约包已完成的检查
 
-本包的离线校验检查 77 个 Schema 定义、18 个模型入口、42 个正向合成 fixture，拒绝 43 个负向案例，并执行选定的跨实体一致性检查。具体结果以 `tests/validation-report.json` 为准。
+当前离线校验检查 59 个 Schema 定义、18 个模型入口、42 个正向合成 fixture，拒绝 43 个负向案例，并执行选定的跨实体一致性检查。77 个定义仍是目标，尚未达到；当前结果见 `agents/librarian/runtime/tests/validation-report.json`。
 
 这些检查覆盖结构、部分字段/版本/坐标/引用不变量，**没有运行生产 pipeline，没有真实图片，没有测试真实模型准确率、消息平台、存储耐久性、事务恢复或真实跨来源同步**。AC 表是未来实现必须通过的验收清单，不是当前已完成列表。
 
@@ -1021,17 +1021,17 @@ knowledge:
 
 # Appendix F — Contract Validation
 
-在具备 `jsonschema` 及其依赖的 Python 环境中，于本包目录运行：
+在具备 `jsonschema` 及其依赖的 Python 环境中，于 `agents/librarian/runtime/` 目录运行：
 
 ```bash
-python tests/validate_contracts.py
+python3 tests/validate_contracts.py
 ```
 
-测试依赖说明见 `requirements-test.txt`。测试使用离线 Registry 加载本地 schema，不抓取页面、不调用 OCR、不访问真实书库。
+测试依赖来自仓库的 Python 环境。测试使用离线 resolver 加载本地 schema，不抓取页面、不调用 OCR、不访问真实书库。
 
 验证范围分三层：单对象 Schema；选定的语义规则（版本链、bbox、事件 aggregate、符号类型、作者来源等）；一个合成领域集合的上下文与 evidence 引用一致性。它不取代存储和应用服务的全部业务校验。
 
-`examples/01-domain-fixture.json` 中的出版社、ISBN 等未知字段没有被填成底稿中的示例书目；原文字段明确标注为合成文本。fixture 里的 asset 引用是契约占位，不对应可下载真实页面。事件和命令文件是各类独立契约例子，不是完整的按时序执行日志。
+`examples/positive.json` 中的出版社、ISBN 等未知字段没有被填成底稿中的示例书目；原文字段明确标注为合成文本。fixture 里的 asset 引用是契约占位，不对应可下载真实页面。事件和命令案例是各类独立契约例子，不是完整的按时序执行日志。
 
 # Appendix G — Implementation Handoff Checklist
 

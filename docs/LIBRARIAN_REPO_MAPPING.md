@@ -31,10 +31,10 @@ and validation report did not accompany the standalone file in this worktree.
 
 ## Evidence still needed for the full specification
 
-The source-design attachment, validation fixtures, and real annotated photos
-cited by the draft are absent from this repository. The 18 model entry schemas
-now exist under `agents/librarian/runtime/schemas/`, but the canonical schema
-still has 59 of the draft's 77 definitions. The full
+The source-design attachment and real annotated photos cited by the draft are
+absent from this repository. The 18 model entry schemas and 42 positive/43
+negative synthetic fixtures now exist under `agents/librarian/runtime/`, but
+the canonical schema still has 59 of the draft's 77 definitions. The full
 M1 image acceptance test and M2 live adapter test cannot be claimed without
 those inputs. A synthetic extractor can verify persistence, normalization, and
 retrieval behavior, but cannot establish OCR or handwriting accuracy.
