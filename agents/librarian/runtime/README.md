@@ -25,19 +25,23 @@ stores a new extractor's observation for reconciliation without replacing
 corrected traces,
 applies an opt-in versioned symbol vocabulary with exception-only review,
 and can rebuild the index from traces. Its tests use synthetic images and
-synthetic observations. `vision.py` provides a Claude Messages image adapter:
+synthetic observations. `vision.py` provides Claude Messages and
+OpenAI-compatible Chat Completions image adapters:
 it sends an EXIF-oriented, uniformly resized derivative, requests normalized
 coordinates, and returns the model text to the pipeline. The derivative,
 transform and raw model text are saved with the processing attempt, including
 failed validation attempts. Its provider transport has a local mock test; the
 timeout path retains the original and records a failed processing run without
 creating traces. A timeout has no model response bytes to retain. The
-current configured endpoint returns HTTP 404 for `/v1/messages`, so live
-image recognition has not been verified. The current default local model also
-rejected a synthetic image input; configure a vision-capable model and endpoint
-before enabling processing. See the official [Claude vision](https://platform.claude.com/docs/en/build-with-claude/vision)
+earlier configured Claude endpoint returned HTTP 404 for `/v1/messages`. A
+local OpenClaw Z.AI configuration advertises image input for GLM-5.3-Flash,
+but its credential is stored as a write-only OpenClaw secret and has not been
+supplied to this runtime. Live image recognition has not been verified. The
+earlier default local model also rejected a synthetic image input. See the
+official [Claude vision](https://platform.claude.com/docs/en/build-with-claude/vision)
 and [coordinate](https://platform.claude.com/docs/en/build-with-claude/vision-coordinates)
-API documentation for the request shape and resize behavior.
+API documentation, and the [Z.AI GLM-5.3-Flash image input format](https://docs.z.ai/guides/vlm/glm-5.3-flash)
+for the Chat Completions request shape.
 Search accepts text or a structural filter, including textless symbol traces,
 and returns the same provenance-bearing hit contract for all three media.
 `render_trace_crop` produces an owner-scoped PNG for the current physical trace
@@ -93,8 +97,8 @@ PYTHONPATH=. python3 -m pytest tests/test_librarian_knowledge.py -q
 PYTHONPATH=. python3 -m pytest tests/test_librarian_vision.py -q
 ```
 
-Once a Claude-compatible Messages endpoint and credential are configured,
-process an already accepted capture with:
+Once a compatible image endpoint and credential are configured, process an
+already accepted capture with Claude Messages:
 
 ```bash
 PYTHONPATH=. python3 -m agents.librarian.runtime.vision \
@@ -108,6 +112,21 @@ use `Authorization: Bearer`. Choose a vision model whose native
 resolution accommodates the derivative; provider-side downscaling is rejected
 to preserve coordinate mapping. Do not treat a successful API response as the
 annotated-photo acceptance result.
+
+For an OpenAI-compatible Chat Completions image endpoint, set
+`LIBRARIAN_VISION_API_KEY` and `LIBRARIAN_VISION_BASE_URL`, then run:
+
+```bash
+PYTHONPATH=. python3 -m agents.librarian.runtime.vision \
+  --provider chat-completions --root var/librarian \
+  --owner OWNER_ID --capture CAPTURE_ID --model IMAGE_MODEL_ID
+```
+
+The endpoint must accept `image_url.url` with a PNG data URL and return one
+completed text response. OpenClaw write-only secret references are not read
+by this Python command; supply a separate runtime credential securely. A
+mocked transport test covers this adapter, but no live image request has been
+accepted by the configured Z.AI route yet.
 
 Run the offline contract verifier from this directory with
 `python3 tests/validate_contracts.py`. It writes

@@ -18,11 +18,13 @@ Create `release-v0.8` only after the acceptance evidence below is complete.
   dedicated `librarian` PAP profile and unbound OpenClaw agent are registered.
   The linked plugin is installed and enabled with `ownerMappings: []`; no
   sender is authorized for automatic intake.
-- `runtime/vision.py` sends an EXIF-oriented derivative to a configurable
-  Claude Messages endpoint. The pipeline stores the original, derivative,
-  transform and raw model JSON. A mocked provider test covers that path and
-  failure persistence. The currently configured proxy returns HTTP 404 for
-  standard `/v1/messages`; the default local model rejects image input.
+- `runtime/vision.py` sends an EXIF-oriented derivative through Claude
+  Messages or OpenAI-compatible Chat Completions. The pipeline stores the
+  original, derivative, transform and raw model JSON. Mocked provider tests
+  cover both transports and failure persistence. The earlier Claude proxy
+  returned HTTP 404 for standard `/v1/messages`. A local OpenClaw Z.AI route
+  advertises GLM-5.3-Flash image input, but its write-only secret has not been
+  supplied to the Librarian runtime and no live request has succeeded.
 
 ## Required before release
 
@@ -31,8 +33,9 @@ Create `release-v0.8` only after the acceptance evidence below is complete.
    image bytes outside Git. Similarly numbered Evernote `_orphan` files in the
    Vault have not been established as these inputs; `_orphan_171.jpg` was
    visually checked and is unrelated.
-2. Configure a vision-capable provider compatible with the image request in
-   `runtime/vision.py`. Run extraction against the four real photos and verify
+2. Configure a vision-capable provider compatible with an image request in
+   `runtime/vision.py`, then verify a live synthetic image request. Run
+   extraction against the four real photos and verify
    the twelve trace groups, source regions, `Parsons?`, page attribution,
    progress evidence and later Weber/Parsons retrieval specified in §38.1.
 3. With the dedicated Librarian profile now registered on this PC, configure
@@ -88,12 +91,13 @@ actual Vault path separately.
   `loaded`, one typed `message_received` hook, and no diagnostics. The Gateway
   service was started and reports healthy, but no mapped sender or live image
   has been exercised. The CLI Gateway RPC probe did not establish a connection.
-- Focused Python tests: 28 vision/pipeline/bridge tests and 18
+- Focused Python tests: 30 vision/pipeline/bridge tests and 18
   store/digital/command/event/knowledge tests passed. Contract validation
   passed 77 definitions, 18 entries, 42 positive and 43 negative cases;
   the two Node plugin tests passed. These are synthetic tests.
-- `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, and `ANTHROPIC_BASE_URL` are
-  unset in this shell. No working vision provider was demonstrated here.
+- `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, and `ANTHROPIC_BASE_URL` were
+  unset in this shell. The OpenClaw Z.AI credential is a write-only secret
+  reference. No working vision provider was demonstrated for this runtime.
 
 ## AC-01–26 runtime evidence audit
 

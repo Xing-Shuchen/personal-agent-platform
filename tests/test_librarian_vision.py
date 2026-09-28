@@ -9,7 +9,7 @@ from PIL import Image
 
 from agents.librarian.runtime.pipeline import process_capture
 from agents.librarian.runtime.store import Library, LibrarianError
-from agents.librarian.runtime.vision import anthropic_extractor
+from agents.librarian.runtime.vision import anthropic_extractor, chat_completions_extractor
 
 
 def _photo() -> bytes:
@@ -161,3 +161,63 @@ def test_provider_timeout_keeps_original_and_records_failed_run(tmp_path):
         assert failed["outcome"] == "failed"
         assert lib.db.execute(
             "SELECT COUNT(*) FROM records WHERE model='ReadingTrace'").fetchone()[0] == 0
+
+
+def test_chat_completions_image_transport_persists_observation(tmp_path):
+    observation = {"image_space": {"width": 1400, "height": 1000,
+                                   "basis": "exif_oriented_original"},
+                   "pages": [{"id": "page_1", "bbox": [0, 0, 1, 1], "side": "unknown",
+                              "page": {"value": None, "confidence": None,
+                                       "basis": "unknown", "status": "unresolved"}}],
+                   "printed_regions": [],
+                   "marks": [{"id": "mark_1", "page_region_id": "page_1",
+                              "bbox": [.1, .2, .8, .3], "kind": "underline",
+                              "text": None, "confidence": .9,
+                              "linked_text_region_ids": [], "link_confidence": None}],
+                   "annotations": [], "symbols": [], "links": [], "warnings": []}
+    raw_text = json.dumps(observation).encode()
+
+    def opener(request, *, timeout):
+        assert request.full_url == "https://vision.example/v1/chat/completions"
+        assert request.get_header("Authorization") == "Bearer test-key"
+        payload = json.loads(request.data)
+        assert payload["model"] == "vision-model"
+        assert payload["stream"] is False
+        content = payload["messages"][0]["content"]
+        assert content[0]["type"] == "text"
+        assert '"width":1400' in content[0]["text"]
+        assert content[1]["type"] == "image_url"
+        data_url = content[1]["image_url"]["url"]
+        assert data_url.startswith("data:image/png;base64,")
+        with Image.open(io.BytesIO(base64.b64decode(data_url.split(",", 1)[1]))) as image:
+            assert image.size == (700, 500)
+        return io.BytesIO(json.dumps({"choices": [{"finish_reason": "stop",
+                        "message": {"role": "assistant", "content": raw_text.decode()}}]}).encode())
+
+    extractor = chat_completions_extractor(model="vision-model", api_key="test-key",
+                                           base_url="https://vision.example/v1",
+                                           max_edge=700, opener=opener)
+    with Library(tmp_path) as lib:
+        receipt = lib.ingest("owner_a", transport="gateway", account_id="a",
+                             conversation_id="c", source_event_id="m",
+                             attachments=[{"source_item_id": "i", "mime_type": "image/jpeg",
+                                           "data": _photo()}], idempotency_key="k")
+        traces = process_capture(lib, "owner_a", receipt["capture_ids"][0], extractor,
+                                 extractor_version="chat-vision")
+        assert len(traces) == 1
+        raw_asset = json.loads(lib.db.execute(
+            "SELECT raw_asset FROM extractor_attempts").fetchone()[0])
+        assert (tmp_path / raw_asset["object_key"]).read_bytes() == raw_text
+        assert lib.db.execute("SELECT COUNT(*) FROM extractor_derivatives").fetchone()[0] == 1
+
+
+def test_chat_completions_rejects_unfinished_reply():
+    def opener(_request, *, timeout):
+        return io.BytesIO(json.dumps({"choices": [{"finish_reason": "length",
+                        "message": {"role": "assistant", "content": "{}"}}]}).encode())
+
+    extractor = chat_completions_extractor(model="vision-model", api_key="test-key",
+                                           base_url="https://vision.example/v1",
+                                           opener=opener)
+    with pytest.raises(RuntimeError, match="did not finish normally"):
+        extractor(_photo())

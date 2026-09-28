@@ -74,6 +74,11 @@ def _endpoint(base_url: str) -> str:
     return base + "/v1/messages"
 
 
+def _chat_endpoint(base_url: str) -> str:
+    base = base_url.rstrip("/")
+    return base if base.endswith("/chat/completions") else base + "/chat/completions"
+
+
 def _derivative(original: bytes, *, max_edge: int, max_pixels: int) -> tuple[bytes, int, int, int, int, tuple[str, ...]]:
     with Image.open(io.BytesIO(original)) as source:
         image = ImageOps.exif_transpose(source)
@@ -146,26 +151,84 @@ def anthropic_extractor(*, model: str, api_key: str, base_url: str = "https://ap
     return extract
 
 
+def chat_completions_extractor(*, model: str, api_key: str, base_url: str,
+                               max_edge: int = 2000, max_pixels: int = 2_000_000,
+                               max_tokens: int = 8192, timeout: int = 180,
+                               opener: Callable[..., Any] = urlopen) -> Callable[[bytes], ExtractionOutput]:
+    """Build an OpenAI-compatible image extractor with the same evidence output."""
+    if not model or not api_key or not base_url.startswith("https://"):
+        raise ValueError("model, key and HTTPS API base URL are required")
+    if min(max_edge, max_pixels, max_tokens, timeout) <= 0:
+        raise ValueError("positive vision limits required")
+
+    def extract(original: bytes) -> ExtractionOutput:
+        derivative, width, height, derivative_width, derivative_height, operations = _derivative(
+            original, max_edge=max_edge, max_pixels=max_pixels)
+        payload = {"model": model, "max_tokens": max_tokens, "stream": False,
+                   "messages": [{"role": "user", "content": [
+                       {"type": "text", "text": PROMPT.format(width=width, height=height)},
+                       {"type": "image_url", "image_url": {"url":
+                        "data:image/png;base64," + base64.b64encode(derivative).decode("ascii")}},
+                   ]}]}
+        request = Request(_chat_endpoint(base_url),
+                          data=json.dumps(payload, separators=(",", ":")).encode(),
+                          headers={"authorization": f"Bearer {api_key}",
+                                   "content-type": "application/json"}, method="POST")
+        try:
+            with opener(request, timeout=timeout) as response:
+                envelope = json.load(response)
+        except HTTPError as error:
+            raise RuntimeError(f"vision provider HTTP {error.code}") from None
+        except URLError as error:
+            raise RuntimeError("vision provider unavailable") from error
+        if not isinstance(envelope, dict):
+            raise RuntimeError("vision response is not an object")
+        choices = envelope.get("choices")
+        if (not isinstance(choices, list) or len(choices) != 1
+                or not isinstance(choices[0], dict)
+                or choices[0].get("finish_reason") != "stop"):
+            raise RuntimeError("vision response did not finish normally")
+        message = choices[0].get("message")
+        if (not isinstance(message, dict) or not isinstance(message.get("content"), str)
+                or not message["content"].strip()):
+            raise RuntimeError("vision response must contain one text message")
+        return ExtractionOutput(raw=message["content"].encode("utf-8"), derivative=derivative,
+                                derivative_width=derivative_width,
+                                derivative_height=derivative_height,
+                                operations=operations)
+
+    return extract
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Process one already accepted Librarian capture")
     parser.add_argument("--root", type=Path, required=True)
     parser.add_argument("--owner", required=True, help="trusted local owner ID")
     parser.add_argument("--capture", required=True)
-    parser.add_argument("--model", default=os.environ.get("ANTHROPIC_MODEL"))
-    parser.add_argument("--base-url", default=os.environ.get("ANTHROPIC_BASE_URL",
-                                                         "https://api.anthropic.com"))
+    parser.add_argument("--provider", choices=("anthropic", "chat-completions"), default="anthropic")
+    parser.add_argument("--model")
+    parser.add_argument("--base-url")
     parser.add_argument("--max-edge", type=int, default=2000)
     parser.add_argument("--max-pixels", type=int, default=2_000_000)
     args = parser.parse_args()
-    api_key = os.environ.get("ANTHROPIC_API_KEY")
-    extractor = anthropic_extractor(
-        model=args.model, api_key=api_key or os.environ.get("ANTHROPIC_AUTH_TOKEN", ""),
-        auth_mode="api_key" if api_key else "bearer", base_url=args.base_url,
-        max_edge=args.max_edge, max_pixels=args.max_pixels)
+    if args.provider == "anthropic":
+        base_url = args.base_url or os.environ.get("ANTHROPIC_BASE_URL", "https://api.anthropic.com")
+        api_key = os.environ.get("ANTHROPIC_API_KEY")
+        model = args.model or os.environ.get("ANTHROPIC_MODEL")
+        extractor = anthropic_extractor(
+            model=model, api_key=api_key or os.environ.get("ANTHROPIC_AUTH_TOKEN", ""),
+            auth_mode="api_key" if api_key else "bearer", base_url=base_url,
+            max_edge=args.max_edge, max_pixels=args.max_pixels)
+    else:
+        base_url = args.base_url or os.environ.get("LIBRARIAN_VISION_BASE_URL", "")
+        model = args.model or os.environ.get("LIBRARIAN_VISION_MODEL")
+        extractor = chat_completions_extractor(
+            model=model, api_key=os.environ.get("LIBRARIAN_VISION_API_KEY", ""),
+            base_url=base_url, max_edge=args.max_edge, max_pixels=args.max_pixels)
     with Library(args.root) as lib:
-        endpoint_id = hashlib.sha256(args.base_url.encode()).hexdigest()[:12]
+        endpoint_id = hashlib.sha256(base_url.encode()).hexdigest()[:12]
         traces = process_capture(lib, args.owner, args.capture, extractor,
-                                 extractor_version=(f"anthropic:{args.model}:{PROMPT_VERSION}:"
+                                 extractor_version=(f"{args.provider}:{model}:{PROMPT_VERSION}:"
                                                     f"{args.max_edge}:{args.max_pixels}:{endpoint_id}"))
     print(json.dumps({"capture_id": args.capture,
                       "trace_refs": [{"trace_id": trace["id"],
