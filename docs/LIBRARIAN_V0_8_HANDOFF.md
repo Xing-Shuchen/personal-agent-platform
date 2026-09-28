@@ -29,6 +29,12 @@ Create `release-v0.8` only after the acceptance evidence below is complete.
   dedicated `librarian` PAP profile and unbound OpenClaw agent are registered.
   The linked plugin is installed and enabled with `ownerMappings: []`; no
   sender is authorized for automatic intake.
+- A live synthetic reading-history question exposed a profile gap: the agent
+  searched its workspace and overclaimed that no book existed, although the
+  private Librarian store was not searched. The profile now distinguishes
+  workspace memory from owner-scoped Librarian evidence. A second live turn
+  correctly said it could not verify the annotation without that search port
+  and did not claim the book or note was absent.
 - `runtime/vision.py` sends an EXIF-oriented derivative through Claude
   Messages or OpenAI-compatible Chat Completions. The pipeline stores the
   original, derivative, transform and raw model JSON. Mocked provider tests
@@ -104,10 +110,11 @@ actual Vault path separately.
   `loaded`, one typed `message_received` hook, and no diagnostics. The Gateway
   service is running and its CLI RPC probe now succeeds, but no mapped sender
   or live image has been exercised.
-- Focused Python tests: 30 vision/pipeline/bridge tests and 20
-  store/digital/command/event/knowledge/native-Koodo tests passed. Contract validation
-  passed 77 definitions, 18 entries, 42 positive and 43 negative cases;
-  the two Node plugin tests passed. These are synthetic tests.
+- The current focused pipeline/digital/owner-isolation/native-adapter run
+  passed 31 Python tests. Contract validation passed 77 definitions,
+  18 entries, 42 positive and 43 negative cases. Earlier runs passed 30
+  vision/pipeline/bridge tests, 20 store/digital/command/event/knowledge/native-Koodo
+  tests, and two Node plugin tests. These are synthetic tests.
 - `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, and `ANTHROPIC_BASE_URL` were
   unset in this shell. The OpenClaw Z.AI credential is a write-only secret
   reference. No working vision provider was demonstrated for this runtime.
@@ -120,7 +127,7 @@ not mean the real-photo, live Gateway, upstream, or service acceptance is done.
 | AC | Current evidence | Status / remaining proof |
 |---|---|---|
 | 01–03 | `test_librarian_store.py` capture retry/conflict/same bytes and `test_librarian_gateway_bridge.py` source identity | Local; live message replay pending |
-| 04 | Catalog registration and ambiguity logic in `store.py` | Pending two-edition runtime scenario |
+| 04 | `test_same_title_two_copies_requires_explicit_catalog_resolution` registers two editions and copies under one title, verifies the photo remains unresolved and out of ordinary search, then explicitly binds it to the selected copy | Local; real-photo catalog resolution pending |
 | 05 | `test_conflicting_explicit_session_keeps_original_and_observation` | Local; real visible-title extraction pending |
 | 06 | `test_session_selection_and_soft_affinity_stay_in_conversation_scope` | Local |
 | 07 | `test_unreadable_page_number_keeps_local_trace_and_original` | Local for unknown page; real 137/139 ambiguity pending |
@@ -136,8 +143,8 @@ not mean the real-photo, live Gateway, upstream, or service acceptance is done.
 | 19–20 | Outbox retry and index rebuild tests | Local |
 | 21 | `test_foreign_ids_cannot_read_or_mutate_owner_records` probes foreign trace, capture and candidate IDs through direct reads, evidence, correction, promotion, search, queues and events; spoofed search owner is rejected | Local adversarial matrix passed; trusted Gateway sender mapping remains unverified live |
 | 22 | `test_explicit_annotation_link_groups_trace_without_inventing_authorship` | Local |
-| 23 | `test_exports_converge_at_trace_and_retry_is_idempotent` and common search; 118 actual Koodo notes and 39 actual WeRead records imported and searched in temporary stores, with replay and raw evidence verified | Native record mapping verified for both; app-driven and periodic live sync pending |
-| 24 | Empty search behavior exists; profile instructs evidence-bound answers | Pending live answer test |
+| 23 | `test_same_query_returns_common_hits_from_all_three_media` returns physical, WeRead and Koodo SearchHits for one query without upstream-specific objects; 118 actual Koodo notes and 39 actual WeRead records were imported and searched in temporary stores, with replay and raw evidence verified | Three-source contract passed locally; app-driven and periodic live sync pending |
+| 24 | A live synthetic agent turn after the profile correction refused to invent a page annotation and explicitly stated that no authenticated Librarian search was available; workspace memory was not treated as proof of absence | Partial: owner-scoped search-to-answer path and evidence-backed live reply still pending |
 | 25 | `test_source_correction_during_external_write_does_not_publish_promotion` | Local mock; actual knowledge writer pending |
 | 26 | `test_candidate_requires_explicit_trigger_and_promotion_confirms_external_write` | Local |
 

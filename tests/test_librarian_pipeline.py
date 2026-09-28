@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 from PIL import Image
 
+from agents.librarian.runtime.digital import ingest_export
 from agents.librarian.runtime.pipeline import correct_trace, process_capture, rebuild_index, render_trace_crop, resolve_capture, search, search_response
 from agents.librarian.runtime.review import review_queues
 from agents.librarian.runtime.store import Library, LibrarianError, validate
@@ -82,6 +83,50 @@ def test_synthetic_observation_to_provenance_search_and_rebuild(tmp_path: Path):
         assert rebuild_index(lib, "owner_a") == 2
         assert len(search(lib, "owner_a", "Parsons", include_unresolved=True)) == 2
         assert [e["event"] for e in lib.pending_events("owner_a")].count("reading.trace.created") == 2
+
+
+def test_same_query_returns_common_hits_from_all_three_media(tmp_path: Path):
+    weread = '''---
+bookId: "three-media-weread"
+---
+> [!abstract] WeRead fixture
+# 高亮划线
+## One
+> 📌 Weber and Parsons
+> ⏱ 2026-01-01 12:00:00 ^weread-mark
+'''.encode()
+    koodo = '''# Koodo Reader - Highlights
+## Koodo fixture
+### One
+> Weber and Parsons
+*Date: 2026-01-01 | Color: #FFFF00*
+'''.encode()
+    with Library(tmp_path) as lib:
+        capture = lib.ingest(
+            "owner_a", transport="gateway", account_id="account",
+            conversation_id="chat", source_event_id="message",
+            attachments=[{"source_item_id": "photo", "mime_type": "image/png",
+                          "data": _photo()}], idempotency_key="three-media-photo")
+        process_capture(lib, "owner_a", capture["capture_ids"][0], lambda _: _output())
+        ingest_export(lib, "owner_a", "weread", "weread.md", weread)
+        ingest_export(lib, "owner_a", "koodo", "koodo.md", koodo)
+        request = {"owner_id": "owner_a", "query": "Weber and Parsons",
+                   "filters": {"work_id": None, "edition_id": None,
+                               "book_instance_id": None, "session_id": None,
+                               "medium": None, "trace_types": [],
+                               "include_unresolved": True},
+                   "limit": 20, "cursor": None}
+        response = search_response(lib, request, trusted_owner_id="owner_a")
+        assert response["index_state"] == "ready"
+        hits = response["hits"]
+        assert {hit["medium"] for hit in hits} == {"physical", "weread", "koodo"}
+        assert all(hit["content"]["printed_text"]["text"] == "Weber and Parsons"
+                   for hit in hits)
+        assert all("source" not in hit and "source_record_id" not in hit for hit in hits)
+        assert {hit["evidence"][0]["mime_type"] for hit in hits} == {
+            "image/png", "text/markdown"}
+        assert search_response(lib, {**request, "owner_id": "owner_b"},
+                               trusted_owner_id="owner_b")["hits"] == []
 
 
 def test_invalid_extraction_keeps_raw_output_without_trace(tmp_path: Path):
@@ -332,6 +377,64 @@ def test_conflicting_explicit_session_keeps_original_and_observation(tmp_path: P
         low_confidence = process_capture(lib, "owner_a", third["capture_ids"][0],
                                          lambda _: json.dumps(title_output).encode())
         assert len(low_confidence) == 2
+
+
+def test_same_title_two_copies_requires_explicit_catalog_resolution(tmp_path: Path):
+    now = "2026-09-28T00:00:00+00:00"
+    with Library(tmp_path) as lib:
+        lib.register("owner_a", {"object_type": "Work", "schema_version": "0.1.0",
+                     "id": "work_shared", "owner_id": "owner_a", "created_at": now,
+                     "title": "Shared Title", "original_title": None,
+                     "authors": [], "identifiers": [], "revision": 1,
+                     "supersedes_revision": None})
+        for suffix in ("one", "two"):
+            lib.register("owner_a", {
+                "object_type": "Edition", "schema_version": "0.1.0",
+                "id": f"edition_{suffix}", "owner_id": "owner_a", "created_at": now,
+                "work_id": "work_shared", "edition_label": suffix, "publisher": None,
+                "publication_year": None, "isbn": {"isbn13": None, "isbn10": None},
+                "language": None, "page_count": None, "volume_label": None,
+                "revision": 1, "supersedes_revision": None})
+            lib.register("owner_a", {
+                "object_type": "BookInstance", "schema_version": "0.1.0",
+                "id": f"bookinst_{suffix}", "owner_id": "owner_a", "created_at": now,
+                "edition_id": f"edition_{suffix}", "medium": "physical",
+                "acquired_at": {"value": None, "confidence": None, "basis": "unknown"},
+                "ownership_status": "owned", "physical": {"qr_id": None, "shelf": None},
+                "reading_status": {"state": "unread", "current_page": None,
+                                   "progress_evidence_ref": None},
+                "revision": 1, "supersedes_revision": None})
+        receipt = lib.ingest(
+            "owner_a", transport="gateway", account_id="account",
+            conversation_id="chat", source_event_id="message-1",
+            attachments=[{"source_item_id": "image-1", "mime_type": "image/png",
+                          "data": _photo()}], idempotency_key="same-title-1")
+        capture_id = receipt["capture_ids"][0]
+        output = json.loads(_output())
+        output["visible_title"] = {"text": "Shared Title", "confidence": .99,
+                                   "basis": "vision"}
+        traces = process_capture(lib, "owner_a", capture_id,
+                                 lambda _: json.dumps(output).encode())
+        assert len(traces) == 2
+        assert all(trace["context_state"] == "unresolved" and
+                   trace["book_instance_id"] is None and trace["edition_id"] is None
+                   for trace in traces)
+        assert search(lib, "owner_a", "Parsons") == []
+        assert len(search(lib, "owner_a", "Parsons", include_unresolved=True)) == 2
+        queue = review_queues(lib, "owner_a")
+        assert len(queue["resolution"]) == 1
+        assert queue["resolution"][0]["captures"][0]["capture_id"] == capture_id
+
+        session = lib.start_session("owner_a", "bookinst_two")
+        resolution = resolve_capture(lib, "owner_a", capture_id, 1,
+                                     session_id=session["id"],
+                                     book_instance_id="bookinst_two")
+        assert resolution["book_instance"]["value"] == "bookinst_two"
+        resolved = search(lib, "owner_a", "Parsons")
+        assert len(resolved) == 2
+        assert all(trace["book_instance_id"] == "bookinst_two" and
+                   trace["edition_id"] == "edition_two" for trace in resolved)
+        assert lib.get("owner_a", "BookInstance", "bookinst_one")["reading_status"]["state"] == "unread"
 
 
 def test_explicit_annotation_link_groups_trace_without_inventing_authorship(tmp_path: Path):
