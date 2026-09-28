@@ -74,6 +74,14 @@ pap jobs
 pap status
 ```
 
+可生成独立打开的 PAP 任务时间表网页（含全部 manifest job、重复规则、计划时间和筛选）：
+
+```bash
+.venv/bin/python scripts/build_tasks_page.py
+```
+
+输出为仓库根目录的 `pap-tasks.html`。修改 `agent.yaml` 后重新运行即可更新页面。
+
 安装器只将 skills 合并到既有 OpenClaw agent workspace；不创建 OpenClaw automation
 或 cron，调度继续由 `pap tick` / `agent.yaml` 负责：
 
