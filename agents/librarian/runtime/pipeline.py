@@ -7,9 +7,12 @@ annotated photographs before M1 can be claimed.
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 from pathlib import Path
 from typing import Any, Callable
+
+from PIL import Image, ImageOps, UnidentifiedImageError
 
 from .store import Library, LibrarianError, _json, _new, _now, _unknown_time, validate
 
@@ -68,9 +71,27 @@ def _spatial(page_box: list[float], trace_box: list[float]) -> tuple[str, str]:
             ["left", "center", "right"][min(2, int(x * 3))])
 
 
+def _failed_run(lib: Library, owner_id: str, capture_id: str, run_id: str,
+                extractor_version: str, normalizer_version: str,
+                error_code: str, raw_asset: dict[str, Any] | None = None) -> None:
+    record = {"object_type": "ProcessingRun", "schema_version": "0.1.0",
+              "id": run_id, "owner_id": owner_id, "created_at": _now(),
+              "capture_id": capture_id, "checkpoint": "STORED",
+              "outcome": "failed", "issues": ["FAILED"],
+              "extractor_version": extractor_version,
+              "normalizer_version": normalizer_version,
+              "revision": 1, "supersedes_revision": None}
+    with lib.db:
+        lib._put(record)
+        if raw_asset:
+            lib.db.execute("INSERT INTO extractor_attempts VALUES(?,?,?,?,?,?)",
+                           (owner_id, capture_id, run_id, _json(raw_asset), "failed", error_code))
+
+
 def process_capture(lib: Library, owner_id: str, capture_id: str,
                     extractor: Callable[[bytes], bytes], *, extractor_version: str = "synthetic-v1",
-                    normalizer_version: str = "physical-v1") -> list[dict[str, Any]]:
+                    normalizer_version: str = "physical-v1",
+                    vocabulary: dict[str, Any] | None = None) -> list[dict[str, Any]]:
     """Run one captured original through a replaceable extractor and normalize.
 
     A persisted successful run is reused on retry. Deliberate reprocessing
@@ -78,6 +99,10 @@ def process_capture(lib: Library, owner_id: str, capture_id: str,
     overwriting any user correction.
     """
     capture = lib.get(owner_id, "PageCapture", capture_id)
+    if vocabulary and vocabulary.get("enabled"):
+        if not vocabulary.get("version") or not isinstance(vocabulary.get("mappings"), dict):
+            raise LibrarianError("VALIDATION_FAILED", "enabled vocabulary needs version and mappings")
+        normalizer_version = f"{normalizer_version}:{vocabulary['version']}"
     old = lib.db.execute("SELECT body FROM records WHERE owner_id=? AND model='ProcessingRun' AND current=1",
                          (owner_id,)).fetchall()
     for row in old:
@@ -87,12 +112,27 @@ def process_capture(lib: Library, owner_id: str, capture_id: str,
                 raise LibrarianError("RECONCILIATION_REQUIRED", "reprocessing needs trace reconciliation")
             return _traces_for_capture(lib, owner_id, capture_id)
 
+    run_id = _new("run")
     original = lib.read_original(owner_id, capture_id)
-    raw = extractor(original)
+    try:
+        with Image.open(io.BytesIO(original)) as image:
+            image.load()
+            oriented_size = ImageOps.exif_transpose(image).size
+    except (UnidentifiedImageError, OSError, ValueError) as error:
+        _failed_run(lib, owner_id, capture_id, run_id, extractor_version,
+                    normalizer_version, "VALIDATION_FAILED")
+        raise LibrarianError("VALIDATION_FAILED", "capture is not a decodable image") from error
+    try:
+        raw = extractor(original)
+    except Exception as error:
+        _failed_run(lib, owner_id, capture_id, run_id, extractor_version,
+                    normalizer_version, "EXTRACTOR_UNAVAILABLE")
+        raise LibrarianError("EXTRACTOR_UNAVAILABLE", "extractor failed; original capture remains stored") from error
     if not isinstance(raw, bytes):
+        _failed_run(lib, owner_id, capture_id, run_id, extractor_version,
+                    normalizer_version, "EXTRACTION_SCHEMA_INVALID")
         raise LibrarianError("EXTRACTION_SCHEMA_INVALID", "extractor must return raw JSON bytes")
     raw_asset = lib._save_object(raw, "application/json")
-    run_id = _new("run")
     try:
         output = json.loads(raw)
         if not isinstance(output, dict):
@@ -103,11 +143,12 @@ def process_capture(lib: Library, owner_id: str, capture_id: str,
                        "processing_run_id": run_id, "extractor": extractor_version,
                        "raw_output_asset": raw_asset, **output}
         validate("PageObservation", observation)
+        if (observation["image_space"]["width"], observation["image_space"]["height"]) != oriented_size:
+            raise LibrarianError("EXTRACTION_SCHEMA_INVALID", "observation dimensions differ from EXIF-oriented original")
         _check_observation(observation)
     except (json.JSONDecodeError, ValueError, KeyError, TypeError, LibrarianError) as error:
-        with lib.db:
-            lib.db.execute("INSERT INTO extractor_attempts VALUES(?,?,?,?,?,?)",
-                           (owner_id, capture_id, run_id, _json(raw_asset), "failed", "EXTRACTION_SCHEMA_INVALID"))
+        _failed_run(lib, owner_id, capture_id, run_id, extractor_version,
+                    normalizer_version, "EXTRACTION_SCHEMA_INVALID", raw_asset)
         raise LibrarianError("EXTRACTION_SCHEMA_INVALID", f"extractor output invalid: {error}") from error
 
     context = capture["submitted_context"]
@@ -152,7 +193,8 @@ def process_capture(lib: Library, owner_id: str, capture_id: str,
                   "pages": observation["pages"], "revision": 1,
                   "supersedes_revision": None}
     validate("CaptureResolution", resolution)
-    traces = normalize(capture, observation, resolution, state, normalizer_version)
+    traces = normalize(capture, observation, resolution, state, normalizer_version,
+                       vocabulary=vocabulary)
     run = {"object_type": "ProcessingRun", "schema_version": "0.1.0",
            "id": run_id, "owner_id": owner_id, "created_at": _now(),
            "capture_id": capture_id, "checkpoint": "NORMALIZED",
@@ -184,7 +226,8 @@ def process_capture(lib: Library, owner_id: str, capture_id: str,
 
 def normalize(capture: dict[str, Any], observation: dict[str, Any],
               resolution: dict[str, Any], context_state: str,
-              normalizer_version: str) -> list[dict[str, Any]]:
+              normalizer_version: str,
+              *, vocabulary: dict[str, Any] | None = None) -> list[dict[str, Any]]:
     """Pure deterministic observation-to-trace projection for one capture."""
     pages = {p["id"]: p for p in observation["pages"]}
     printed = {p["id"]: p for p in observation["printed_regions"]}
@@ -234,6 +277,23 @@ def normalize(capture: dict[str, Any], observation: dict[str, Any],
                                    for mark in group))
         symbols = [mark["text"]["text"] for mark in group if mark in observation["symbols"]
                    and mark["text"] and mark["text"]["text"]]
+        signals = []
+        if vocabulary and vocabulary.get("enabled"):
+            for symbol in group:
+                if symbol not in observation["symbols"] or not symbol["text"]:
+                    continue
+                if (symbol["confidence"] is None or symbol["confidence"] < .90
+                        or symbol["text"]["confidence"] is None
+                        or symbol["text"]["confidence"] < .90):
+                    continue
+                signal = vocabulary["mappings"].get(symbol["text"]["text"])
+                if signal and signal not in signals:
+                    signals.append(signal)
+        important = "promote_candidate" in signals
+        needs_review = important and (
+            printed_text is None or text_confidence is None or text_confidence < .85
+            or (annotation is not None and (annotation["confidence"] is None
+                                            or annotation["confidence"] < .70)))
         trace = {"object_type": "ReadingTrace", "schema_version": "0.1.0",
                  "id": trace_id, "owner_id": capture["owner_id"],
                  "created_at": observation["created_at"], "revision": 1,
@@ -262,8 +322,11 @@ def normalize(capture: dict[str, Any], observation: dict[str, Any],
                                 "page_number": page["page"]["confidence"]},
                  "marked_at": _unknown_time(),
                  "attribution": {"mark_author": "unknown", "basis": "unknown"},
-                 "intent_signals": [],
-                 "review": {"required": False, "state": "none", "reason": None}}
+                 "intent_signals": signals,
+                 "vocabulary_version": vocabulary["version"] if vocabulary and vocabulary.get("enabled") else None,
+                 "review": {"required": needs_review,
+                            "state": "pending" if needs_review else "none",
+                            "reason": "important content uncertain" if needs_review else None}}
         validate("ReadingTrace", trace)
         result.append(trace)
     return result

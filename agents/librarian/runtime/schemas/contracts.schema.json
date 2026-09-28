@@ -2029,6 +2029,12 @@
           },
           "minItems": 0
         },
+        "vocabulary_version": {
+          "anyOf": [
+            {"type": "string", "minLength": 1},
+            {"type": "null"}
+          ]
+        },
         "review": {
           "type": "object",
           "properties": {
@@ -2087,6 +2093,7 @@
         "marked_at",
         "attribution",
         "intent_signals",
+        "vocabulary_version",
         "review"
       ],
       "additionalProperties": false

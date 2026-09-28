@@ -184,6 +184,7 @@ def ingest_export(lib: Library, owner_id: str, medium: str, source_key: str,
                  "marked_at": _unknown_time(),
                  "attribution": {"mark_author": "unknown", "basis": "unknown"},
                  "intent_signals": [],
+                 "vocabulary_version": None,
                  "review": {"required": False, "state": "none", "reason": None}}
         validate("ReadingTrace", trace)
         traces.append(trace)

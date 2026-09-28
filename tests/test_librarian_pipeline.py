@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import json
+import io
 from pathlib import Path
 
 import pytest
+from PIL import Image
 
 from agents.librarian.runtime.pipeline import correct_trace, process_capture, rebuild_index, search
 from agents.librarian.runtime.store import Library, LibrarianError, validate
@@ -34,12 +36,26 @@ def _output() -> bytes:
     }).encode()
 
 
+def _photo() -> bytes:
+    stream = io.BytesIO()
+    Image.new("RGB", (1000, 1400), "white").save(stream, format="PNG")
+    return stream.getvalue()
+
+
+def _rotated_photo() -> bytes:
+    stream = io.BytesIO()
+    exif = Image.Exif()
+    exif[274] = 6  # EXIF rotation swaps the display dimensions.
+    Image.new("RGB", (1000, 1400), "white").save(stream, format="JPEG", exif=exif)
+    return stream.getvalue()
+
+
 def test_synthetic_observation_to_provenance_search_and_rebuild(tmp_path: Path):
     with Library(tmp_path) as lib:
         receipt = lib.ingest("owner_a", transport="gateway", account_id="account",
                              conversation_id="chat", source_event_id="message-1",
                              attachments=[{"source_item_id": "image-1",
-                                           "mime_type": "image/jpeg", "data": b"fixture photo"}],
+                                           "mime_type": "image/png", "data": _photo()}],
                              idempotency_key="command-1")
         capture_id = receipt["capture_ids"][0]
         calls = []
@@ -52,6 +68,7 @@ def test_synthetic_observation_to_provenance_search_and_rebuild(tmp_path: Path):
         assert traces[1]["content"]["annotation"]["text"] == "Parsons?"
         assert traces[0]["location"]["page"]["number"] == 171
         assert traces[0]["attribution"]["mark_author"] == "unknown"
+        assert lib.read_trace_evidence("owner_a", traces[0]["id"])[0] == _photo()
         assert all(t["source"]["capture_id"] == capture_id for t in traces)
         assert search(lib, "owner_a", "Parsons") == []  # unresolved stays out of default results
         hits = search(lib, "owner_a", "Parsons", include_unresolved=True)
@@ -70,8 +87,8 @@ def test_invalid_extraction_keeps_raw_output_without_trace(tmp_path: Path):
     with Library(tmp_path) as lib:
         receipt = lib.ingest("owner_a", transport="gateway", account_id="a",
                              conversation_id="c", source_event_id="m",
-                             attachments=[{"source_item_id": "i", "mime_type": "image/jpeg",
-                                           "data": b"photo"}], idempotency_key="k")
+                             attachments=[{"source_item_id": "i", "mime_type": "image/png",
+                                           "data": _photo()}], idempotency_key="k")
         with pytest.raises(LibrarianError) as err:
             process_capture(lib, "owner_a", receipt["capture_ids"][0], lambda _: b"{broken")
         assert err.value.code == "EXTRACTION_SCHEMA_INVALID"
@@ -79,6 +96,8 @@ def test_invalid_extraction_keeps_raw_output_without_trace(tmp_path: Path):
         assert row["error_code"] == "EXTRACTION_SCHEMA_INVALID"
         ref = json.loads(row["raw_asset"])
         assert (tmp_path / ref["object_key"]).read_bytes() == b"{broken"
+        failed = lib.db.execute("SELECT body FROM records WHERE model='ProcessingRun'").fetchone()[0]
+        assert json.loads(failed)["outcome"] == "failed"
         assert lib.db.execute("SELECT COUNT(*) FROM records WHERE model='ReadingTrace'").fetchone()[0] == 0
 
 
@@ -88,8 +107,8 @@ def test_invalid_cross_page_link_is_rejected(tmp_path: Path):
     with Library(tmp_path) as lib:
         receipt = lib.ingest("owner_a", transport="gateway", account_id="a",
                              conversation_id="c", source_event_id="m",
-                             attachments=[{"source_item_id": "i", "mime_type": "image/jpeg",
-                                           "data": b"photo"}], idempotency_key="k")
+                             attachments=[{"source_item_id": "i", "mime_type": "image/png",
+                                           "data": _photo()}], idempotency_key="k")
         with pytest.raises(LibrarianError) as err:
             process_capture(lib, "owner_a", receipt["capture_ids"][0],
                             lambda _: json.dumps(output).encode())
@@ -103,8 +122,8 @@ def test_explicit_annotation_link_groups_trace_without_inventing_authorship(tmp_
     with Library(tmp_path) as lib:
         receipt = lib.ingest("owner_a", transport="gateway", account_id="a",
                              conversation_id="c", source_event_id="m",
-                             attachments=[{"source_item_id": "i", "mime_type": "image/jpeg",
-                                           "data": b"photo"}], idempotency_key="k")
+                             attachments=[{"source_item_id": "i", "mime_type": "image/png",
+                                           "data": _photo()}], idempotency_key="k")
         traces = process_capture(lib, "owner_a", receipt["capture_ids"][0],
                                  lambda _: json.dumps(output).encode())
         assert len(traces) == 1
@@ -117,8 +136,8 @@ def test_correction_adds_revision_and_keeps_evidence(tmp_path: Path):
     with Library(tmp_path) as lib:
         receipt = lib.ingest("owner_a", transport="gateway", account_id="a",
                              conversation_id="c", source_event_id="m",
-                             attachments=[{"source_item_id": "i", "mime_type": "image/jpeg",
-                                           "data": b"photo"}], idempotency_key="k")
+                             attachments=[{"source_item_id": "i", "mime_type": "image/png",
+                                           "data": _photo()}], idempotency_key="k")
         trace = process_capture(lib, "owner_a", receipt["capture_ids"][0],
                                 lambda _: _output())[1]
         old_observation = trace["source"]["observation_id"]
@@ -164,8 +183,8 @@ def test_explicit_session_yields_resolved_trace_and_default_search(tmp_path: Pat
         session = lib.start_session("owner_a", "bookinst_one", scope=("gateway", "a", "c"))
         receipt = lib.ingest("owner_a", transport="gateway", account_id="a",
                              conversation_id="c", source_event_id="m",
-                             attachments=[{"source_item_id": "i", "mime_type": "image/jpeg",
-                                           "data": b"photo"}], idempotency_key="k",
+                             attachments=[{"source_item_id": "i", "mime_type": "image/png",
+                                           "data": _photo()}], idempotency_key="k",
                              submitted_context={"session_id": session["id"]})
         traces = process_capture(lib, "owner_a", receipt["capture_ids"][0],
                                  lambda _: _output())
@@ -175,8 +194,8 @@ def test_explicit_session_yields_resolved_trace_and_default_search(tmp_path: Pat
         assert len(search(lib, "owner_a", "Parsons")) == 2
         inferred = lib.ingest("owner_a", transport="gateway", account_id="a",
                               conversation_id="c", source_event_id="m2",
-                              attachments=[{"source_item_id": "i", "mime_type": "image/jpeg",
-                                            "data": b"second photo"}], idempotency_key="k2")
+                              attachments=[{"source_item_id": "i", "mime_type": "image/png",
+                                            "data": _photo()}], idempotency_key="k2")
         inferred_traces = process_capture(lib, "owner_a", inferred["capture_ids"][0],
                                           lambda _: _output())
         assert all(t["session_id"] == session["id"] and t["context_state"] == "resolved"
@@ -187,8 +206,8 @@ def test_trace_semantics_reject_fake_resolved_context_and_review(tmp_path: Path)
     with Library(tmp_path) as lib:
         receipt = lib.ingest("owner_a", transport="gateway", account_id="a",
                              conversation_id="c", source_event_id="m",
-                             attachments=[{"source_item_id": "i", "mime_type": "image/jpeg",
-                                           "data": b"photo"}], idempotency_key="k")
+                             attachments=[{"source_item_id": "i", "mime_type": "image/png",
+                                           "data": _photo()}], idempotency_key="k")
         trace = process_capture(lib, "owner_a", receipt["capture_ids"][0],
                                 lambda _: _output())[0]
         false_resolution = dict(trace, context_state="resolved")
@@ -198,3 +217,51 @@ def test_trace_semantics_reject_fake_resolved_context_and_review(tmp_path: Path)
         false_review["review"] = {"required": False, "state": "pending", "reason": "unclear"}
         with pytest.raises(LibrarianError, match="pending review"):
             validate("ReadingTrace", false_review)
+
+
+def test_observation_dimensions_follow_exif_oriented_original(tmp_path: Path):
+    with Library(tmp_path) as lib:
+        receipt = lib.ingest("owner_a", transport="gateway", account_id="a",
+                             conversation_id="c", source_event_id="m",
+                             attachments=[{"source_item_id": "i", "mime_type": "image/jpeg",
+                                           "data": _rotated_photo()}], idempotency_key="k")
+        capture_id = receipt["capture_ids"][0]
+        with pytest.raises(LibrarianError, match="EXIF-oriented original"):
+            process_capture(lib, "owner_a", capture_id, lambda _: _output())
+        raw_ref = json.loads(lib.db.execute("SELECT raw_asset FROM extractor_attempts").fetchone()[0])
+        assert (tmp_path / raw_ref["object_key"]).read_bytes() == _output()
+        output = json.loads(_output())
+        output["image_space"].update(width=1400, height=1000)
+        assert len(process_capture(lib, "owner_a", capture_id,
+                                   lambda _: json.dumps(output).encode())) == 2
+
+
+def test_opt_in_symbol_signal_and_important_content_review(tmp_path: Path):
+    output = json.loads(_output())
+    output["printed_regions"][0]["text"]["confidence"] = .5
+    symbol = _detection("symbol_1", "symbol", "!!")
+    symbol["text"]["confidence"] = .95
+    symbol["confidence"] = .95
+    output["symbols"] = [symbol]
+    output["links"] = [{"from_id": "mark_1", "to_id": "symbol_1",
+                        "kind": "annotates", "confidence": .95}]
+    raw = json.dumps(output).encode()
+    vocabulary = {"enabled": True, "version": "personal-v1",
+                  "mappings": {"!!": "promote_candidate", "R": "reread_target"}}
+    with Library(tmp_path) as lib:
+        def capture(source: str) -> str:
+            return lib.ingest("owner_a", transport="gateway", account_id="a",
+                              conversation_id="c", source_event_id=source,
+                              attachments=[{"source_item_id": "i", "mime_type": "image/png",
+                                            "data": _photo()}], idempotency_key=source)["capture_ids"][0]
+        disabled = process_capture(lib, "owner_a", capture("disabled"), lambda _: raw)
+        assert all(not trace["intent_signals"] for trace in disabled)
+        enabled = process_capture(lib, "owner_a", capture("enabled"), lambda _: raw,
+                                  vocabulary=vocabulary)
+        important = next(trace for trace in enabled if "symbol" in trace["trace_types"])
+        assert important["intent_signals"] == ["promote_candidate"]
+        assert important["vocabulary_version"] == "personal-v1"
+        assert important["review"]["required"] is True
+        assert important["review"]["state"] == "pending"
+        assert important["attribution"]["mark_author"] == "unknown"
+        assert all("reread_target" not in trace["intent_signals"] for trace in enabled)

@@ -278,7 +278,10 @@ class Library:
         if prior:
             if prior["fingerprint"] != fingerprint:
                 raise LibrarianError("IDEMPOTENCY_CONFLICT", "same key has different business payload")
-            return json.loads(prior["receipt"])
+            receipt = json.loads(prior["receipt"])
+            for capture_id in receipt["capture_ids"]:
+                self.read_original(owner_id, capture_id)
+            return receipt
 
         # Object files are placed first, fsynced, and then referenced by the
         # metadata transaction. Failed transactions may leave safe orphan blobs.
@@ -405,9 +408,24 @@ class Library:
 
     def read_original(self, owner_id: str, capture_id: str) -> bytes:
         capture = self._get(owner_id, "PageCapture", capture_id)
-        asset = capture["asset"]
-        path = self.root / asset["object_key"]
-        data = path.read_bytes()
+        return self._read_object(capture["asset"])
+
+    def read_trace_evidence(self, owner_id: str, trace_id: str,
+                            index: int = 0) -> tuple[bytes, str]:
+        trace = self._get(owner_id, "ReadingTrace", trace_id)
+        if not 0 <= index < len(trace["provenance"]):
+            raise LibrarianError("VALIDATION_FAILED", "evidence index out of range")
+        asset = trace["provenance"][index]
+        return self._read_object(asset), asset["mime_type"]
+
+    def _read_object(self, asset: dict[str, Any]) -> bytes:
+        path = (self.root / asset["object_key"]).resolve()
+        if not path.is_relative_to(self.objects.resolve()) or path.is_symlink():
+            raise LibrarianError("OBJECT_STORE_UNAVAILABLE", "object path outside private store")
+        try:
+            data = path.read_bytes()
+        except OSError as error:
+            raise LibrarianError("OBJECT_STORE_UNAVAILABLE", "original object cannot be read") from error
         if hashlib.sha256(data).hexdigest() != asset["sha256"] or len(data) != asset["byte_size"]:
             raise LibrarianError("OBJECT_STORE_UNAVAILABLE", "original object failed integrity check")
         return data

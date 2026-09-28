@@ -59,6 +59,10 @@ def test_exports_converge_at_trace_and_retry_is_idempotent(tmp_path: Path):
         assert all(trace["source"]["raw_payload"]["sha256"] for trace in weread + koodo)
         assert all(trace["attribution"]["mark_author"] == "unknown" for trace in weread + koodo)
         assert all(trace["marked_at"]["value"] is None for trace in weread + koodo)
+        assert lib.read_trace_evidence("owner_a", weread[0]["id"]) == (WEREAD, "text/markdown")
+        with pytest.raises(LibrarianError) as err:
+            lib.read_trace_evidence("owner_b", weread[0]["id"])
+        assert err.value.code == "UNAUTHORIZED"
         assert len(search(lib, "owner_a", "Parsons")) == 2
         assert len(search(lib, "owner_a", "Another")) == 1
         request = {"owner_id": "owner_a", "query": "Parsons",

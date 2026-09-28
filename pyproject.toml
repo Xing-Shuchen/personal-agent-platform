@@ -9,7 +9,7 @@ description = "Personal Agent Platform: declarative agents, scheduling, run audi
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
-dependencies = ["PyYAML>=6.0", "sentence-transformers>=5.0,<6", "jsonschema>=4.10,<5"]
+dependencies = ["PyYAML>=6.0", "sentence-transformers>=5.0,<6", "jsonschema>=4.10,<5", "Pillow>=10,<12"]
 
 [project.scripts]
 pap = "pap.cli:main"

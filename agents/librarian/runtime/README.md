@@ -13,8 +13,10 @@ a content-addressed original object store, all-or-retry capture acceptance,
 idempotency, immutable evidence records, and an outbox in the domain
 transaction. `pipeline.py` accepts a replaceable extractor that
 returns raw JSON bytes. It saves those bytes, validates the observation,
+checks dimensions against the EXIF-oriented original, records failed runs,
 normalizes trace groups, indexes the current revision, supports correction,
-and can rebuild the index from traces. Its tests use synthetic bytes and
+applies an opt-in versioned symbol vocabulary with exception-only review,
+and can rebuild the index from traces. Its tests use synthetic images and
 synthetic observations; it is not a production image extractor.
 
 `digital.py` parses the WeRead and Koodo Markdown exports observed in this

@@ -119,6 +119,11 @@ def test_capture_durability_retry_conflict_and_same_bytes_new_message(tmp_path: 
         with pytest.raises(sqlite3.DatabaseError, match="immutable evidence"):
             with lib.db:
                 lib.db.execute("UPDATE records SET body='{}' WHERE model='PageCapture'")
+        (tmp_path / a["asset"]["object_key"]).unlink()
+        with pytest.raises(LibrarianError) as err:
+            lib.ingest("owner_a", **args)
+        assert err.value.code == "OBJECT_STORE_UNAVAILABLE"
+        (tmp_path / a["asset"]["object_key"]).write_bytes(photo)
     with Library(tmp_path) as reopened:
         assert reopened.read_original("owner_a", first["capture_ids"][0]) == photo
 
