@@ -94,3 +94,10 @@ CREATE TABLE IF NOT EXISTS command_receipts (
   receipt TEXT NOT NULL,
   PRIMARY KEY (owner_id, idempotency_key)
 );
+CREATE TABLE IF NOT EXISTS consumer_events (
+  consumer_id TEXT NOT NULL,
+  event_id TEXT NOT NULL,
+  owner_id TEXT NOT NULL,
+  consumed_at TEXT NOT NULL,
+  PRIMARY KEY (consumer_id, event_id)
+);

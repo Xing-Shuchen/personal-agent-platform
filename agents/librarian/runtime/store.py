@@ -93,6 +93,27 @@ def _validate_semantics(model: str, value: dict[str, Any]) -> None:
     if model == "KnowledgeCandidate":
         if (value["status"] == "promoted") != (value["knowledge_id"] is not None):
             raise LibrarianError("VALIDATION_FAILED", "promoted candidate needs a knowledge ID")
+    if model == "Event":
+        event = value["event"]
+        aggregate = value["aggregate"]
+        payload = value["payload"]
+        expected = {
+            "reading.capture.received": ("capture_batch", "batch_id"),
+            "reading.capture.processed": ("processing_run", "processing_run_id"),
+            "reading.session.started": ("reading_session", "session_id"),
+            "reading.session.progressed": ("reading_session", "session_id"),
+            "reading.session.closed": ("reading_session", "session_id"),
+            "reading.trace.created": ("reading_trace", "trace_id"),
+            "reading.trace.corrected": ("reading_trace", "trace_id"),
+            "reading.knowledge_candidate.created": ("knowledge_candidate", "candidate_id"),
+            "reading.knowledge.promoted": ("knowledge_candidate", "candidate_id"),
+        }[event]
+        if aggregate["type"] != expected[0] or aggregate["id"] != payload[expected[1]]:
+            raise LibrarianError("VALIDATION_FAILED", "event aggregate and payload disagree")
+        if "revision" in payload and aggregate["revision"] != payload["revision"]:
+            raise LibrarianError("VALIDATION_FAILED", "event revisions disagree")
+        if event == "reading.trace.corrected" and payload["previous_revision"] + 1 != payload["revision"]:
+            raise LibrarianError("VALIDATION_FAILED", "corrected event revisions are not consecutive")
 
 
 class Library:
