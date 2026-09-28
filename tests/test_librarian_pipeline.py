@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 from PIL import Image
 
-from agents.librarian.runtime.pipeline import correct_trace, process_capture, rebuild_index, resolve_capture, search
+from agents.librarian.runtime.pipeline import correct_trace, process_capture, rebuild_index, resolve_capture, search, search_response
 from agents.librarian.runtime.store import Library, LibrarianError, validate
 
 
@@ -113,6 +113,32 @@ def test_invalid_cross_page_link_is_rejected(tmp_path: Path):
             process_capture(lib, "owner_a", receipt["capture_ids"][0],
                             lambda _: json.dumps(output).encode())
         assert err.value.code == "EXTRACTION_SCHEMA_INVALID"
+
+
+def test_structural_search_finds_a_mark_without_recognized_text(tmp_path: Path):
+    output = json.loads(_output())
+    output["printed_regions"] = []
+    output["marks"] = []
+    output["annotations"] = []
+    output["symbols"] = [_detection("symbol_1", "symbol", None)]
+    with Library(tmp_path) as lib:
+        receipt = lib.ingest("owner_a", transport="gateway", account_id="a",
+                             conversation_id="c", source_event_id="m",
+                             attachments=[{"source_item_id": "i", "mime_type": "image/png",
+                                           "data": _photo()}], idempotency_key="k")
+        trace = process_capture(lib, "owner_a", receipt["capture_ids"][0],
+                                lambda _: json.dumps(output).encode())[0]
+        assert trace["content"]["printed_text"]["text"] is None
+        request = {"owner_id": "owner_a", "query": "",
+                   "filters": {"work_id": None, "edition_id": None,
+                               "book_instance_id": None, "session_id": None,
+                               "medium": None, "trace_types": ["symbol"],
+                               "include_unresolved": True},
+                   "limit": 20, "cursor": None}
+        hit = search_response(lib, request, trusted_owner_id="owner_a")["hits"][0]
+        assert hit["trace_id"] == trace["id"]
+        assert hit["channels"] == ["structural"]
+        assert hit["evidence"][0]["mime_type"] == "image/png"
 
 
 def test_conflicting_explicit_session_keeps_original_and_observation(tmp_path: Path):

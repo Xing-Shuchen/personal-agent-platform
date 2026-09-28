@@ -690,6 +690,8 @@ state/         active-session and delivery projections
 
 `SearchRequest` 包含 `owner_id / query / filters / limit / cursor`。filters 支持 Work、Edition、BookInstance、medium、Session、trace types 和 `include_unresolved`。权限必须在召回前生效，不能先跨用户检索再靠模型隐藏结果。
 
+纯结构检索可以让 `query` 为空，但必须指定至少一个身份、媒介或 trace type 过滤器；这使没有可靠识别文字的符号痕迹仍可按结构找回。空文字且无结构过滤器的请求无效。
+
 `SearchResponse` 返回 `hits / next_cursor / index_state`。每个 hit 包含 trace ID/revision、medium、上下文状态、题名、location、原始提取内容、命中 channel、rank score、证据引用和警告。
 
 `rank_score` 是排序值，不是证据置信度。默认只搜索 active 的当前 trace revision；历史/superseded 结果应走显式历史查询，不同时作为多条当前事实展示。

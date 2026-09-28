@@ -2543,7 +2543,7 @@
         },
         "query": {
           "type": "string",
-          "minLength": 1
+          "minLength": 0
         },
         "filters": {
           "$ref": "#/$defs/SearchFilters"

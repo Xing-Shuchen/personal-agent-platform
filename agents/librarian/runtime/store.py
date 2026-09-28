@@ -96,6 +96,12 @@ def _validate_semantics(model: str, value: dict[str, Any]) -> None:
     if model == "KnowledgeCandidate":
         if (value["status"] == "promoted") != (value["knowledge_id"] is not None):
             raise LibrarianError("VALIDATION_FAILED", "promoted candidate needs a knowledge ID")
+    if model == "SearchRequest":
+        filters = value["filters"]
+        if not value["query"].strip() and not any(
+                filters[key] for key in ("work_id", "edition_id", "book_instance_id",
+                                         "session_id", "medium", "trace_types")):
+            raise LibrarianError("VALIDATION_FAILED", "search needs text or a structural filter")
     if model == "Event":
         event = value["event"]
         aggregate = value["aggregate"]

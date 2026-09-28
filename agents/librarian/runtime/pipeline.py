@@ -575,9 +575,13 @@ def search_response(lib: Library, request: dict[str, Any], *, trusted_owner_id: 
     if cursor is not None and (not cursor.isdecimal() or int(cursor) > 1_000_000):
         raise LibrarianError("VALIDATION_FAILED", "invalid search cursor")
     offset = int(cursor or 0)
-    terms = ["owner_id=?", "(printed_text LIKE ? ESCAPE '\\' OR annotation LIKE ? ESCAPE '\\')"]
-    escaped = request["query"].replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-    params: list[Any] = [trusted_owner_id, f"%{escaped}%", f"%{escaped}%"]
+    terms = ["owner_id=?"]
+    params: list[Any] = [trusted_owner_id]
+    lexical = bool(request["query"].strip())
+    if lexical:
+        terms.append("(printed_text LIKE ? ESCAPE '\\' OR annotation LIKE ? ESCAPE '\\')")
+        escaped = request["query"].strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        params.extend((f"%{escaped}%", f"%{escaped}%"))
     if not filters["include_unresolved"]:
         terms.append("context_state='resolved'")
     for column in ("work_id", "edition_id", "book_instance_id", "session_id", "medium"):
@@ -596,10 +600,13 @@ def search_response(lib: Library, request: dict[str, Any], *, trusted_owner_id: 
         trace = lib.get(trusted_owner_id, "ReadingTrace", row["trace_id"])
         title = (lib.get(trusted_owner_id, "Work", trace["work_id"])["title"]
                  if trace["work_id"] else None)
+        channels = (["lexical"] if lexical else []) + (["structural"] if not lexical or any(
+            filters[key] for key in ("work_id", "edition_id", "book_instance_id",
+                                     "session_id", "medium", "trace_types")) else [])
         hit = {"trace_id": trace["id"], "revision": trace["revision"],
                "medium": trace["medium"], "context_state": trace["context_state"],
                "title": title, "location": trace["location"],
-               "content": trace["content"], "channels": ["lexical"],
+               "content": trace["content"], "channels": channels,
                "rank_score": 1.0, "evidence": trace["provenance"],
                "warnings": (["book unresolved"] if trace["context_state"] != "resolved" else [])}
         validate("SearchHit", hit)

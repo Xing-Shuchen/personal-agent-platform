@@ -22,6 +22,8 @@ normalizes trace groups, indexes the current revision, supports correction,
 applies an opt-in versioned symbol vocabulary with exception-only review,
 and can rebuild the index from traces. Its tests use synthetic images and
 synthetic observations; it is not a production image extractor.
+Search accepts text or a structural filter, including textless symbol traces,
+and returns the same provenance-bearing hit contract for all three media.
 
 `commands.py` validates the thirteen command names and their payload shapes,
 then executes the supported MVP commands with owner/actor checks and an

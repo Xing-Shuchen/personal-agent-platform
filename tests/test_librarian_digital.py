@@ -79,6 +79,13 @@ def test_exports_converge_at_trace_and_retry_is_idempotent(tmp_path: Path):
         page_two = search_response(lib, request | {"cursor": "1"}, trusted_owner_id="owner_a")
         assert page_two["next_cursor"] is None
         assert page_two["hits"][0]["trace_id"] != page_one["hits"][0]["trace_id"]
+        structural = search_response(lib, request | {"query": "", "limit": 20},
+                                     trusted_owner_id="owner_a")
+        assert len(structural["hits"]) == 2
+        assert all(hit["channels"] == ["structural"] for hit in structural["hits"])
+        with pytest.raises(LibrarianError, match="structural filter"):
+            search_response(lib, request | {"query": "", "filters": {
+                **request["filters"], "medium": None}}, trusted_owner_id="owner_a")
         lib.db.execute("UPDATE trace_index SET revision=0 WHERE trace_id=?",
                        (page_one["hits"][0]["trace_id"],))
         lib.db.commit()
