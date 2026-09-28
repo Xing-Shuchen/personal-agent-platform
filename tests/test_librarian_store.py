@@ -157,6 +157,37 @@ def test_corrupt_deduplicated_blob_cannot_be_accepted(tmp_path: Path):
         assert lib.db.execute("SELECT COUNT(*) FROM records").fetchone()[0] == 0
 
 
+def test_object_write_failure_does_not_acknowledge_capture_and_retry_succeeds(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    import os
+
+    args = dict(transport="gateway", account_id="a", conversation_id="c",
+                source_event_id="m", idempotency_key="k",
+                attachments=[{"source_item_id": "i", "mime_type": "image/jpeg",
+                              "data": b"photo bytes"}])
+    real_replace = os.replace
+    failed = False
+
+    def fail_once(source, target):
+        nonlocal failed
+        if not failed:
+            failed = True
+            raise OSError("object store unavailable")
+        return real_replace(source, target)
+
+    with Library(tmp_path) as lib:
+        monkeypatch.setattr(os, "replace", fail_once)
+        with pytest.raises(OSError, match="object store unavailable"):
+            lib.ingest("owner_a", **args)
+        assert lib.db.execute("SELECT COUNT(*) FROM records").fetchone()[0] == 0
+        assert lib.db.execute("SELECT COUNT(*) FROM idempotency").fetchone()[0] == 0
+        assert lib.pending_events("owner_a") == []
+        receipt = lib.ingest("owner_a", **args)
+        assert lib.read_original("owner_a", receipt["capture_ids"][0]) == b"photo bytes"
+        assert lib.ingest("owner_a", **args) == receipt
+
+
 def test_session_selection_and_soft_affinity_stay_in_conversation_scope(tmp_path: Path):
     def accept(lib: Library, source: str, conversation: str = "c",
                context: dict | None = None) -> str:

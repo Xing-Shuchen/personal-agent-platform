@@ -14,12 +14,20 @@ vision extraction, so the ordinary chat turn can continue.
 From the PAP repository root, install the linked local plugin:
 
 ```bash
-openclaw plugins install --link --force ./agents/librarian/openclaw-plugin
+openclaw plugins install --link --force --accept-capabilities ./agents/librarian/openclaw-plugin
 ```
 
 Configure an absolute repository path, private state path, and an explicit
 owner mapping. Replace the example channel, account, sender and owner IDs with
 trusted values from your OpenClaw deployment:
+
+Until those IDs are established, use `"ownerMappings":[]`; the plugin will
+load but cannot ingest any sender's images. A dedicated unbound Librarian
+agent/profile is declared at `agents/librarian/agent.yaml` and
+`agents/librarian/profile/`. Register the OpenClaw agent separately with
+`openclaw agents add librarian --non-interactive --workspace
+~/.openclaw/workspace-librarian --model MODEL_ID`, leaving channel bindings
+empty until routing is decided.
 
 ```bash
 openclaw config set plugins.entries.pap-librarian-intake.config '{"repoRoot":"/absolute/path/to/personal-agent-platform","stateRoot":"/absolute/path/to/personal-agent-platform/var/librarian","ownerMappings":[{"channelId":"telegram","accountId":"my-bot","senderId":"my-user-id","ownerId":"owner_local"}]}' --strict-json

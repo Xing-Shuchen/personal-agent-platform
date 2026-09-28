@@ -1,0 +1,19 @@
+apiVersion: pap/v1
+kind: Agent
+metadata:
+  name: librarian
+  description: Captures reading evidence and retrieves provenance-bound reading traces.
+spec:
+  profile:
+    name: librarian
+    source: profile
+  model: qwen/deepseek-v4.1-flash
+  capabilities:
+    - local_state.read
+    - local_state.write
+  proactive:
+    enabled: false
+  state:
+    private:
+      - objects
+      - librarian.sqlite

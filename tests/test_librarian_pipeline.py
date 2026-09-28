@@ -103,6 +103,47 @@ def test_invalid_extraction_keeps_raw_output_without_trace(tmp_path: Path):
         assert lib.db.execute("SELECT COUNT(*) FROM records WHERE model='ReadingTrace'").fetchone()[0] == 0
 
 
+def test_unreadable_page_number_keeps_local_trace_and_original(tmp_path: Path):
+    output = json.loads(_output())
+    output["pages"][0]["page"] = {"value": None, "confidence": None,
+                                  "basis": "unknown", "status": "unresolved"}
+    with Library(tmp_path) as lib:
+        receipt = lib.ingest("owner_a", transport="gateway", account_id="a",
+                             conversation_id="c", source_event_id="m",
+                             attachments=[{"source_item_id": "i", "mime_type": "image/png",
+                                           "data": _photo()}], idempotency_key="k")
+        capture_id = receipt["capture_ids"][0]
+        traces = process_capture(lib, "owner_a", capture_id,
+                                 lambda _: json.dumps(output).encode())
+        assert len(traces) == 2
+        assert all(trace["location"]["page"] is None for trace in traces)
+        assert lib.read_original("owner_a", capture_id) == _photo()
+        run = json.loads(lib.db.execute(
+            "SELECT body FROM records WHERE model='ProcessingRun'").fetchone()[0])
+        assert run["outcome"] == "partial"
+        assert "NEEDS_PAGE_RESOLUTION" in run["issues"]
+
+
+def test_printed_and_margin_punctuation_do_not_trigger_symbol_vocabulary(tmp_path: Path):
+    output = json.loads(_output())
+    output["printed_regions"][0]["text"]["text"] = "R! Weber and Parsons"
+    output["annotations"][0]["text"]["text"] = "Parsons?"
+    vocabulary = {"enabled": True, "version": "personal-v1",
+                  "mappings": {"R": "reread_target", "?": "question_target",
+                               "!": "promote_candidate"}}
+    with Library(tmp_path) as lib:
+        receipt = lib.ingest("owner_a", transport="gateway", account_id="a",
+                             conversation_id="c", source_event_id="m",
+                             attachments=[{"source_item_id": "i", "mime_type": "image/png",
+                                           "data": _photo()}], idempotency_key="k")
+        traces = process_capture(lib, "owner_a", receipt["capture_ids"][0],
+                                 lambda _: json.dumps(output).encode(),
+                                 vocabulary=vocabulary)
+        assert all(trace["intent_signals"] == [] for trace in traces)
+        assert lib.db.execute(
+            "SELECT COUNT(*) FROM records WHERE model='KnowledgeCandidate'").fetchone()[0] == 0
+
+
 def test_invalid_cross_page_link_is_rejected(tmp_path: Path):
     output = json.loads(_output())
     output["marks"][0]["linked_text_region_ids"] = ["missing"]
