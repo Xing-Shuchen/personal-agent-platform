@@ -73,16 +73,20 @@ def _spatial(page_box: list[float], trace_box: list[float]) -> tuple[str, str]:
 
 def _failed_run(lib: Library, owner_id: str, capture_id: str, run_id: str,
                 extractor_version: str, normalizer_version: str,
-                error_code: str, raw_asset: dict[str, Any] | None = None) -> None:
+                error_code: str, raw_asset: dict[str, Any] | None = None,
+                observation: dict[str, Any] | None = None) -> None:
     record = {"object_type": "ProcessingRun", "schema_version": "0.1.0",
               "id": run_id, "owner_id": owner_id, "created_at": _now(),
-              "capture_id": capture_id, "checkpoint": "STORED",
-              "outcome": "failed", "issues": ["FAILED"],
+              "capture_id": capture_id, "checkpoint": "EXTRACTED" if observation else "STORED",
+              "outcome": "failed", "issues": ["FAILED"] +
+              (["CONTEXT_CONFLICT"] if error_code == "CONTEXT_CONFLICT" else []),
               "extractor_version": extractor_version,
               "normalizer_version": normalizer_version,
               "revision": 1, "supersedes_revision": None}
     with lib.transaction():
         lib._put(record)
+        if observation:
+            lib._put(observation)
         if raw_asset:
             lib.db.execute("INSERT INTO extractor_attempts VALUES(?,?,?,?,?,?)",
                            (owner_id, capture_id, run_id, _json(raw_asset), "failed", error_code))
@@ -151,68 +155,77 @@ def process_capture(lib: Library, owner_id: str, capture_id: str,
                     normalizer_version, "EXTRACTION_SCHEMA_INVALID", raw_asset)
         raise LibrarianError("EXTRACTION_SCHEMA_INVALID", f"extractor output invalid: {error}") from error
 
-    prior_row = lib.db.execute("SELECT body FROM records WHERE owner_id=? AND model='CaptureResolution' "
-                               "AND current=1 AND json_extract(body,'$.capture_id')=?",
-                               (owner_id, capture_id)).fetchone()
-    prior_resolution = json.loads(prior_row["body"]) if prior_row else None
-    context = ({"session_id": prior_resolution["session"]["value"],
-                "work_id": prior_resolution["work"]["value"],
-                "edition_id": prior_resolution["edition"]["value"],
-                "book_instance_id": prior_resolution["book_instance"]["value"]}
-               if prior_resolution else capture["submitted_context"])
-    session_id = context["session_id"]
-    basis = "user_confirmation" if prior_resolution else ("explicit_session" if session_id else "unknown")
-    if not session_id and not prior_resolution:
-        inferred = lib.db.execute("SELECT session_id,basis FROM capture_context WHERE owner_id=? AND capture_id=?",
-                                  (owner_id, capture_id)).fetchone()
-        if inferred:
-            session_id, basis = inferred["session_id"], inferred["basis"]
-    work_id = context["work_id"]
-    edition_id = context["edition_id"]
-    book_instance_id = context["book_instance_id"]
-    if session_id:
-        session = lib.get(owner_id, "ReadingSession", session_id)
-        if session["status"] == "closed" and not prior_resolution:
-            raise LibrarianError("CONTEXT_CONFLICT", "closed session cannot silently receive captures")
-        for key, value in (("work_id", work_id), ("edition_id", edition_id),
-                           ("book_instance_id", book_instance_id)):
-            if value and session[key] and value != session[key]:
-                raise LibrarianError("CONTEXT_CONFLICT", "explicit session conflicts with submitted context")
-        work_id = work_id or session["work_id"]
-        edition_id = edition_id or session["edition_id"]
-        book_instance_id = book_instance_id or session["book_instance_id"]
-    if book_instance_id:
-        instance = lib.get(owner_id, "BookInstance", book_instance_id)
-        if edition_id and edition_id != instance["edition_id"]:
-            raise LibrarianError("CONTEXT_CONFLICT", "instance and edition conflict")
-        edition_id = instance["edition_id"]
-    if edition_id:
-        edition = lib.get(owner_id, "Edition", edition_id)
-        if work_id and work_id != edition["work_id"]:
-            raise LibrarianError("CONTEXT_CONFLICT", "edition and work conflict")
-        work_id = edition["work_id"]
-    state = "resolved" if all((session_id, work_id, edition_id, book_instance_id)) else "unresolved"
-    resolution = {"object_type": "CaptureResolution", "schema_version": "0.1.0",
-                  "id": _new("resolution"), "owner_id": owner_id, "created_at": _now(),
-                  "capture_id": capture_id, "session": _identity(session_id, basis),
-                  "work": _identity(work_id, basis),
-                  "edition": _identity(edition_id, basis),
-                  "book_instance": _identity(book_instance_id, basis),
-                  "pages": observation["pages"], "revision": 1,
-                  "supersedes_revision": None}
-    store_resolution = True
-    if prior_resolution:
-        for field in ("session", "work", "edition", "book_instance"):
-            resolution[field] = prior_resolution[field]
-        resolution["id"] = prior_resolution["id"]
-        resolution["revision"] = prior_resolution["revision"] + 1
-        resolution["supersedes_revision"] = prior_resolution["revision"]
-        if prior_resolution["pages"]:
-            if {p["id"]: p["bbox"] for p in prior_resolution["pages"]} != {p["id"]: p["bbox"] for p in observation["pages"]}:
-                raise LibrarianError("CONTEXT_CONFLICT", "confirmed page regions differ from observation")
-            resolution = prior_resolution
-            store_resolution = False
-    validate("CaptureResolution", resolution)
+    def build_resolution() -> tuple[dict[str, Any], str, bool]:
+        prior_row = lib.db.execute("SELECT body FROM records WHERE owner_id=? AND model='CaptureResolution' "
+                                   "AND current=1 AND json_extract(body,'$.capture_id')=?",
+                                   (owner_id, capture_id)).fetchone()
+        prior_resolution = json.loads(prior_row["body"]) if prior_row else None
+        context = ({"session_id": prior_resolution["session"]["value"],
+                    "work_id": prior_resolution["work"]["value"],
+                    "edition_id": prior_resolution["edition"]["value"],
+                    "book_instance_id": prior_resolution["book_instance"]["value"]}
+                   if prior_resolution else capture["submitted_context"])
+        session_id = context["session_id"]
+        basis = "user_confirmation" if prior_resolution else ("explicit_session" if session_id else "unknown")
+        if not session_id and not prior_resolution:
+            inferred = lib.db.execute("SELECT session_id,basis FROM capture_context WHERE owner_id=? AND capture_id=?",
+                                      (owner_id, capture_id)).fetchone()
+            if inferred:
+                session_id, basis = inferred["session_id"], inferred["basis"]
+        work_id = context["work_id"]
+        edition_id = context["edition_id"]
+        book_instance_id = context["book_instance_id"]
+        if session_id:
+            session = lib.get(owner_id, "ReadingSession", session_id)
+            if session["status"] == "closed" and not prior_resolution:
+                raise LibrarianError("CONTEXT_CONFLICT", "closed session cannot silently receive captures")
+            for key, value in (("work_id", work_id), ("edition_id", edition_id),
+                               ("book_instance_id", book_instance_id)):
+                if value and session[key] and value != session[key]:
+                    raise LibrarianError("CONTEXT_CONFLICT", "explicit session conflicts with submitted context")
+            work_id = work_id or session["work_id"]
+            edition_id = edition_id or session["edition_id"]
+            book_instance_id = book_instance_id or session["book_instance_id"]
+        if book_instance_id:
+            instance = lib.get(owner_id, "BookInstance", book_instance_id)
+            if edition_id and edition_id != instance["edition_id"]:
+                raise LibrarianError("CONTEXT_CONFLICT", "instance and edition conflict")
+            edition_id = instance["edition_id"]
+        if edition_id:
+            edition = lib.get(owner_id, "Edition", edition_id)
+            if work_id and work_id != edition["work_id"]:
+                raise LibrarianError("CONTEXT_CONFLICT", "edition and work conflict")
+            work_id = edition["work_id"]
+        state = "resolved" if all((session_id, work_id, edition_id, book_instance_id)) else "unresolved"
+        resolution = {"object_type": "CaptureResolution", "schema_version": "0.1.0",
+                      "id": _new("resolution"), "owner_id": owner_id, "created_at": _now(),
+                      "capture_id": capture_id, "session": _identity(session_id, basis),
+                      "work": _identity(work_id, basis),
+                      "edition": _identity(edition_id, basis),
+                      "book_instance": _identity(book_instance_id, basis),
+                      "pages": observation["pages"], "revision": 1,
+                      "supersedes_revision": None}
+        store_resolution = True
+        if prior_resolution:
+            for field in ("session", "work", "edition", "book_instance"):
+                resolution[field] = prior_resolution[field]
+            resolution["id"] = prior_resolution["id"]
+            resolution["revision"] = prior_resolution["revision"] + 1
+            resolution["supersedes_revision"] = prior_resolution["revision"]
+            if prior_resolution["pages"]:
+                if {p["id"]: p["bbox"] for p in prior_resolution["pages"]} != {p["id"]: p["bbox"] for p in observation["pages"]}:
+                    raise LibrarianError("CONTEXT_CONFLICT", "confirmed page regions differ from observation")
+                resolution = prior_resolution
+                store_resolution = False
+        validate("CaptureResolution", resolution)
+        return resolution, state, store_resolution
+
+    try:
+        resolution, state, store_resolution = build_resolution()
+    except LibrarianError as error:
+        _failed_run(lib, owner_id, capture_id, run_id, extractor_version,
+                    normalizer_version, error.code, raw_asset, observation)
+        raise
     traces = normalize(capture, observation, resolution, state, normalizer_version,
                        vocabulary=vocabulary)
     run = {"object_type": "ProcessingRun", "schema_version": "0.1.0",

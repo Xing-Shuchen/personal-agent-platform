@@ -115,6 +115,52 @@ def test_invalid_cross_page_link_is_rejected(tmp_path: Path):
         assert err.value.code == "EXTRACTION_SCHEMA_INVALID"
 
 
+def test_conflicting_explicit_session_keeps_original_and_observation(tmp_path: Path):
+    now = "2026-09-28T00:00:00+00:00"
+    with Library(tmp_path) as lib:
+        for name in ("one", "other"):
+            lib.register("owner_a", {"object_type": "Work", "schema_version": "0.1.0",
+                         "id": f"work_{name}", "owner_id": "owner_a", "created_at": now,
+                         "title": f"Synthetic {name}", "original_title": None,
+                         "authors": [], "identifiers": [], "revision": 1,
+                         "supersedes_revision": None})
+        session = lib.start_session("owner_a")
+        # The session is explicitly attached to one work; a submitted different
+        # work is retained on the immutable capture rather than reassigned.
+        current = lib.get("owner_a", "ReadingSession", session["id"])
+        current["work_id"] = "work_one"
+        current["revision"] = 2
+        current["supersedes_revision"] = 1
+        with lib.transaction():
+            lib._put(current)
+        receipt = lib.ingest("owner_a", transport="gateway", account_id="a",
+                             conversation_id="c", source_event_id="m",
+                             attachments=[{"source_item_id": "i", "mime_type": "image/png",
+                                           "data": _photo()}], idempotency_key="k",
+                             submitted_context={"session_id": session["id"],
+                                                "work_id": "work_other"})
+        capture_id = receipt["capture_ids"][0]
+        with pytest.raises(LibrarianError) as error:
+            process_capture(lib, "owner_a", capture_id, lambda _: _output())
+        assert error.value.code == "CONTEXT_CONFLICT"
+        assert lib.read_original("owner_a", capture_id) == _photo()
+        run = json.loads(lib.db.execute("SELECT body FROM records WHERE model='ProcessingRun'").fetchone()[0])
+        assert run["outcome"] == "failed" and "CONTEXT_CONFLICT" in run["issues"]
+        observation = json.loads(lib.db.execute("SELECT body FROM records WHERE model='PageObservation'").fetchone()[0])
+        assert observation["capture_id"] == capture_id
+        attempt = lib.db.execute("SELECT raw_asset,error_code FROM extractor_attempts").fetchone()
+        assert attempt["error_code"] == "CONTEXT_CONFLICT"
+        assert (tmp_path / json.loads(attempt["raw_asset"])["object_key"]).read_bytes() == _output()
+        assert lib.db.execute("SELECT COUNT(*) FROM records WHERE model='ReadingTrace'").fetchone()[0] == 0
+        resolved = resolve_capture(lib, "owner_a", capture_id, None,
+                                   session_id=session["id"], work_id="work_one")
+        assert resolved["revision"] == 1
+        traces = process_capture(lib, "owner_a", capture_id, lambda _: _output())
+        assert len(traces) == 2
+        assert all(trace["work_id"] == "work_one" for trace in traces)
+        assert lib.get("owner_a", "PageObservation", observation["id"]) == observation
+
+
 def test_explicit_annotation_link_groups_trace_without_inventing_authorship(tmp_path: Path):
     output = json.loads(_output())
     output["links"] = [{"from_id": "mark_1", "to_id": "note_1",

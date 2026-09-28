@@ -1330,7 +1330,8 @@
               "NEEDS_PAGE_RESOLUTION",
               "PARTIAL_EXTRACTION",
               "FAILED",
-              "RECONCILIATION_REQUIRED"
+              "RECONCILIATION_REQUIRED",
+              "CONTEXT_CONFLICT"
             ]
           },
           "minItems": 0
