@@ -21,6 +21,7 @@ from .store import Library, LibrarianError
 
 MAX_INPUT_BYTES = 80 * 1024 * 1024
 MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024
+MAX_BATCH_BYTES = 100 * 1024 * 1024
 
 
 def accept_inbound(lib: Library, message: dict[str, Any]) -> dict[str, Any]:
@@ -36,20 +37,36 @@ def accept_inbound(lib: Library, message: dict[str, Any]) -> dict[str, Any]:
     source = {key: source[key] for key in source_keys}
     upload_bytes: dict[str, bytes] = {}
     attachments = []
+    batch_bytes = 0
     for item in incoming:
         if not isinstance(item, dict):
             raise LibrarianError("VALIDATION_FAILED", "invalid image attachment")
         item_id, mime, encoded = (item.get(key) for key in ("source_item_id", "mime_type", "data_b64"))
+        data_path = item.get("data_path")
         if (not isinstance(item_id, str) or not item_id or item_id in upload_bytes
                 or not isinstance(mime, str) or not mime.startswith("image/")
-                or not isinstance(encoded, str)):
+                or (isinstance(encoded, str) == isinstance(data_path, str))):
             raise LibrarianError("VALIDATION_FAILED", "invalid image attachment identity or MIME")
-        try:
-            data = base64.b64decode(encoded, validate=True)
-        except (ValueError, base64.binascii.Error) as error:
-            raise LibrarianError("VALIDATION_FAILED", "invalid attachment encoding") from error
+        if isinstance(data_path, str):
+            path = Path(data_path)
+            if not path.is_absolute():
+                raise LibrarianError("VALIDATION_FAILED", "attachment path must be absolute")
+            try:
+                if not path.is_file() or path.stat().st_size > MAX_ATTACHMENT_BYTES:
+                    raise LibrarianError("VALIDATION_FAILED", "attachment size outside allowed range")
+                data = path.read_bytes()
+            except OSError as error:
+                raise LibrarianError("VALIDATION_FAILED", "attachment unavailable") from error
+        else:
+            try:
+                data = base64.b64decode(encoded, validate=True)
+            except (ValueError, base64.binascii.Error) as error:
+                raise LibrarianError("VALIDATION_FAILED", "invalid attachment encoding") from error
         if not data or len(data) > MAX_ATTACHMENT_BYTES:
             raise LibrarianError("VALIDATION_FAILED", "attachment size outside allowed range")
+        batch_bytes += len(data)
+        if batch_bytes > MAX_BATCH_BYTES:
+            raise LibrarianError("VALIDATION_FAILED", "image batch too large")
         upload_bytes[item_id] = data
         attachments.append({"source_item_id": item_id, "mime_type": mime, "upload_ref": item_id})
     key_material = json.dumps([owner_id, *[source[key] for key in source_keys]],

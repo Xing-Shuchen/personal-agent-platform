@@ -29,8 +29,7 @@ test("staged images use trusted sender mapping and source order", async () => {
     assert.deepEqual(received.source, { transport: "telegram", account_id: "bot",
       conversation_id: "chat", source_event_id: "msg-42" });
     assert.equal(received.attachments[0].source_item_id, "msg-42:1");
-    assert.equal(Buffer.from(received.attachments[0].data_b64, "base64").toString(),
-      "synthetic image bytes");
+    assert.equal(received.attachments[0].data_path, file);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

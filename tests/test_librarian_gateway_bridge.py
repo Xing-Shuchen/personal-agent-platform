@@ -71,3 +71,27 @@ def test_gateway_bridge_module_accepts_json_from_stdin(tmp_path):
     assert receipt["status"] == "accepted"
     with Library(tmp_path) as lib:
         assert lib.read_original("owner_a", receipt["capture_ids"][0]) == _image()
+
+
+def test_gateway_bridge_accepts_staged_paths_as_one_replayable_batch(tmp_path):
+    first_path = tmp_path / "first.png"
+    second_path = tmp_path / "second.png"
+    first_path.write_bytes(_image())
+    second_path.write_bytes(_image() + b"second")
+    message = _message(_image())
+    message["attachments"] = [
+        {"source_item_id": "message_a:0", "mime_type": "image/png",
+         "data_path": str(first_path)},
+        {"source_item_id": "message_a:1", "mime_type": "image/png",
+         "data_path": str(second_path)},
+    ]
+    with Library(tmp_path / "library") as lib:
+        receipt = accept_inbound(lib, message)
+        assert len(receipt["capture_ids"]) == 2
+        assert lib.read_original("owner_a", receipt["capture_ids"][0]) == first_path.read_bytes()
+        assert lib.read_original("owner_a", receipt["capture_ids"][1]) == second_path.read_bytes()
+        assert accept_inbound(lib, message) == receipt
+        second_path.write_bytes(_image() + b"changed")
+        with pytest.raises(LibrarianError) as error:
+            accept_inbound(lib, message)
+        assert error.value.code == "IDEMPOTENCY_CONFLICT"

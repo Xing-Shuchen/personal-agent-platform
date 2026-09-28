@@ -9,6 +9,7 @@
     "properties": {
       "repoRoot": {"type": "string", "minLength": 1},
       "stateRoot": {"type": "string", "minLength": 1},
+      "vaultRoot": {"type": "string", "minLength": 1},
       "python": {"type": "string", "minLength": 1},
       "ownerMappings": {
         "type": "array",
@@ -25,7 +26,7 @@
         }
       }
     },
-    "required": ["repoRoot", "stateRoot", "ownerMappings"],
+    "required": ["repoRoot", "stateRoot", "vaultRoot", "ownerMappings"],
     "additionalProperties": false
   }
 }

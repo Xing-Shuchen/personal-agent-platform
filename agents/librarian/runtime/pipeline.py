@@ -27,6 +27,7 @@ class ExtractionOutput:
     derivative_width: int
     derivative_height: int
     operations: tuple[str, ...]
+    observation: bytes | None = None
 
 
 def _identity(value: str | None, basis: str) -> dict[str, Any]:
@@ -207,7 +208,8 @@ def process_capture(lib: Library, owner_id: str, capture_id: str,
         raise LibrarianError("EXTRACTION_SCHEMA_INVALID", "extractor must return raw JSON bytes")
     raw_asset = lib._save_object(raw, "application/json")
     try:
-        output = json.loads(raw)
+        output = json.loads(extracted.observation if isinstance(extracted, ExtractionOutput)
+                            and extracted.observation is not None else raw)
         if not isinstance(output, dict):
             raise ValueError("root must be an object")
         model_fields = {"image_space", "visible_title", "pages", "printed_regions",

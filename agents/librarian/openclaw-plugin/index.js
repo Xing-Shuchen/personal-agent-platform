@@ -1,9 +1,9 @@
 import { spawn } from "node:child_process";
-import { readFile, realpath, stat } from "node:fs/promises";
+import { realpath, stat } from "node:fs/promises";
 import { delimiter, isAbsolute } from "node:path";
 
 const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
-const MAX_BATCH_BYTES = 50 * 1024 * 1024;
+const MAX_BATCH_BYTES = 100 * 1024 * 1024;
 
 function ownerFor(config, event, ctx) {
   if (!ctx?.channelId || !ctx?.accountId || !event?.senderId) return null;
@@ -54,6 +54,19 @@ const runBridge = (config, message) => runPythonBridge(
 const runSearchBridge = (config, message) => runPythonBridge(
   config, "agents.librarian.runtime.gateway_search", message);
 
+function startWorker(config, ownerId) {
+  if (!config.vaultRoot || !ownerId) return;
+  const child = spawn(config.python ?? "python3", ["-m", "agents.librarian.runtime.worker",
+    "--root", config.stateRoot, "--vault", config.vaultRoot, "--owner", ownerId], {
+    cwd: config.repoRoot,
+    env: { ...process.env, PYTHONPATH: [config.repoRoot, process.env.PYTHONPATH ?? ""].join(delimiter) },
+    stdio: "ignore",
+    detached: true,
+  });
+  child.on("error", () => {});
+  child.unref();
+}
+
 export function librarianSearchTool(config, ctx, bridge = runSearchBridge) {
   if (ctx?.agentId !== "librarian" || !ctx.requesterSenderId) return null;
   const route = ctx.deliveryContext ?? {};
@@ -95,7 +108,7 @@ export async function acceptMessage(config, event, ctx, bridge = runBridge) {
     total += info.size;
     if (total > MAX_BATCH_BYTES) return null;
     attachments.push({ source_item_id: `${event.messageId}:${index}`,
-      mime_type: media.contentType, data_b64: (await readFile(path)).toString("base64") });
+      mime_type: media.contentType, data_path: path });
   }
   if (!attachments.length) return null;
   return bridge(config, { owner_id: ownerId, actor_id: event.senderId,
@@ -109,12 +122,25 @@ export default {
   name: "PAP Librarian Image Intake",
   register(api) {
     const config = api.pluginConfig ?? {};
+    let recoveryTimer;
     api.registerTool((ctx) => librarianSearchTool(config, ctx),
       { name: "librarian_search" });
+    api.registerService({ id: "pap-librarian-worker", start: () => {
+      const recover = () => {
+        for (const ownerId of new Set((config.ownerMappings ?? []).map((entry) => entry.ownerId))) {
+          startWorker(config, ownerId);
+        }
+      };
+      recover();
+      recoveryTimer = setInterval(recover, 300_000);
+    }, stop: () => clearInterval(recoveryTimer) });
     api.on("message_received", async (event, ctx) => {
       try {
         const receipt = await acceptMessage(config, event, ctx);
-        if (receipt) api.logger.info(`Librarian accepted ${receipt.capture_ids.length} image(s)`);
+        if (receipt) {
+          api.logger.info(`Librarian accepted ${receipt.capture_ids.length} image(s)`);
+          startWorker(config, ownerFor(config, event, ctx));
+        }
       } catch (error) {
         const code = typeof error?.code === "string" && /^[A-Z_]+$/.test(error.code)
           ? error.code : "HOOK_FAILED";

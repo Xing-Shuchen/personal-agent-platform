@@ -33,11 +33,11 @@ transform and raw model text are saved with the processing attempt, including
 failed validation attempts. Its provider transport has a local mock test; the
 timeout path retains the original and records a failed processing run without
 creating traces. A timeout has no model response bytes to retain. The
-earlier configured Claude endpoint returned HTTP 404 for `/v1/messages`. A
-local OpenClaw Z.AI configuration advertises image input for GLM-5.3-Flash,
-but its credential is stored as a write-only OpenClaw secret and has not been
-supplied to this runtime. Live image recognition has not been verified. The
-earlier default local model also rejected a synthetic image input. See the
+earlier configured Claude endpoint returned HTTP 404 for `/v1/messages`. The
+first-book run used local RapidOCR for printed text and OpenClaw's configured
+GLM-5.3-Flash only for handwriting crops; its key stayed in the write-only
+OpenClaw secret store. The earlier default local model rejected a synthetic
+image input. See the
 official [Claude vision](https://platform.claude.com/docs/en/build-with-claude/vision)
 and [coordinate](https://platform.claude.com/docs/en/build-with-claude/vision-coordinates)
 API documentation, and the [Z.AI GLM-5.3-Flash image input format](https://docs.z.ai/guides/vlm/glm-5.3-flash)
@@ -75,6 +75,20 @@ stdin protocol and executes `reading.capture.ingest`. The linked OpenClaw
 plugin in `../openclaw-plugin/` maps a concrete channel/account/sender to an
 owner and forwards only staged `image/*` media with stable message/item IDs.
 It requires an explicit owner mapping before live capture intake.
+
+`ocr.py` runs local RapidOCR on each original, compares printed lines with a
+matching owner-provided EPUB, detects long pen strokes, and expands marked
+printed text to complete EPUB sentences. Only small handwriting crops go to
+the configured OpenClaw image model. Raw OCR boxes, stroke scores and model
+responses remain attached to the processing observation. Install the optional
+`librarian-ocr` dependency group in the Python interpreter configured for the
+plugin. `worker.py` recovers accepted Feishu batches, matches a photographed
+ISBN to `source-books/<isbn13>.epub`, registers the book and reading session,
+processes all captures, writes a review note under the configured Obsidian
+Vault's `2Area/40 学习与阅读/阅读笔记`, and sends one Feishu review message after the
+database and Vault write complete. The plugin launches it after intake and
+periodically for recovery. `../openclaw-plugin/recover.mjs` can replay a missed
+OpenClaw transcript event through the same authenticated intake path.
 
 `events.py` publishes the transactional outbox with stable event IDs and
 deduplicates consumer handling in a local transaction. The trace projection
