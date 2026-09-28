@@ -8,6 +8,7 @@ import pytest
 from PIL import Image
 
 from agents.librarian.runtime.pipeline import correct_trace, process_capture, rebuild_index, resolve_capture, search, search_response
+from agents.librarian.runtime.review import review_queues
 from agents.librarian.runtime.store import Library, LibrarianError, validate
 
 
@@ -360,10 +361,13 @@ def test_explicit_session_yields_resolved_trace_and_default_search(tmp_path: Pat
                                         attachments=[{"source_item_id": "i", "mime_type": "image/png",
                                                       "data": _photo()}], idempotency_key="k3")
         unresolved_id = unresolved_receipt["capture_ids"][0]
+        assert review_queues(lib, "owner_a")["resolution"] == []
         unresolved_trace = process_capture(lib, "owner_a", unresolved_id, lambda _: _output())[0]
         assert unresolved_trace["context_state"] == "unresolved"
+        assert review_queues(lib, "owner_a")["resolution"][0]["captures"][0]["capture_id"] == unresolved_id
         resolve_capture(lib, "owner_a", unresolved_id, 1, session_id=session["id"])
         assert lib.get("owner_a", "ReadingTrace", unresolved_trace["id"])["context_state"] == "resolved"
+        assert review_queues(lib, "owner_a")["resolution"] == []
 
 
 def test_trace_semantics_reject_fake_resolved_context_and_review(tmp_path: Path):
@@ -429,6 +433,12 @@ def test_opt_in_symbol_signal_and_important_content_review(tmp_path: Path):
         assert important["review"]["state"] == "pending"
         assert important["attribution"]["mark_author"] == "unknown"
         assert all("reread_target" not in trace["intent_signals"] for trace in enabled)
+        queues = review_queues(lib, "owner_a")
+        assert len(queues["resolution"]) == 2
+        assert len(queues["content"]) == 1
+        assert queues["content"][0]["trace_id"] == important["id"]
+        assert queues["content"][0]["evidence"] == important["provenance"]
+        assert review_queues(lib, "owner_b") == {"resolution": [], "content": []}
         candidates = [json.loads(row[0]) for row in lib.db.execute(
             "SELECT body FROM records WHERE model='KnowledgeCandidate' AND current=1")]
         assert len(candidates) == 1
