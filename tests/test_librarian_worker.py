@@ -34,7 +34,11 @@ def test_catalog_uses_conversation_session_and_rejects_ambiguous_copies(tmp_path
     with Library(tmp_path / "state") as lib:
         assert _catalog(lib, "owner", epub.stem, epub, _batch("chat-a", "capture-a")) == "测试图书"
         first = _current(lib, "owner", "ReadingSession")[0]
-        assert first["book_instance_id"] == "copy_9787208171411"
+        edition = _current(lib, "owner", "Edition")[0]
+        assert edition["isbn"]["isbn13"] == epub.stem
+        assert edition["id"].startswith("edition_") and epub.stem not in edition["id"]
+        assert edition["work_id"].startswith("work_") and epub.stem not in edition["work_id"]
+        assert first["book_instance_id"].startswith("copy_") and epub.stem not in first["book_instance_id"]
         scope = lib.db.execute("SELECT selected,last_assigned_at FROM session_scope "
                                "WHERE owner_id='owner' AND conversation_id='chat-a'").fetchone()
         assert scope["selected"] == 0 and scope["last_assigned_at"] is not None
@@ -49,10 +53,12 @@ def test_catalog_uses_conversation_session_and_rejects_ambiguous_copies(tmp_path
         sessions = _current(lib, "owner", "ReadingSession")
         assert len(sessions) == 2
         assert len({session["id"] for session in sessions}) == 2
+        assert len(_current(lib, "owner", "Work")) == 1
+        assert len(_current(lib, "owner", "Edition")) == 1
 
         lib.register("owner", {"object_type": "BookInstance", "schema_version": "0.1.0",
                                "id": "copy_second", "owner_id": "owner", "created_at": _now(),
-                               "edition_id": "edition_9787208171411", "medium": "physical",
+                               "edition_id": edition["id"], "medium": "physical",
                                "acquired_at": _unknown_time(), "ownership_status": "unknown",
                                "physical": {"qr_id": None, "shelf": None},
                                "reading_status": {"state": "unknown", "current_page": None,
@@ -66,6 +72,32 @@ def test_catalog_uses_conversation_session_and_rejects_ambiguous_copies(tmp_path
         # An expired automatic session cannot disambiguate two copies.
         with pytest.raises(LibrarianError, match="multiple physical copies"):
             _catalog(lib, "owner", epub.stem, epub, _batch("chat-a", "capture-d"))
+
+
+def test_catalog_reuses_existing_legacy_isbn_edition(tmp_path: Path) -> None:
+    epub = tmp_path / "9787208171411.epub"
+    _epub(epub)
+    with Library(tmp_path / "state") as lib:
+        common = {"schema_version": "0.1.0", "owner_id": "owner",
+                  "created_at": _now(), "revision": 1, "supersedes_revision": None}
+        lib.register("owner", {**common, "object_type": "Work", "id": "work_9787208171411",
+                               "title": "测试图书", "original_title": None, "authors": [],
+                               "identifiers": []})
+        lib.register("owner", {**common, "object_type": "Edition", "id": "edition_9787208171411",
+                               "work_id": "work_9787208171411", "edition_label": None,
+                               "publisher": None, "publication_year": None,
+                               "isbn": {"isbn13": epub.stem, "isbn10": None},
+                               "language": None, "page_count": None, "volume_label": None})
+        lib.register("owner", {**common, "object_type": "BookInstance", "id": "copy_9787208171411",
+                               "edition_id": "edition_9787208171411", "medium": "physical",
+                               "acquired_at": _unknown_time(), "ownership_status": "unknown",
+                               "physical": {"qr_id": None, "shelf": None},
+                               "reading_status": {"state": "unknown", "current_page": None,
+                                                  "progress_evidence_ref": None}})
+        assert _catalog(lib, "owner", epub.stem, epub, _batch("chat", "capture")) == "测试图书"
+        assert len(_current(lib, "owner", "Work")) == 1
+        assert len(_current(lib, "owner", "Edition")) == 1
+        assert _current(lib, "owner", "ReadingSession")[0]["book_instance_id"] == "copy_9787208171411"
 
 
 def test_old_vault_page_images_are_removed_without_rewriting_review_text(tmp_path: Path) -> None:

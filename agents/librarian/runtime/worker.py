@@ -27,7 +27,7 @@ from PIL import Image, ImageOps
 from .ocr import ocr_extractor, openclaw_note_refiner
 from .pipeline import process_capture, reconcile_extraction, _repair_trace_index_best_effort
 from .vision import openclaw_extractor
-from .store import Library, LibrarianError, _now, _unknown_time
+from .store import Library, LibrarianError, _new, _now, _unknown_time
 from .koodo_native import sync_koodo_sqlite
 from .weread_native import fetch_weread_book, sync_weread_book
 
@@ -133,20 +133,24 @@ def _processing_batches(batches: list[dict]) -> list[dict]:
 
 
 def _catalog(lib: Library, owner: str, isbn: str, epub: Path, batch: dict) -> str:
-    work_id, edition_id = f"work_{isbn}", f"edition_{isbn}"
     metadata = _epub_metadata(epub)
     title = metadata.get("title", [isbn])[0].split("（", 1)[0].split("(", 1)[0].strip()
     common = {"schema_version": "0.1.0", "owner_id": owner,
               "created_at": _now(), "revision": 1, "supersedes_revision": None}
-    known = {(item["object_type"], item["id"]) for model in ("Work", "Edition", "BookInstance")
-             for item in _current(lib, owner, model)}
-    if ("Work", work_id) not in known:
+    editions = [item for item in _current(lib, owner, "Edition")
+                if item["isbn"]["isbn13"] == isbn]
+    if len(editions) > 1:
+        raise LibrarianError("CONTEXT_CONFLICT", "multiple editions share photographed ISBN")
+    if editions:
+        edition_id = editions[0]["id"]
+        work_id = editions[0]["work_id"]
+    else:
+        work_id, edition_id = _new("work"), _new("edition")
         lib.register(owner, {**common, "object_type": "Work", "id": work_id,
                              "title": title, "original_title": None,
                              "authors": [{"name": name, "entity_id": None}
                                          for name in metadata.get("creator", [])],
                              "identifiers": []})
-    if ("Edition", edition_id) not in known:
         date = metadata.get("date", [""])[0]
         lib.register(owner, {**common, "object_type": "Edition", "id": edition_id,
                              "work_id": work_id, "edition_label": None,
@@ -181,14 +185,13 @@ def _catalog(lib: Library, owner: str, isbn: str, epub: Path, batch: dict) -> st
     elif len(copies) > 1:
         raise LibrarianError("CONTEXT_CONFLICT", "multiple physical copies need explicit selection")
     else:
-        instance_id = f"copy_{isbn}"
-        if ("BookInstance", instance_id) not in known:
-            lib.register(owner, {**common, "object_type": "BookInstance", "id": instance_id,
-                                 "edition_id": edition_id, "medium": "physical",
-                                 "acquired_at": _unknown_time(), "ownership_status": "unknown",
-                                 "physical": {"qr_id": None, "shelf": None},
-                                 "reading_status": {"state": "unknown", "current_page": None,
-                                                    "progress_evidence_ref": None}})
+        instance_id = _new("copy")
+        lib.register(owner, {**common, "object_type": "BookInstance", "id": instance_id,
+                             "edition_id": edition_id, "medium": "physical",
+                             "acquired_at": _unknown_time(), "ownership_status": "unknown",
+                             "physical": {"qr_id": None, "shelf": None},
+                             "reading_status": {"state": "unknown", "current_page": None,
+                                                "progress_evidence_ref": None}})
     if chosen:
         session = chosen
     else:
