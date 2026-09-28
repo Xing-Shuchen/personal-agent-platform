@@ -134,7 +134,7 @@ not mean the real-photo, live Gateway, upstream, or service acceptance is done.
 | 17 | `test_object_write_failure_does_not_acknowledge_capture_and_retry_succeeds` injects a failed atomic object write and retries the same key | Local |
 | 18 | Invalid JSON, unfinished reply, and `test_provider_timeout_keeps_original_and_records_failed_run` | Local; live provider fault response pending |
 | 19–20 | Outbox retry and index rebuild tests | Local |
-| 21 | Owner-filtered search, review and evidence reads tested | Partial; adversarial cross-owner reference matrix pending |
+| 21 | `test_foreign_ids_cannot_read_or_mutate_owner_records` probes foreign trace, capture and candidate IDs through direct reads, evidence, correction, promotion, search, queues and events; spoofed search owner is rejected | Local adversarial matrix passed; trusted Gateway sender mapping remains unverified live |
 | 22 | `test_explicit_annotation_link_groups_trace_without_inventing_authorship` | Local |
 | 23 | `test_exports_converge_at_trace_and_retry_is_idempotent` and common search; 118 actual Koodo notes and 39 actual WeRead records imported and searched in temporary stores, with replay and raw evidence verified | Native record mapping verified for both; app-driven and periodic live sync pending |
 | 24 | Empty search behavior exists; profile instructs evidence-bound answers | Pending live answer test |
