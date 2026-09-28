@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { acceptMessage } from "./index.js";
+import { acceptMessage, librarianSearchTool } from "./index.js";
 
 const config = { ownerMappings: [{ channelId: "telegram", accountId: "bot",
   senderId: "person", ownerId: "owner_fixture" }] };
@@ -46,4 +46,31 @@ test("unmapped or unstaged media is not ingested", async () => {
     originalMedia: event.media }, ctx, bridge), null);
   assert.equal(await acceptMessage(config, { ...event, senderId: "person",
     messageId: undefined }, ctx, bridge), null);
+});
+
+test("search tool requires exact trusted sender, account, channel and agent", async () => {
+  const trusted = { agentId: "librarian", requesterSenderId: "person",
+    messageChannel: "telegram", agentAccountId: "bot",
+    deliveryContext: { channel: "telegram", accountId: "bot" } };
+  const calls = [];
+  const bridge = async (_config, message) => {
+    calls.push(message);
+    return { hits: [], next_cursor: null, index_state: "ready" };
+  };
+  const tool = librarianSearchTool(config, trusted, bridge);
+  assert.equal(tool.name, "librarian_search");
+  const result = await tool.execute("tool-call", { query: "Parsons", limit: 5 });
+  assert.deepEqual(result.details.hits, []);
+  assert.deepEqual(calls, [{ owner_id: "owner_fixture", query: "Parsons", limit: 5 }]);
+  for (const changed of [
+    { requesterSenderId: "stranger" }, { agentAccountId: "other" },
+    { messageChannel: "discord" }, { agentId: "main" },
+    { requesterSenderId: undefined }, { agentAccountId: undefined,
+      deliveryContext: undefined },
+  ]) {
+    assert.equal(librarianSearchTool(config, { ...trusted, ...changed }, bridge), null);
+  }
+  assert.equal(librarianSearchTool({ ownerMappings: [] }, trusted, bridge), null);
+  assert.equal(librarianSearchTool({ ownerMappings: [...config.ownerMappings,
+    ...config.ownerMappings] }, trusted, bridge), null);
 });

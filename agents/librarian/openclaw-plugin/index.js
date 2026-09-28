@@ -13,10 +13,9 @@ function ownerFor(config, event, ctx) {
   return matches.length === 1 ? matches[0].ownerId : null;
 }
 
-async function runBridge(config, message) {
+async function runPythonBridge(config, module, message) {
   const python = config.python ?? "python3";
-  const child = spawn(python, ["-m", "agents.librarian.runtime.gateway_bridge",
-    "--root", config.stateRoot], {
+  const child = spawn(python, ["-m", module, "--root", config.stateRoot], {
     cwd: config.repoRoot,
     env: { ...process.env, PYTHONPATH: [config.repoRoot, process.env.PYTHONPATH ?? ""].join(delimiter) },
     stdio: ["pipe", "pipe", "pipe"],
@@ -50,6 +49,37 @@ async function runBridge(config, message) {
   }
 }
 
+const runBridge = (config, message) => runPythonBridge(
+  config, "agents.librarian.runtime.gateway_bridge", message);
+const runSearchBridge = (config, message) => runPythonBridge(
+  config, "agents.librarian.runtime.gateway_search", message);
+
+export function librarianSearchTool(config, ctx, bridge = runSearchBridge) {
+  if (ctx?.agentId !== "librarian" || !ctx.requesterSenderId) return null;
+  const route = ctx.deliveryContext ?? {};
+  if ((ctx.messageChannel && route.channel && ctx.messageChannel !== route.channel) ||
+      (ctx.agentAccountId && route.accountId && ctx.agentAccountId !== route.accountId)) return null;
+  const channelId = ctx.messageChannel ?? route.channel;
+  const accountId = ctx.agentAccountId ?? route.accountId;
+  const ownerId = ownerFor(config, { senderId: ctx.requesterSenderId },
+    { channelId, accountId });
+  if (!ownerId) return null;
+  return {
+    name: "librarian_search",
+    description: "Search this authenticated sender's stored Librarian reading traces. Return provenance-backed hits or no supporting hits in this owner scope.",
+    parameters: { type: "object", properties: {
+      query: { type: "string", minLength: 1, maxLength: 256 },
+      limit: { type: "integer", minimum: 1, maximum: 20 },
+    }, required: ["query"], additionalProperties: false },
+    async execute(_id, params) {
+      const result = await bridge(config, { owner_id: ownerId,
+        query: params.query, limit: params.limit ?? 10 });
+      return { content: [{ type: "text", text: JSON.stringify(result) }],
+        details: result };
+    },
+  };
+}
+
 export async function acceptMessage(config, event, ctx, bridge = runBridge) {
   const ownerId = ownerFor(config, event, ctx);
   if (!ownerId || event.mediaStagingPending || !event.messageId || !ctx.conversationId ||
@@ -79,6 +109,8 @@ export default {
   name: "PAP Librarian Image Intake",
   register(api) {
     const config = api.pluginConfig ?? {};
+    api.registerTool((ctx) => librarianSearchTool(config, ctx),
+      { name: "librarian_search" });
     api.on("message_received", async (event, ctx) => {
       try {
         const receipt = await acceptMessage(config, event, ctx);

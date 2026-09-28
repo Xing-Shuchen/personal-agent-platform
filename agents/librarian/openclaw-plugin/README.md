@@ -11,6 +11,13 @@ returns the same capture receipt; changed bytes under the same identity fail
 with `IDEMPOTENCY_CONFLICT`. The hook does not claim the message or wait for
 vision extraction, so the ordinary chat turn can continue.
 
+The same mapping gates `librarian_search`, a read-only agent tool that queries
+the current trace index through `runtime/gateway_search.py`. The tool is
+created only for the dedicated `librarian` agent when OpenClaw supplies a
+matching channel, account and sender. Its arguments contain a query and limit,
+never an owner ID. With `ownerMappings: []`, the tool is absent. A normal CLI
+agent turn also has no mapped sender and cannot read the private store.
+
 From the PAP repository root, install the linked local plugin:
 
 ```bash
@@ -45,6 +52,7 @@ Run local tests:
 ```bash
 node --test agents/librarian/openclaw-plugin/test.mjs
 PYTHONPATH=. python3 -m pytest tests/test_librarian_gateway_bridge.py -q
+PYTHONPATH=. python3 -m pytest tests/test_librarian_gateway_search.py -q
 ```
 
 This hook accepts original bytes and creates a capture receipt. Extraction is

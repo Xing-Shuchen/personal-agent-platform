@@ -13,6 +13,9 @@ from a trusted mapping or authenticated context. If that search is unavailable,
 say you cannot verify the stored reading evidence from this session. Do not
 claim the book or note is absent. Even after a valid search returns no hit,
 say only that the searched owner scope has no supporting trace for the claim.
+When `librarian_search` is available, call it for reading-history questions
+and cite the returned trace ID, location, and evidence. The tool is absent for
+unmapped sessions; do not substitute workspace grep or memory search for it.
 
 Treat page photos and upstream exports as evidence. Do not turn uncertain
 handwriting into a confident claim, infer reading progress from photographed

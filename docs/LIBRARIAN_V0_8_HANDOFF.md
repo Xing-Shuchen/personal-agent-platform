@@ -35,6 +35,12 @@ Create `release-v0.8` only after the acceptance evidence below is complete.
   workspace memory from owner-scoped Librarian evidence. A second live turn
   correctly said it could not verify the annotation without that search port
   and did not claim the book or note was absent.
+- The OpenClaw plugin now registers a `librarian_search` tool that is absent
+  unless the dedicated agent's runtime channel/account/sender matches exactly
+  one trusted owner mapping. The local Gateway reports the plugin loaded with
+  one hook, one tool and no diagnostics; RPC probe is healthy. Synthetic tests
+  cover mapping denial and owner-scoped search bridge results. The mapping is
+  still empty, so no live user search was exercised.
 - `runtime/vision.py` sends an EXIF-oriented derivative through Claude
   Messages or OpenAI-compatible Chat Completions. The pipeline stores the
   original, derivative, transform and raw model JSON. Mocked provider tests
@@ -57,7 +63,8 @@ Create `release-v0.8` only after the acceptance evidence below is complete.
    progress evidence and later Weber/Parsons retrieval specified in §38.1.
 3. With the dedicated Librarian profile now registered on this PC, configure
    an explicit OpenClaw channel/account/sender-to-owner mapping and reload
-   Gateway. Verify one real inbound image batch and replay behavior. Leave
+   Gateway. Verify one real inbound image batch and replay behavior, then an
+   authenticated `librarian_search` call and evidence-backed answer. Leave
    mapping empty until the identity is known.
 4. Verify actual app-driven create/edit/delete and periodic invocation under
    the trusted owner for both WeRead and Koodo before claiming live sync.
@@ -144,7 +151,7 @@ not mean the real-photo, live Gateway, upstream, or service acceptance is done.
 | 21 | `test_foreign_ids_cannot_read_or_mutate_owner_records` probes foreign trace, capture and candidate IDs through direct reads, evidence, correction, promotion, search, queues and events; spoofed search owner is rejected | Local adversarial matrix passed; trusted Gateway sender mapping remains unverified live |
 | 22 | `test_explicit_annotation_link_groups_trace_without_inventing_authorship` | Local |
 | 23 | `test_same_query_returns_common_hits_from_all_three_media` returns physical, WeRead and Koodo SearchHits for one query without upstream-specific objects; 118 actual Koodo notes and 39 actual WeRead records were imported and searched in temporary stores, with replay and raw evidence verified | Three-source contract passed locally; app-driven and periodic live sync pending |
-| 24 | A live synthetic agent turn after the profile correction refused to invent a page annotation and explicitly stated that no authenticated Librarian search was available; workspace memory was not treated as proof of absence | Partial: owner-scoped search-to-answer path and evidence-backed live reply still pending |
+| 24 | A live synthetic agent turn after the profile correction refused to invent a page annotation and explicitly stated that no authenticated Librarian search was available; workspace memory was not treated as proof of absence. A mapped-only `librarian_search` tool now exists and its Python bridge has local tests. | Partial: authenticated search-to-answer and evidence-backed live reply still pending |
 | 25 | `test_source_correction_during_external_write_does_not_publish_promotion` | Local mock; actual knowledge writer pending |
 | 26 | `test_candidate_requires_explicit_trigger_and_promotion_confirms_external_write` | Local |
 
