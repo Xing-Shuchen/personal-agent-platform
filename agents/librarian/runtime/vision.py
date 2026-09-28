@@ -94,7 +94,7 @@ def _derivative(original: bytes, *, max_edge: int, max_pixels: int) -> tuple[byt
 
 
 def anthropic_extractor(*, model: str, api_key: str, base_url: str = "https://api.anthropic.com",
-                        max_edge: int = 2000, max_pixels: int = 3_000_000,
+                        max_edge: int = 2000, max_pixels: int = 2_000_000,
                         max_tokens: int = 8192, timeout: int = 180,
                         auth_mode: str = "api_key",
                         opener: Callable[..., Any] = urlopen) -> Callable[[bytes], ExtractionOutput]:
@@ -130,8 +130,8 @@ def anthropic_extractor(*, model: str, api_key: str, base_url: str = "https://ap
             raise RuntimeError(f"vision provider HTTP {error.code}") from None
         except URLError as error:
             raise RuntimeError("vision provider unavailable") from error
-        if envelope.get("stop_reason") == "max_tokens":
-            raise RuntimeError("vision response truncated")
+        if not isinstance(envelope, dict) or envelope.get("stop_reason") != "end_turn":
+            raise RuntimeError("vision response did not finish normally")
         blocks = envelope.get("content", [])
         texts = [block["text"] for block in blocks
                  if isinstance(block, dict) and block.get("type") == "text"
@@ -155,7 +155,7 @@ def main() -> None:
     parser.add_argument("--base-url", default=os.environ.get("ANTHROPIC_BASE_URL",
                                                          "https://api.anthropic.com"))
     parser.add_argument("--max-edge", type=int, default=2000)
-    parser.add_argument("--max-pixels", type=int, default=3_000_000)
+    parser.add_argument("--max-pixels", type=int, default=2_000_000)
     args = parser.parse_args()
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     extractor = anthropic_extractor(

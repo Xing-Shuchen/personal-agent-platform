@@ -124,3 +124,14 @@ def test_bearer_mode_sends_authorization_header():
                                     base_url="https://vision.example", auth_mode="bearer",
                                     opener=opener)
     assert extractor(_photo()).raw == b"{}"
+
+
+def test_truncated_provider_reply_is_not_accepted_as_observation():
+    def opener(_request, *, timeout):
+        return io.BytesIO(json.dumps({"content": [{"type": "text", "text": "{}"}],
+                                      "stop_reason": "max_tokens"}).encode())
+
+    extractor = anthropic_extractor(model="synthetic-vision", api_key="test-key",
+                                    base_url="https://vision.example", opener=opener)
+    with pytest.raises(RuntimeError, match="did not finish normally"):
+        extractor(_photo())
