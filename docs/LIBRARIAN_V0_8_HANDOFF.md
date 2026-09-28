@@ -13,6 +13,11 @@ Create `release-v0.8` only after the acceptance evidence below is complete.
   transactional events, candidate state, and separated exception queues have
   synthetic tests. The latest broad run passed 319 tests, skipped 71 and
   deselected one existing test requiring unavailable `historian.summarization`.
+- Koodo's native local SQLite store was read in read-only mode on this PC:
+  71 book records and 118 note records were found, with all 118 notes linked
+  to one registered book key. An ephemeral Librarian import created 118 traces;
+  replay made no new traces, and raw evidence, search and owner isolation
+  passed. Private note contents and the acceptance store were not committed.
 - The OpenClaw intake plugin reports `loaded`, with one `message_received`
   typed hook and no diagnostics. Both plugin tests pass. On this PC, the
   dedicated `librarian` PAP profile and unbound OpenClaw agent are registered.
@@ -42,8 +47,11 @@ Create `release-v0.8` only after the acceptance evidence below is complete.
    an explicit OpenClaw channel/account/sender-to-owner mapping and reload
    Gateway. Verify one real inbound image batch and replay behavior. Leave
    mapping empty until the identity is known.
-4. Validate WeRead and Koodo against real upstream payloads and live sync
-   behavior. Current adapters cover observed Markdown exports only.
+4. Validate WeRead against real upstream payloads and live sync behavior.
+   Koodo native SQLite record mapping and replay have been exercised on this
+   PC; verify an actual app-driven create/edit/delete and periodic invocation
+   under the trusted owner before claiming live sync. Markdown exports remain
+   separate adapters.
 5. Connect and verify an actual knowledge service writer if claiming the
    candidate promotion stage. The port exists but has no configured writer.
 6. Audit all AC-01 through AC-26 against runtime evidence, not solely schema
@@ -89,10 +97,10 @@ actual Vault path separately.
   bindings; its workspace SOUL matches the repository profile.
 - `openclaw plugins inspect pap-librarian-intake --runtime --json` reports
   `loaded`, one typed `message_received` hook, and no diagnostics. The Gateway
-  service was started and reports healthy, but no mapped sender or live image
-  has been exercised. The CLI Gateway RPC probe did not establish a connection.
-- Focused Python tests: 30 vision/pipeline/bridge tests and 18
-  store/digital/command/event/knowledge tests passed. Contract validation
+  service is running and its CLI RPC probe now succeeds, but no mapped sender
+  or live image has been exercised.
+- Focused Python tests: 30 vision/pipeline/bridge tests and 20
+  store/digital/command/event/knowledge/native-Koodo tests passed. Contract validation
   passed 77 definitions, 18 entries, 42 positive and 43 negative cases;
   the two Node plugin tests passed. These are synthetic tests.
 - `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, and `ANTHROPIC_BASE_URL` were
@@ -123,7 +131,7 @@ not mean the real-photo, live Gateway, upstream, or service acceptance is done.
 | 19–20 | Outbox retry and index rebuild tests | Local |
 | 21 | Owner-filtered search, review and evidence reads tested | Partial; adversarial cross-owner reference matrix pending |
 | 22 | `test_explicit_annotation_link_groups_trace_without_inventing_authorship` | Local |
-| 23 | `test_exports_converge_at_trace_and_retry_is_idempotent` and common search | Local on observed Markdown; real upstream payloads pending |
+| 23 | `test_exports_converge_at_trace_and_retry_is_idempotent` and common search; actual Koodo SQLite records imported and searched in a temporary store | Koodo native record mapping verified; WeRead upstream and live cross-source sync pending |
 | 24 | Empty search behavior exists; profile instructs evidence-bound answers | Pending live answer test |
 | 25 | `test_source_correction_during_external_write_does_not_publish_promotion` | Local mock; actual knowledge writer pending |
 | 26 | `test_candidate_requires_explicit_trigger_and_promotion_confirms_external_write` | Local |

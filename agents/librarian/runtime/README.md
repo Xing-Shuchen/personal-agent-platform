@@ -89,6 +89,33 @@ sync. The local smoke check parsed 26 highlights from one WeRead export, 151
 highlight/comment records from another, and 20 Koodo highlights; these counts
 are parser observations, not a complete platform-format acceptance test.
 
+`koodo_native.py` reads Koodo Reader's local `books.db` and `notes.db` in
+SQLite read-only mode. It maps each native note key and book key to stable
+Librarian IDs, retains the exact source columns as private JSON evidence, and
+keeps Koodo's locator object as a source-native locator rather than calling it
+an EPUB CFI. Repeated calls create, update, or retire traces as source records
+change. A source edit to a user-corrected trace stays pending until an explicit
+`reconcile_koodo_note` choice accepts the source or retains the correction.
+No polling job is configured, and no Koodo app edit has been observed live.
+This PC's actual native databases yielded 118 notes from one book in a
+temporary acceptance store; first import and replay, raw evidence, search,
+and owner isolation passed without storing private content in Git.
+
+Run a native sync only after assigning the trusted owner and stable source ID:
+
+```bash
+PYTHONPATH=. python3 -m agents.librarian.runtime.koodo_native \
+  --root var/librarian --owner OWNER_ID --source-id local_koodo \
+  --books-db /path/to/koodo-reader/uploads/data/config/books.db \
+  --notes-db /path/to/koodo-reader/uploads/data/config/notes.db
+```
+
+The two source database paths are machine-specific. Re-run the command after
+Koodo changes its local data, or schedule it under a trusted local owner once
+that identity is configured. An empty source will not retire every known note
+unless `--allow-empty-source` is supplied deliberately. Never edit the Koodo
+databases from Librarian.
+
 Run the focused tests from the repo root:
 
 ```bash
