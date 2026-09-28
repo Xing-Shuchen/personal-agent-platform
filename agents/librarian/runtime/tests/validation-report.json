@@ -1,10 +1,10 @@
 {
-  "schema_definitions": 59,
+  "schema_definitions": 77,
   "entry_models": 18,
   "positive_cases": 42,
   "negative_cases": 43,
   "domain_link_checks": "passed",
   "offline_validation": "passed",
   "draft_definition_target": 77,
-  "draft_definition_target_met": false
+  "draft_definition_target_met": true
 }

@@ -383,51 +383,14 @@
         "authors": {
           "type": "array",
           "items": {
-            "type": "object",
-            "properties": {
-              "name": {
-                "type": "string",
-                "minLength": 1
-              },
-              "entity_id": {
-                "anyOf": [
-                  {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  {
-                    "type": "null"
-                  }
-                ]
-              }
-            },
-            "required": [
-              "name",
-              "entity_id"
-            ],
-            "additionalProperties": false
+            "$ref": "#/$defs/Author"
           },
           "minItems": 0
         },
         "identifiers": {
           "type": "array",
           "items": {
-            "type": "object",
-            "properties": {
-              "scheme": {
-                "type": "string",
-                "minLength": 1
-              },
-              "value": {
-                "type": "string",
-                "minLength": 1
-              }
-            },
-            "required": [
-              "scheme",
-              "value"
-            ],
-            "additionalProperties": false
+            "$ref": "#/$defs/Identifier"
           },
           "minItems": 0
         },
@@ -521,36 +484,7 @@
           ]
         },
         "isbn": {
-          "type": "object",
-          "properties": {
-            "isbn13": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "pattern": "^[0-9]{13}$"
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
-            "isbn10": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "pattern": "^[0-9X]{10}$"
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            }
-          },
-          "required": [
-            "isbn13",
-            "isbn10"
-          ],
-          "additionalProperties": false
+          "$ref": "#/$defs/Isbn"
         },
         "language": {
           "anyOf": [
@@ -661,80 +595,10 @@
           ]
         },
         "physical": {
-          "type": "object",
-          "properties": {
-            "qr_id": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "minLength": 1
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
-            "shelf": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "minLength": 1
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            }
-          },
-          "required": [
-            "qr_id",
-            "shelf"
-          ],
-          "additionalProperties": false
+          "$ref": "#/$defs/PhysicalDescriptor"
         },
         "reading_status": {
-          "type": "object",
-          "properties": {
-            "state": {
-              "type": "string",
-              "enum": [
-                "unknown",
-                "unread",
-                "reading",
-                "paused",
-                "abandoned",
-                "finished",
-                "rereading"
-              ]
-            },
-            "current_page": {
-              "anyOf": [
-                {
-                  "$ref": "#/$defs/PageLabel"
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
-            "progress_evidence_ref": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "minLength": 1
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            }
-          },
-          "required": [
-            "state",
-            "current_page",
-            "progress_evidence_ref"
-          ],
-          "additionalProperties": false
+          "$ref": "#/$defs/ReadingStatus"
         },
         "revision": {
           "type": "integer",
@@ -923,32 +787,7 @@
           "format": "date-time"
         },
         "origin": {
-          "type": "object",
-          "properties": {
-            "transport": {
-              "type": "string",
-              "minLength": 1
-            },
-            "account_id": {
-              "type": "string",
-              "minLength": 1
-            },
-            "conversation_id": {
-              "type": "string",
-              "minLength": 1
-            },
-            "source_event_id": {
-              "type": "string",
-              "minLength": 1
-            }
-          },
-          "required": [
-            "transport",
-            "account_id",
-            "conversation_id",
-            "source_event_id"
-          ],
-          "additionalProperties": false
+          "$ref": "#/$defs/CaptureOrigin"
         },
         "received_at": {
           "type": "string",
@@ -1042,60 +881,7 @@
           "$ref": "#/$defs/Origin"
         },
         "submitted_context": {
-          "type": "object",
-          "properties": {
-            "session_id": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "minLength": 1
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
-            "work_id": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "minLength": 1
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
-            "edition_id": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "minLength": 1
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
-            "book_instance_id": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "minLength": 1
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            }
-          },
-          "required": [
-            "session_id",
-            "work_id",
-            "edition_id",
-            "book_instance_id"
-          ],
-          "additionalProperties": false
+          "$ref": "#/$defs/SubmittedContext"
         }
       },
       "required": [
@@ -1428,26 +1214,7 @@
           "$ref": "#/$defs/ObjectRef"
         },
         "image_space": {
-          "type": "object",
-          "properties": {
-            "width": {
-              "type": "integer",
-              "minimum": 1
-            },
-            "height": {
-              "type": "integer",
-              "minimum": 1
-            },
-            "basis": {
-              "const": "exif_oriented_original"
-            }
-          },
-          "required": [
-            "width",
-            "height",
-            "basis"
-          ],
-          "additionalProperties": false
+          "$ref": "#/$defs/ImageSpace"
         },
         "visible_title": {
           "$ref": "#/$defs/TextField"
@@ -1490,35 +1257,7 @@
         "links": {
           "type": "array",
           "items": {
-            "type": "object",
-            "properties": {
-              "from_id": {
-                "type": "string",
-                "minLength": 1
-              },
-              "to_id": {
-                "type": "string",
-                "minLength": 1
-              },
-              "kind": {
-                "type": "string",
-                "enum": [
-                  "annotates",
-                  "continues",
-                  "points_to"
-                ]
-              },
-              "confidence": {
-                "$ref": "#/$defs/Confidence"
-              }
-            },
-            "required": [
-              "from_id",
-              "to_id",
-              "kind",
-              "confidence"
-            ],
-            "additionalProperties": false
+            "$ref": "#/$defs/ObservationLink"
           },
           "minItems": 0
         },
@@ -1975,49 +1714,13 @@
           "minItems": 1
         },
         "confidence": {
-          "type": "object",
-          "properties": {
-            "book_resolution": {
-              "$ref": "#/$defs/Confidence"
-            },
-            "page_number": {
-              "$ref": "#/$defs/Confidence"
-            }
-          },
-          "required": [
-            "book_resolution",
-            "page_number"
-          ],
-          "additionalProperties": false
+          "$ref": "#/$defs/TraceConfidence"
         },
         "marked_at": {
           "$ref": "#/$defs/TimeField"
         },
         "attribution": {
-          "type": "object",
-          "properties": {
-            "mark_author": {
-              "type": "string",
-              "enum": [
-                "user",
-                "other",
-                "unknown"
-              ]
-            },
-            "basis": {
-              "type": "string",
-              "enum": [
-                "user_statement",
-                "source_payload",
-                "unknown"
-              ]
-            }
-          },
-          "required": [
-            "mark_author",
-            "basis"
-          ],
-          "additionalProperties": false
+          "$ref": "#/$defs/TraceAttribution"
         },
         "intent_signals": {
           "type": "array",
@@ -2045,37 +1748,7 @@
           ]
         },
         "review": {
-          "type": "object",
-          "properties": {
-            "required": {
-              "type": "boolean"
-            },
-            "state": {
-              "type": "string",
-              "enum": [
-                "none",
-                "pending",
-                "resolved"
-              ]
-            },
-            "reason": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "minLength": 1
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            }
-          },
-          "required": [
-            "required",
-            "state",
-            "reason"
-          ],
-          "additionalProperties": false
+          "$ref": "#/$defs/TraceReview"
         }
       },
       "required": [
@@ -2252,40 +1925,7 @@
           ]
         },
         "target": {
-          "type": "object",
-          "properties": {
-            "type": {
-              "type": "string",
-              "enum": [
-                "trace",
-                "concept",
-                "entity",
-                "knowledge_object",
-                "question"
-              ]
-            },
-            "id": {
-              "type": "string",
-              "minLength": 1
-            },
-            "revision": {
-              "anyOf": [
-                {
-                  "type": "integer",
-                  "minimum": 1
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            }
-          },
-          "required": [
-            "type",
-            "id",
-            "revision"
-          ],
-          "additionalProperties": false
+          "$ref": "#/$defs/TraceRelationTarget"
         },
         "provenance": {
           "type": "string",
@@ -2363,27 +2003,7 @@
           ]
         },
         "aggregate": {
-          "type": "object",
-          "properties": {
-            "type": {
-              "type": "string",
-              "minLength": 1
-            },
-            "id": {
-              "type": "string",
-              "minLength": 1
-            },
-            "revision": {
-              "type": "integer",
-              "minimum": 1
-            }
-          },
-          "required": [
-            "type",
-            "id",
-            "revision"
-          ],
-          "additionalProperties": false
+          "$ref": "#/$defs/EventAggregate"
         },
         "payload": {
           "type": "object"
@@ -2590,26 +2210,7 @@
           "minLength": 1
         },
         "actor": {
-          "type": "object",
-          "properties": {
-            "type": {
-              "type": "string",
-              "enum": [
-                "user",
-                "agent",
-                "system"
-              ]
-            },
-            "id": {
-              "type": "string",
-              "minLength": 1
-            }
-          },
-          "required": [
-            "type",
-            "id"
-          ],
-          "additionalProperties": false
+          "$ref": "#/$defs/CommandActor"
         },
         "payload": {
           "type": "object"
@@ -2945,89 +2546,7 @@
           "minLength": 1
         },
         "filters": {
-          "type": "object",
-          "properties": {
-            "work_id": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "minLength": 1
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
-            "edition_id": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "minLength": 1
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
-            "book_instance_id": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "minLength": 1
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
-            "session_id": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "minLength": 1
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
-            "medium": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "enum": [
-                    "physical",
-                    "weread",
-                    "koodo"
-                  ]
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
-            "trace_types": {
-              "type": "array",
-              "items": {
-                "type": "string",
-                "minLength": 1
-              },
-              "minItems": 0
-            },
-            "include_unresolved": {
-              "type": "boolean"
-            }
-          },
-          "required": [
-            "work_id",
-            "edition_id",
-            "book_instance_id",
-            "session_id",
-            "medium",
-            "trace_types",
-            "include_unresolved"
-          ],
-          "additionalProperties": false
+          "$ref": "#/$defs/SearchFilters"
         },
         "limit": {
           "type": "integer",
@@ -3360,57 +2879,12 @@
       "type": "object",
       "properties": {
         "source": {
-          "type": "object",
-          "properties": {
-            "transport": {
-              "type": "string",
-              "minLength": 1
-            },
-            "account_id": {
-              "type": "string",
-              "minLength": 1
-            },
-            "conversation_id": {
-              "type": "string",
-              "minLength": 1
-            },
-            "source_event_id": {
-              "type": "string",
-              "minLength": 1
-            }
-          },
-          "required": [
-            "transport",
-            "account_id",
-            "conversation_id",
-            "source_event_id"
-          ],
-          "additionalProperties": false
+          "$ref": "#/$defs/CaptureOrigin"
         },
         "attachments": {
           "type": "array",
           "items": {
-            "type": "object",
-            "properties": {
-              "source_item_id": {
-                "type": "string",
-                "minLength": 1
-              },
-              "mime_type": {
-                "type": "string",
-                "minLength": 1
-              },
-              "upload_ref": {
-                "type": "string",
-                "minLength": 1
-              }
-            },
-            "required": [
-              "source_item_id",
-              "mime_type",
-              "upload_ref"
-            ],
-            "additionalProperties": false
+            "$ref": "#/$defs/CaptureAttachment"
           },
           "minItems": 1
         },
@@ -3559,34 +3033,7 @@
           "minimum": 1
         },
         "correction": {
-          "type": "object",
-          "properties": {
-            "printed_text": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "minLength": 1
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
-            "annotation": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "minLength": 1
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            }
-          },
-          "required": [],
-          "additionalProperties": false,
-          "minProperties": 1
+          "$ref": "#/$defs/TraceCorrection"
         },
         "reason": {
           "type": "string",
@@ -3921,6 +3368,588 @@
         "source_trace_refs"
       ],
       "additionalProperties": false
+    },
+    "Author": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "entity_id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "name",
+        "entity_id"
+      ],
+      "additionalProperties": false
+    },
+    "Identifier": {
+      "type": "object",
+      "properties": {
+        "scheme": {
+          "type": "string",
+          "minLength": 1
+        },
+        "value": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "scheme",
+        "value"
+      ],
+      "additionalProperties": false
+    },
+    "Isbn": {
+      "type": "object",
+      "properties": {
+        "isbn13": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[0-9]{13}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "isbn10": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[0-9X]{10}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "isbn13",
+        "isbn10"
+      ],
+      "additionalProperties": false
+    },
+    "PhysicalDescriptor": {
+      "type": "object",
+      "properties": {
+        "qr_id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "shelf": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "qr_id",
+        "shelf"
+      ],
+      "additionalProperties": false
+    },
+    "ReadingStatus": {
+      "type": "object",
+      "properties": {
+        "state": {
+          "type": "string",
+          "enum": [
+            "unknown",
+            "unread",
+            "reading",
+            "paused",
+            "abandoned",
+            "finished",
+            "rereading"
+          ]
+        },
+        "current_page": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PageLabel"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "progress_evidence_ref": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "state",
+        "current_page",
+        "progress_evidence_ref"
+      ],
+      "additionalProperties": false
+    },
+    "CaptureOrigin": {
+      "type": "object",
+      "properties": {
+        "transport": {
+          "type": "string",
+          "minLength": 1
+        },
+        "account_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "conversation_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source_event_id": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "transport",
+        "account_id",
+        "conversation_id",
+        "source_event_id"
+      ],
+      "additionalProperties": false
+    },
+    "SubmittedContext": {
+      "type": "object",
+      "properties": {
+        "session_id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "work_id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "edition_id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "book_instance_id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "session_id",
+        "work_id",
+        "edition_id",
+        "book_instance_id"
+      ],
+      "additionalProperties": false
+    },
+    "ImageSpace": {
+      "type": "object",
+      "properties": {
+        "width": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "basis": {
+          "const": "exif_oriented_original"
+        }
+      },
+      "required": [
+        "width",
+        "height",
+        "basis"
+      ],
+      "additionalProperties": false
+    },
+    "ObservationLink": {
+      "type": "object",
+      "properties": {
+        "from_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "to_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "annotates",
+            "continues",
+            "points_to"
+          ]
+        },
+        "confidence": {
+          "$ref": "#/$defs/Confidence"
+        }
+      },
+      "required": [
+        "from_id",
+        "to_id",
+        "kind",
+        "confidence"
+      ],
+      "additionalProperties": false
+    },
+    "TraceConfidence": {
+      "type": "object",
+      "properties": {
+        "book_resolution": {
+          "$ref": "#/$defs/Confidence"
+        },
+        "page_number": {
+          "$ref": "#/$defs/Confidence"
+        }
+      },
+      "required": [
+        "book_resolution",
+        "page_number"
+      ],
+      "additionalProperties": false
+    },
+    "TraceAttribution": {
+      "type": "object",
+      "properties": {
+        "mark_author": {
+          "type": "string",
+          "enum": [
+            "user",
+            "other",
+            "unknown"
+          ]
+        },
+        "basis": {
+          "type": "string",
+          "enum": [
+            "user_statement",
+            "source_payload",
+            "unknown"
+          ]
+        }
+      },
+      "required": [
+        "mark_author",
+        "basis"
+      ],
+      "additionalProperties": false
+    },
+    "TraceReview": {
+      "type": "object",
+      "properties": {
+        "required": {
+          "type": "boolean"
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "none",
+            "pending",
+            "resolved"
+          ]
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "required",
+        "state",
+        "reason"
+      ],
+      "additionalProperties": false
+    },
+    "EventAggregate": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "minLength": 1
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "required": [
+        "type",
+        "id",
+        "revision"
+      ],
+      "additionalProperties": false
+    },
+    "CommandActor": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "user",
+            "agent",
+            "system"
+          ]
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "type",
+        "id"
+      ],
+      "additionalProperties": false
+    },
+    "SearchFilters": {
+      "type": "object",
+      "properties": {
+        "work_id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "edition_id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "book_instance_id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "session_id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "medium": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "physical",
+                "weread",
+                "koodo"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "trace_types": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "minItems": 0
+        },
+        "include_unresolved": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "work_id",
+        "edition_id",
+        "book_instance_id",
+        "session_id",
+        "medium",
+        "trace_types",
+        "include_unresolved"
+      ],
+      "additionalProperties": false
+    },
+    "CaptureAttachment": {
+      "type": "object",
+      "properties": {
+        "source_item_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "mime_type": {
+          "type": "string",
+          "minLength": 1
+        },
+        "upload_ref": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "source_item_id",
+        "mime_type",
+        "upload_ref"
+      ],
+      "additionalProperties": false
+    },
+    "TraceRelationTarget": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "trace",
+            "concept",
+            "entity",
+            "knowledge_object",
+            "question"
+          ]
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "revision": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "type",
+        "id",
+        "revision"
+      ],
+      "additionalProperties": false
+    },
+    "TraceCorrection": {
+      "type": "object",
+      "properties": {
+        "printed_text": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "annotation": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [],
+      "additionalProperties": false,
+      "minProperties": 1
     }
   }
 }

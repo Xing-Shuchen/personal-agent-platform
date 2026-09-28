@@ -119,7 +119,7 @@ PAP 已有的 blob/object/event infrastructure 必须优先复用。不存在时
 
 ### 5.1 共同约定
 
-**[实现提案]** 规范文件使用 JSON Schema Draft 2020-12。目标主文件有 77 个定义；当前仓库实现有 59 个定义，默认根对象为 `ReadingTrace`。其他类型通过 `schemas/<Model>.schema.json` 入口校验，或选择主文件中的对应 `$defs`。
+**[实现提案]** 规范文件使用 JSON Schema Draft 2020-12。当前仓库主文件有 77 个定义，默认根对象为 `ReadingTrace`；其中复用定义从原先内嵌的结构提取，缺少原始底稿包，无法逐名比较。其他类型通过 `schemas/<Model>.schema.json` 入口校验，或选择主文件中的对应 `$defs`。
 
 所有持久领域记录包含 `object_type`、`schema_version`、`id`、`owner_id`、`created_at`。`schema_version` 在本稿固定为 `0.1.0`。业务对象 ID 是带前缀的不透明字符串；调用方不能从 ID 推断题名、页码、时序或所有者。
 
@@ -820,7 +820,7 @@ reported_progress = 用户或可靠来源报告的起止位置，属于阅读进
 
 ### 38.3 契约包已完成的检查
 
-当前离线校验检查 59 个 Schema 定义、18 个模型入口、42 个正向合成 fixture，拒绝 43 个负向案例，并执行选定的跨实体一致性检查。77 个定义仍是目标，尚未达到；当前结果见 `agents/librarian/runtime/tests/validation-report.json`。
+当前离线校验检查 77 个 Schema 定义、18 个模型入口、42 个正向合成 fixture，拒绝 43 个负向案例，并执行选定的跨实体一致性检查。具体结果见 `agents/librarian/runtime/tests/validation-report.json`；数字相符不等于已与缺失的原始底稿包逐项核对。
 
 这些检查覆盖结构、部分字段/版本/坐标/引用不变量，**没有运行生产 pipeline，没有真实图片，没有测试真实模型准确率、消息平台、存储耐久性、事务恢复或真实跨来源同步**。AC 表是未来实现必须通过的验收清单，不是当前已完成列表。
 

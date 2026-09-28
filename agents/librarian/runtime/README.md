@@ -4,9 +4,10 @@ This directory implements an early, local slice of
 [`SPEC_v0.8_Librarian.md`](../../../docs/SPEC_v0.8_Librarian.md).
 `schemas/contracts.schema.json` is the sole model definition; the 18
 `<Model>.schema.json` files are entry points into it. The current schema has
-59 definitions. The offline package now has 42 positive and 43 negative
-synthetic fixtures, all 18 model entries, and a validation report. It still
-does **not** satisfy the draft's 77-definition claim.
+77 definitions. The offline package has 42 positive and 43 negative synthetic
+fixtures, all 18 model entries, and a validation report. The added definitions
+factor existing nested structures into reusable contracts; the unavailable
+source-design attachment prevents a name-for-name comparison with its package.
 
 `store.py` provides owner-scoped Work/Edition/BookInstance registration,
 versioned sessions, scope-limited active session and 90-minute affinity,
@@ -59,7 +60,7 @@ directory. There is no scheduled job or public gateway route yet. The caller
 must supply a trusted `owner_id`; passing arbitrary owner strings to these
 Python methods is not an authentication mechanism.
 
-Remaining work includes the missing schema definitions and broader semantic checks; stronger
+Remaining work includes broader semantic checks; stronger
 batch book/page conflict resolution; actual image extraction with annotated-photo tests;
 Gateway upload identity and authorization; page/edition conflict handling;
 review exception workflows; complete search
