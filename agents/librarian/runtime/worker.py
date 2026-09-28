@@ -603,9 +603,19 @@ def _notify(root: Path, batch: dict, note: Path, count: int, *,
     _atomic_write(marker, json.dumps({"batch_id": batch["id"], "sent_at": _now()}).encode())
 
 
+def _review_digest(traces: list[dict]) -> str:
+    evidence = [(trace["id"], trace["revision"], trace["location"]["page"],
+                 trace["content"]["printed_text"]["text"],
+                 trace["content"]["annotation"]["text"])
+                for trace in sorted(traces, key=lambda item: item["id"])]
+    return hashlib.sha256(json.dumps(evidence, ensure_ascii=False,
+                                     sort_keys=True).encode()).hexdigest()[:16]
+
+
 def _notify_correction(root: Path, batch: dict, note: Path, count: int, *,
-                       unresolved: int = 0, issues: int = 0) -> None:
-    marker = root / "notifications" / f"{batch['id']}-revision.json"
+                       unresolved: int = 0, issues: int = 0,
+                       revision_key: str) -> None:
+    marker = root / "notifications" / f"{batch['id']}-revision-{revision_key}.json"
     if marker.exists():
         return
     message = (f"《{note.stem}》的页码与画线识别已更新，数据库和 Obsidian 已同步更新。"
@@ -707,14 +717,18 @@ def _process_batch(lib: Library, root: Path, vault: Path | None, owner: str,
             if run["capture_id"] in batch["capture_ids"] and
             run["extractor_version"] == version and
             run["outcome"] in {"success", "partial"}]
-    revised_notice = (root / "notifications" / f"{batch['id']}-revision.json").exists()
+    revised_notice = any((root / "notifications").glob(f"{batch['id']}-revision*.json"))
     if notified and revised_notice and len({run["capture_id"] for run in runs}) == len(batch["capture_ids"]):
         existing = [trace for trace in _current(lib, owner, "ReadingTrace")
                     if trace["status"] == "active" and
                     trace["source"].get("capture_id") in batch["capture_ids"]]
         if vault:
             _refresh_generated_note(vault, batch, title, existing, existing)
-            _consolidate_generated_note(lib, owner, title, vault)
+            note = _consolidate_generated_note(lib, owner, title, vault)
+            _notify_correction(root, batch, note, len(existing),
+                               unresolved=sum(trace["location"]["page"] is None
+                                              for trace in existing),
+                               revision_key=_review_digest(existing))
         unresolved = sum(trace["location"]["page"] is None for trace in existing)
         return ({"batch_id": batch["id"], "status": "partial",
                  "traces": len(existing), "unresolved_pages": unresolved,
@@ -775,7 +789,8 @@ def _process_batch(lib: Library, root: Path, vault: Path | None, owner: str,
         note = _consolidate_generated_note(lib, owner, title, vault)
         _notify_correction(root, batch, note, len(traces),
                            unresolved=sum(trace["location"]["page"] is None for trace in traces),
-                           issues=len(extraction_issues))
+                           issues=len(extraction_issues),
+                           revision_key=_review_digest(traces))
         snapshot.unlink(missing_ok=True)
     else:
         note = _export(lib, owner, batch, title, vault)

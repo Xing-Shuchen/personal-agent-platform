@@ -11,7 +11,8 @@ from agents.librarian.runtime.store import Library, LibrarianError, _now, _unkno
 from agents.librarian.runtime.worker import (_catalog, _current, _hide_vault_markers,
                                              _remove_vault_images, _sync_digital,
                                              _render_batch_note, _render_batch_note_legacy,
-                                             _refresh_generated_note,
+                                             _refresh_generated_note, _review_digest,
+                                             _notify_correction,
                                              _repair_legacy_auto_affinity)
 
 
@@ -113,6 +114,30 @@ def test_old_vault_page_images_are_removed_without_rewriting_review_text(tmp_pat
     assert "原图证据：`capture_xyz`" in note.read_text(encoding="utf-8")
     assert not attachment.exists()
     assert not _remove_vault_images(tmp_path, {"id": "batch_abc"})
+
+
+def test_correction_notice_dedupes_each_distinct_trace_state(tmp_path: Path,
+                                                              monkeypatch) -> None:
+    from agents.librarian.runtime import worker
+
+    sent = []
+    def send(command, **_kwargs):
+        sent.append(command)
+        return type("Result", (), {"returncode": 0})()
+    monkeypatch.setattr(worker.subprocess, "run", send)
+    batch = {"id": "batch_one", "origin": {"conversation_id": "owner-chat"}}
+    note = tmp_path / "book.md"
+    trace = {"id": "rt_one", "revision": 1,
+             "location": {"page": {"number": 23, "label": "23"}},
+             "content": {"printed_text": {"text": "first"},
+                         "annotation": {"text": None}}}
+    first_key = _review_digest([trace])
+    _notify_correction(tmp_path, batch, note, 1, revision_key=first_key)
+    _notify_correction(tmp_path, batch, note, 1, revision_key=first_key)
+    changed = {**trace, "revision": 2,
+               "location": {"page": {"number": 24, "label": "24"}}}
+    _notify_correction(tmp_path, batch, note, 1, revision_key=_review_digest([changed]))
+    assert len(sent) == 2
 
 
 def test_vault_trace_metadata_is_hidden_without_changing_review_text(tmp_path: Path) -> None:
