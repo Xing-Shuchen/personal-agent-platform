@@ -151,6 +151,73 @@ def test_bad_batch_does_not_starve_later_batch(tmp_path: Path, monkeypatch) -> N
     assert (tmp_path / "state" / "batch-status" / f"{ids[0]}.json").exists()
 
 
+def test_failed_batch_retries_with_backoff_then_stops(tmp_path: Path, monkeypatch) -> None:
+    from agents.librarian.runtime import worker
+
+    stream = BytesIO()
+    Image.new("RGB", (10, 10), "white").save(stream, "PNG")
+    state = tmp_path / "state"
+    with Library(state) as lib:
+        receipt = lib.ingest("owner", transport="feishu", account_id="librarian",
+                             conversation_id="chat", source_event_id="message",
+                             attachments=[{"source_item_id": "image", "mime_type": "image/png",
+                                           "data": stream.getvalue()}],
+                             idempotency_key="command")
+    clock = ["2099-01-01T00:00:00+00:00"]
+    monkeypatch.setattr(worker, "_now", lambda: clock[0])
+    calls = []
+    def fail(*_args):
+        calls.append(clock[0])
+        raise LibrarianError("EXTRACTOR_UNAVAILABLE", "model unavailable")
+    monkeypatch.setattr(worker, "_process_batch", fail)
+    status_file = state / "batch-status" / f"{receipt['batch_id']}.json"
+
+    assert worker.run(state, None, "owner")[0]["code"] == "EXTRACTOR_UNAVAILABLE"
+    assert json.loads(status_file.read_text())["next_retry_at"] == "2099-01-01T00:05:00+00:00"
+    clock[0] = "2099-01-01T00:04:59+00:00"
+    assert worker.run(state, None, "owner") == []
+    clock[0] = "2099-01-01T00:05:00+00:00"
+    assert len(worker.run(state, None, "owner")) == 1
+    clock[0] = "2099-01-01T00:35:00+00:00"
+    assert len(worker.run(state, None, "owner")) == 1
+    assert json.loads(status_file.read_text())["retry_exhausted"] is True
+    clock[0] = "2099-01-02T00:00:00+00:00"
+    assert worker.run(state, None, "owner") == []
+    assert len(calls) == 3
+
+
+def test_partial_extractor_failure_is_throttled_and_success_resets_retry(tmp_path: Path,
+                                                                          monkeypatch) -> None:
+    from agents.librarian.runtime import worker
+
+    stream = BytesIO()
+    Image.new("RGB", (10, 10), "white").save(stream, "PNG")
+    state = tmp_path / "state"
+    with Library(state) as lib:
+        receipt = lib.ingest("owner", transport="feishu", account_id="librarian",
+                             conversation_id="chat", source_event_id="message",
+                             attachments=[{"source_item_id": "image", "mime_type": "image/png",
+                                           "data": stream.getvalue()}],
+                             idempotency_key="command")
+    clock = ["2099-01-01T00:00:00+00:00"]
+    monkeypatch.setattr(worker, "_now", lambda: clock[0])
+    calls = []
+    def process(*_args):
+        calls.append(clock[0])
+        if len(calls) == 1:
+            return {"status": "partial", "issues": [{"code": "EXTRACTOR_UNAVAILABLE"}]}
+        return {"status": "processed", "traces": 1}
+    monkeypatch.setattr(worker, "_process_batch", process)
+    status_file = state / "batch-status" / f"{receipt['batch_id']}.json"
+    worker.run(state, None, "owner")
+    clock[0] = "2099-01-01T00:01:00+00:00"
+    assert worker.run(state, None, "owner") == []
+    clock[0] = "2099-01-01T00:05:00+00:00"
+    assert worker.run(state, None, "owner")[0]["status"] == "processed"
+    assert json.loads(status_file.read_text())["retry_attempts"] == 0
+    assert len(calls) == 2
+
+
 def test_interior_photo_without_epub_or_vault_persists_partial_trace(tmp_path: Path,
                                                                        monkeypatch) -> None:
     from agents.librarian.runtime import worker

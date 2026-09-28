@@ -16,7 +16,7 @@ import re
 import shutil
 import subprocess
 import tempfile
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 from zipfile import ZipFile
@@ -256,6 +256,44 @@ def _atomic_write(path: Path, data: bytes) -> None:
     finally:
         if os.path.exists(name):
             os.unlink(name)
+
+
+_RETRY_DELAYS = (300, 1800, 7200)
+_RETRYABLE_CODES = {"WORKER_FAILED", "EXTRACTOR_UNAVAILABLE",
+                    "EXTRACTION_SCHEMA_INVALID"}
+
+
+def _retry_due(status_file: Path, now: str) -> tuple[bool, int]:
+    if not status_file.exists():
+        return True, 0
+    try:
+        previous = json.loads(status_file.read_text(encoding="utf-8"))
+        attempts = previous.get("retry_attempts", 0)
+        if not isinstance(attempts, int) or attempts < 0:
+            return True, 0
+        next_at = previous.get("next_retry_at")
+        if previous.get("retry_exhausted") or attempts >= len(_RETRY_DELAYS):
+            return False, attempts
+        if next_at and datetime.fromisoformat(now) < datetime.fromisoformat(next_at):
+            return False, attempts
+        return True, attempts
+    except (OSError, ValueError, TypeError, json.JSONDecodeError):
+        return True, 0
+
+
+def _status_with_retry(outcome: dict, previous_attempts: int, now: str) -> dict:
+    codes = ({outcome.get("code")} |
+             {issue.get("code") for issue in outcome.get("issues", [])
+              if isinstance(issue, dict)})
+    if not codes.intersection(_RETRYABLE_CODES):
+        return {"at": now, **outcome, "retry_attempts": 0,
+                "next_retry_at": None, "retry_exhausted": False}
+    attempts = previous_attempts + 1
+    exhausted = attempts >= len(_RETRY_DELAYS)
+    return {"at": now, **outcome, "retry_attempts": attempts,
+            "next_retry_at": None if exhausted else
+            (datetime.fromisoformat(now) + timedelta(seconds=_RETRY_DELAYS[attempts - 1])).isoformat(),
+            "retry_exhausted": exhausted}
 
 
 def _trace_marker(trace_id: str, revision: int) -> str:
@@ -768,15 +806,21 @@ def run(root: Path, vault: Path | None, owner: str, *,
                                 datetime.fromisoformat(newest)).total_seconds() < 45:
                             continue
                         status_file = root / "batch-status" / f"{batch['id']}.json"
+                        now = _now()
+                        due, previous_attempts = _retry_due(status_file, now)
+                        if not due:
+                            continue
                         try:
                             outcome = _process_batch(lib, root, vault, owner, batch, vision_model)
                             if outcome["status"] != "unchanged":
-                                _atomic_write(status_file, json.dumps({"at": _now(), **outcome}).encode())
+                                _atomic_write(status_file, json.dumps(
+                                    _status_with_retry(outcome, previous_attempts, _now())).encode())
                                 results.append(outcome)
                         except Exception as error:
                             outcome = {"batch_id": batch["id"], "status": "error",
                                        "code": error.code if isinstance(error, LibrarianError) else "WORKER_FAILED"}
-                            _atomic_write(status_file, json.dumps({"at": _now(), **outcome}).encode())
+                            _atomic_write(status_file, json.dumps(
+                                _status_with_retry(outcome, previous_attempts, _now())).encode())
                             results.append(outcome)
     if not physical_only and (koodo or weread):
         with (root / "digital-worker.lock").open("w") as lock:
