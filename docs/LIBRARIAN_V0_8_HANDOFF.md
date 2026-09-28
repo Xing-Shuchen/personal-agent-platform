@@ -263,3 +263,13 @@ acceptance photos and `source-design.txt` remain deferred by the user; no
 release branch or tag was created. Session command integration, authorized
 evidence opening, real inbound search-tool usage, and app-driven digital sync
 changes remain outside the verified set.
+
+The previously submitted real Feishu p.39 question did reach the agent and
+receive a reply, but its trajectory used shell `exec` to inspect the private
+store instead of `librarian_search`. It therefore does not count as the trusted
+search-tool acceptance. The dedicated agent now has an OpenClaw per-agent
+tool allowlist containing only `librarian_search`, and its SOUL explicitly
+forbids shell/file inspection for reading-history answers. Configuration
+validation and Gateway restart passed. A new real incoming question is still
+needed to verify the tool is exposed with the trusted sender context and used
+for the reply; do not mark AC-24 complete from the earlier answer.

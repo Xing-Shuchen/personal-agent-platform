@@ -19,6 +19,10 @@ created only for the dedicated `librarian` agent when OpenClaw supplies a
 matching channel, account and sender. Its arguments contain a query and limit,
 never an owner ID. With `ownerMappings: []`, the tool is absent. A normal CLI
 agent turn also has no mapped sender and cannot read the private store.
+Configure the dedicated OpenClaw agent with `tools.allow` set to only
+`["librarian_search"]`. Image intake and background processing run through the
+plugin service, so the chat agent needs no shell or filesystem tool. This
+prevents a model from bypassing owner-scoped search through local SQLite.
 
 From the PAP repository root, install the linked local plugin:
 
@@ -26,10 +30,12 @@ From the PAP repository root, install the linked local plugin:
 openclaw plugins install --link --force --accept-capabilities ./agents/librarian/openclaw-plugin
 ```
 
-Configure absolute repository, private state and Vault paths, an OCR-capable
-Python interpreter, and an explicit owner mapping. Install the package's
-`librarian-ocr` extra in that interpreter. Put an owner-supplied EPUB at
-`stateRoot/source-books/<isbn13>.epub` before processing a photographed book.
+Configure absolute repository and private state paths, an OCR-capable Python
+interpreter, and an explicit owner mapping. Vault is optional. Install the
+package's `librarian-ocr` extra in that interpreter. An owner-supplied EPUB at
+`stateRoot/source-books/<isbn13>.epub` enables local OCR alignment; without it,
+the worker uses the configured image-capable OpenClaw model and persists
+unresolved observations when the book or page cannot be identified.
 Replace the example channel, account, sender and owner IDs with trusted values
 from your OpenClaw deployment:
 
@@ -53,7 +59,10 @@ openclaw plugins inspect pap-librarian-intake --runtime --json
 its staged media and write access to `stateRoot` and `vaultRoot`. The Python
 bridge and worker use `jsonschema`, Pillow, RapidOCR, ONNX Runtime and OpenCV.
 
-Optional native digital sync runs with the same five-minute recovery service.
+Optional native digital sync runs on a separate worker schedule and lock.
+Set `digitalSources.ownerId` to the sole configured owner before enabling any
+digital source; multiple distinct owners fail closed until per-owner roots and
+routing are implemented.
 Configure `digitalSources.koodo` with a stable source ID and Koodo's read-only
 `books.db` and `notes.db` paths. Configure `digitalSources.weread` with a stable
 source ID, the local Obsidian WeRead plugin `data.json` path and explicit book
