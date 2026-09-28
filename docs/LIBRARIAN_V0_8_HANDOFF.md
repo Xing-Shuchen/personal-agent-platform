@@ -363,3 +363,11 @@ tests, the 77-definition contract validator, OpenClaw config validation and
 an active Gateway. The worktree is clean and no release tag or branch exists.
 The four-photo §38.1 acceptance set and `source-design.txt` remain deferred by
 the owner; the full v0.8 audit is not closed.
+
+The personal symbol vocabulary now has a durable configuration snapshot on
+each new ProcessingRun, separate from normalizer and extractor versions.
+Reprocessing with different mappings under the same vocabulary label requires
+review; an identical snapshot can reconcile across extractor versions.
+One-to-one mark replacements write explicit `supersedes` TraceRelations. This
+is locally verified, while legacy vocabulary runs without snapshots and
+ambiguous group changes remain review-only. The full F07 gate stays open.

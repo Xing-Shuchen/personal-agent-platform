@@ -266,3 +266,5 @@ F01/F04 迟到书籍绑定补充：只读检查发现 86 条纸书活跃 trace �
 迟到绑定正式 worker 运行后，86 条活跃纸书 trace 的 Work 未绑定数从 12 降为 0，索引仍为 208/208。随后真实数据库搜索暴露一个 P1：`SearchHit` 的 revision >1 被错误套用存储对象的 `supersedes_revision` 语义校验，导致查询直接报错。现将该语义约束限于实际带 `supersedes_revision` 的记录，增加修订 trace 搜索回归；生产库「帕森斯」检索返回 20 条、`index_state=ready`，包含 revision 2。真实飞书 agent 入站仍待验。
 
 AC-24 按书页检索补充：`librarian_search` 现接受 `book` 和 `page`，允许不带关键词查某本书的印刷页；按 owner 解析唯一 Work，并在索引查询中按 trace 当前 location 的页码过滤。生产库只读查询《社会理论二十讲》39 页命中 1 条、23 页命中 2 条，索引均 ready；本地测试涵盖书名、页码、未知书、无权 owner。模型是否在真实飞书提问中正确调用该工具仍需入站验收。
+
+F07 配置身份与 lineage 补充：新 ProcessingRun 将 `normalizer_version`、`vocabulary_version` 与词表映射快照的私有 ObjectRef 分开保存；同名版本但映射不同不再被当作幂等重试。重提取只在旧新快照内容摘要一致时自动对账，旧版没有快照的个人词表 trace 保守停在待人工对账。可确定的一对一标记组替换同时写入 `TraceRelation(supersedes)`，指向旧 trace 及精确 revision。测试覆盖相同快照幂等、同名异配置阻断、同配置换提取器成功和关系写入。无法确定映射的分拆/合并及旧数据人工对账入口仍未关闭。

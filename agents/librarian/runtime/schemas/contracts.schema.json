@@ -1144,6 +1144,27 @@
             }
           ]
         },
+        "vocabulary_version": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "vocabulary_config_ref": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ObjectRef"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "revision": {
           "type": "integer",
           "minimum": 1

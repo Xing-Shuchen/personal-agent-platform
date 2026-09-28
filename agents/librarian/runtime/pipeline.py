@@ -110,7 +110,9 @@ def _failed_run(lib: Library, owner_id: str, capture_id: str, run_id: str,
                 extractor_version: str, normalizer_version: str,
                 error_code: str, raw_asset: dict[str, Any] | None = None,
                 observation: dict[str, Any] | None = None,
-                derivative: dict[str, Any] | None = None) -> None:
+                derivative: dict[str, Any] | None = None,
+                vocabulary_version: str | None = None,
+                vocabulary_config_ref: dict[str, Any] | None = None) -> None:
     record = {"object_type": "ProcessingRun", "schema_version": "0.1.0",
               "id": run_id, "owner_id": owner_id, "created_at": _now(),
               "capture_id": capture_id, "checkpoint": "EXTRACTED" if observation else "STORED",
@@ -118,6 +120,8 @@ def _failed_run(lib: Library, owner_id: str, capture_id: str, run_id: str,
               (["CONTEXT_CONFLICT"] if error_code == "CONTEXT_CONFLICT" else []),
               "extractor_version": extractor_version,
               "normalizer_version": normalizer_version,
+              "vocabulary_version": vocabulary_version,
+              "vocabulary_config_ref": vocabulary_config_ref,
               "revision": 1, "supersedes_revision": None}
     with lib.transaction():
         lib._put(record)
@@ -147,22 +151,35 @@ def process_capture(lib: Library, owner_id: str, capture_id: str,
     overwriting current traces or any user correction.
     """
     capture = lib.get(owner_id, "PageCapture", capture_id)
+    vocabulary_version = None
+    vocabulary_config_ref = None
     if vocabulary and vocabulary.get("enabled"):
         if not vocabulary.get("version") or not isinstance(vocabulary.get("mappings"), dict):
             raise LibrarianError("VALIDATION_FAILED", "enabled vocabulary needs version and mappings")
-        normalizer_version = f"{normalizer_version}:{vocabulary['version']}"
+        vocabulary_version = vocabulary["version"]
+        vocabulary_config_ref = lib._save_object(_json(vocabulary).encode("utf-8"),
+                                                 "application/json")
+    vocabulary_metadata = {"vocabulary_version": vocabulary_version,
+                           "vocabulary_config_ref": vocabulary_config_ref}
     old = lib.db.execute("SELECT body FROM records WHERE owner_id=? AND model='ProcessingRun' AND current=1",
                          (owner_id,)).fetchall()
     runs = [run for row in old if (run := json.loads(row["body"]))["capture_id"] == capture_id]
     completed = [run for run in runs if run["outcome"] in {"success", "partial"}]
     for run in completed:
-        if run["extractor_version"] == extractor_version and run["normalizer_version"] == normalizer_version:
+        if (run["extractor_version"] == extractor_version and
+                run["normalizer_version"] == normalizer_version and
+                run.get("vocabulary_version") == vocabulary_version and
+                (run.get("vocabulary_config_ref") or {}).get("sha256") ==
+                (vocabulary_config_ref or {}).get("sha256")):
             traces = _traces_for_capture(lib, owner_id, capture_id)
             _repair_trace_index_best_effort(lib, owner_id)
             return traces
     if any(run["outcome"] == "pending" and "RECONCILIATION_REQUIRED" in run["issues"]
            and run["extractor_version"] == extractor_version
-           and run["normalizer_version"] == normalizer_version for run in runs):
+           and run["normalizer_version"] == normalizer_version
+           and run.get("vocabulary_version") == vocabulary_version
+           and (run.get("vocabulary_config_ref") or {}).get("sha256") ==
+           (vocabulary_config_ref or {}).get("sha256") for run in runs):
         raise LibrarianError("RECONCILIATION_REQUIRED", "new observation awaits reconciliation")
 
     run_id = _new("run")
@@ -173,13 +190,13 @@ def process_capture(lib: Library, owner_id: str, capture_id: str,
             oriented_size = ImageOps.exif_transpose(image).size
     except (UnidentifiedImageError, OSError, ValueError) as error:
         _failed_run(lib, owner_id, capture_id, run_id, extractor_version,
-                    normalizer_version, "VALIDATION_FAILED")
+                    normalizer_version, "VALIDATION_FAILED", **vocabulary_metadata)
         raise LibrarianError("VALIDATION_FAILED", "capture is not a decodable image") from error
     try:
         extracted = extractor(original)
     except Exception as error:
         _failed_run(lib, owner_id, capture_id, run_id, extractor_version,
-                    normalizer_version, "EXTRACTOR_UNAVAILABLE")
+                    normalizer_version, "EXTRACTOR_UNAVAILABLE", **vocabulary_metadata)
         raise LibrarianError("EXTRACTOR_UNAVAILABLE", "extractor failed; original capture remains stored") from error
     derivative = None
     if isinstance(extracted, ExtractionOutput):
@@ -200,13 +217,14 @@ def process_capture(lib: Library, owner_id: str, capture_id: str,
                           "coordinate_mapping": "normalized_same_origin"}
         except (OSError, ValueError) as error:
             _failed_run(lib, owner_id, capture_id, run_id, extractor_version,
-                        normalizer_version, "EXTRACTION_SCHEMA_INVALID")
+                        normalizer_version, "EXTRACTION_SCHEMA_INVALID", **vocabulary_metadata)
             raise LibrarianError("EXTRACTION_SCHEMA_INVALID", "invalid extraction derivative") from error
     else:
         raw = extracted
     if not isinstance(raw, bytes):
         _failed_run(lib, owner_id, capture_id, run_id, extractor_version,
-                    normalizer_version, "EXTRACTION_SCHEMA_INVALID", derivative=derivative)
+                    normalizer_version, "EXTRACTION_SCHEMA_INVALID", derivative=derivative,
+                    **vocabulary_metadata)
         raise LibrarianError("EXTRACTION_SCHEMA_INVALID", "extractor must return raw JSON bytes")
     raw_asset = lib._save_object(raw, "application/json")
     try:
@@ -232,7 +250,7 @@ def process_capture(lib: Library, owner_id: str, capture_id: str,
     except (json.JSONDecodeError, ValueError, KeyError, TypeError, LibrarianError) as error:
         _failed_run(lib, owner_id, capture_id, run_id, extractor_version,
                     normalizer_version, "EXTRACTION_SCHEMA_INVALID", raw_asset,
-                    derivative=derivative)
+                    derivative=derivative, **vocabulary_metadata)
         raise LibrarianError("EXTRACTION_SCHEMA_INVALID", f"extractor output invalid: {error}") from error
 
     if completed:
@@ -244,6 +262,7 @@ def process_capture(lib: Library, owner_id: str, capture_id: str,
                    "outcome": "pending", "issues": ["RECONCILIATION_REQUIRED"],
                    "extractor_version": extractor_version,
                    "normalizer_version": normalizer_version,
+                   **vocabulary_metadata,
                    "revision": 1, "supersedes_revision": None}
         with lib.transaction():
             lib._put(pending)
@@ -328,7 +347,7 @@ def process_capture(lib: Library, owner_id: str, capture_id: str,
     except LibrarianError as error:
         _failed_run(lib, owner_id, capture_id, run_id, extractor_version,
                     normalizer_version, error.code, raw_asset, observation,
-                    derivative=derivative)
+                    derivative=derivative, **vocabulary_metadata)
         raise
     traces = normalize(capture, observation, resolution, state, normalizer_version,
                        vocabulary=vocabulary)
@@ -340,6 +359,7 @@ def process_capture(lib: Library, owner_id: str, capture_id: str,
                      (["NEEDS_PAGE_RESOLUTION"] if any(p["page"]["status"] != "resolved" for p in resolution["pages"]) else []),
            "extractor_version": extractor_version,
            "normalizer_version": normalizer_version,
+           **vocabulary_metadata,
            "revision": 1, "supersedes_revision": None}
     with lib.transaction():
         lib._put(run)
@@ -575,6 +595,28 @@ def reconcile_extraction(lib: Library, owner_id: str, capture_id: str,
         raise LibrarianError("RECONCILIATION_REQUIRED", "capture resolution missing")
     if run["normalizer_version"] != "physical-v1":
         raise LibrarianError("RECONCILIATION_REQUIRED", "normalizer configuration requires explicit reconciliation")
+    vocabulary_ref = run.get("vocabulary_config_ref")
+    if vocabulary_ref:
+        try:
+            vocabulary = json.loads(lib._read_object(vocabulary_ref))
+        except (ValueError, TypeError, LibrarianError) as error:
+            raise LibrarianError("RECONCILIATION_REQUIRED", "vocabulary snapshot unavailable") from error
+        if (not isinstance(vocabulary, dict) or vocabulary.get("enabled") is not True or
+                vocabulary.get("version") != run.get("vocabulary_version") or
+                not isinstance(vocabulary.get("mappings"), dict)):
+            raise LibrarianError("RECONCILIATION_REQUIRED", "vocabulary snapshot differs from run")
+    else:
+        vocabulary = None
+    new_vocabulary_hash = vocabulary_ref["sha256"] if vocabulary_ref else None
+    for old_trace in old_traces:
+        old_observation = lib.get(owner_id, "PageObservation",
+                                  old_trace["source"]["observation_id"])
+        old_run = lib.get(owner_id, "ProcessingRun", old_observation["processing_run_id"])
+        old_ref = old_run.get("vocabulary_config_ref")
+        old_hash = old_ref["sha256"] if old_ref else None
+        if (old_hash != new_vocabulary_hash or
+                (old_hash is None and old_trace["vocabulary_version"] is not None)):
+            raise LibrarianError("RECONCILIATION_REQUIRED", "vocabulary configuration changed")
     prior = json.loads(row["body"])
     resolution = json.loads(_json(prior))
     resolution.update({"created_at": _now(), "pages": observation["pages"],
@@ -583,7 +625,8 @@ def reconcile_extraction(lib: Library, owner_id: str, capture_id: str,
     validate("CaptureResolution", resolution)
     state = "resolved" if all(resolution[key]["value"] for key in
                               ("session", "work", "edition", "book_instance")) else "unresolved"
-    traces = normalize(capture, observation, resolution, state, run["normalizer_version"])
+    traces = normalize(capture, observation, resolution, state, run["normalizer_version"],
+                       vocabulary=vocabulary)
     def groups(items: list[dict[str, Any]], mark_ids: set[str]) -> list[tuple[str, ...]]:
         return sorted(tuple(sorted(set(item["source"]["detection_ids"]) & mark_ids))
                       for item in items)
@@ -623,6 +666,15 @@ def reconcile_extraction(lib: Library, owner_id: str, capture_id: str,
             any(len([old for old in old_groups if old <= new]) != 1
                 for new in new_groups)):
         raise LibrarianError("RECONCILIATION_REQUIRED", "mark grouping changed between extractions")
+    lineage_pairs = []
+    for old_trace in old_traces:
+        old_marks = set(old_trace["source"]["detection_ids"]) & old_mark_ids
+        if not old_marks:
+            continue
+        successors = [trace for trace in traces if old_marks <=
+                      (set(trace["source"]["detection_ids"]) & new_mark_ids)]
+        if len(successors) == 1:
+            lineage_pairs.append((old_trace, successors[0]))
     revised_run = json.loads(_json(run))
     revised_run.update({"created_at": _now(), "checkpoint": "NORMALIZED",
                         "outcome": "success" if state == "resolved" and
@@ -668,6 +720,17 @@ def reconcile_extraction(lib: Library, owner_id: str, capture_id: str,
             lib._event(owner_id, "reading.trace.created", "reading_trace", trace["id"], 1,
                        {"trace_id": trace["id"], "revision": 1, "medium": "physical",
                         "book_instance_id": trace["book_instance_id"]}, run["id"])
+        for predecessor, successor in lineage_pairs:
+            relation = {"object_type": "TraceRelation", "schema_version": "0.1.0",
+                        "id": _new("relation"), "owner_id": owner_id, "created_at": _now(),
+                        "revision": 1, "supersedes_revision": None,
+                        "source_trace_ref": {"trace_id": successor["id"], "revision": 1},
+                        "relation": "supersedes",
+                        "target": {"type": "trace", "id": predecessor["id"],
+                                   "revision": predecessor["revision"]},
+                        "provenance": f"extractor_reconciliation:{run['id']}",
+                        "confidence": None}
+            lib._put(relation)
         lib._put(revised_run)
         lib.db.execute("UPDATE extractor_attempts SET status='success', error_code=NULL "
                        "WHERE owner_id=? AND capture_id=? AND run_id=?",

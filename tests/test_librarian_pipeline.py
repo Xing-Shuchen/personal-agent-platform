@@ -168,6 +168,67 @@ def test_reextract_with_vocabulary_configuration_requires_review(tmp_path: Path)
                    for item in old)
 
 
+def test_vocabulary_snapshot_controls_retry_and_reconciliation(tmp_path: Path) -> None:
+    with Library(tmp_path) as lib:
+        receipt = lib.ingest("owner_a", transport="gateway", account_id="account",
+                             conversation_id="chat", source_event_id="message-1",
+                             attachments=[{"source_item_id": "image-1", "mime_type": "image/png",
+                                           "data": _photo()}], idempotency_key="command-1")
+        capture_id = receipt["capture_ids"][0]
+        first_vocab = {"enabled": True, "version": "personal-v1",
+                       "mappings": {"!!": "promote_candidate"}}
+        old = process_capture(lib, "owner_a", capture_id, lambda _: _output(),
+                              extractor_version="same-extractor", vocabulary=first_vocab)
+        assert len(process_capture(lib, "owner_a", capture_id,
+                                   lambda _: pytest.fail("same config reran extractor"),
+                                   extractor_version="same-extractor",
+                                   vocabulary=first_vocab)) == len(old)
+        first_run = next(json.loads(row[0]) for row in lib.db.execute(
+            "SELECT body FROM records WHERE model='ProcessingRun' AND current=1")
+            if json.loads(row[0])["outcome"] in {"success", "partial"})
+        assert first_run["normalizer_version"] == "physical-v1"
+        assert first_run["vocabulary_version"] == "personal-v1"
+        assert json.loads(lib._read_object(first_run["vocabulary_config_ref"])) == first_vocab
+
+        changed_vocab = {"enabled": True, "version": "personal-v1",
+                         "mappings": {"!!": "unresolved_question"}}
+        with pytest.raises(LibrarianError, match="awaits reconciliation"):
+            process_capture(lib, "owner_a", capture_id, lambda _: _output(),
+                            extractor_version="same-extractor", vocabulary=changed_vocab)
+        with pytest.raises(LibrarianError) as error:
+            reconcile_extraction(lib, "owner_a", capture_id, "same-extractor")
+        assert error.value.code == "RECONCILIATION_REQUIRED"
+        assert all(lib.get("owner_a", "ReadingTrace", trace["id"])["status"] == "active"
+                   for trace in old)
+
+
+def test_same_vocabulary_snapshot_survives_new_extractor_version(tmp_path: Path) -> None:
+    vocabulary = {"enabled": True, "version": "personal-v1",
+                  "mappings": {"!!": "promote_candidate"}}
+    with Library(tmp_path) as lib:
+        receipt = lib.ingest("owner_a", transport="gateway", account_id="account",
+                             conversation_id="chat", source_event_id="message-1",
+                             attachments=[{"source_item_id": "image-1", "mime_type": "image/png",
+                                           "data": _photo()}], idempotency_key="command-1")
+        capture_id = receipt["capture_ids"][0]
+        old = process_capture(lib, "owner_a", capture_id, lambda _: _output(),
+                              extractor_version="v1", vocabulary=vocabulary)
+        with pytest.raises(LibrarianError, match="awaits reconciliation"):
+            process_capture(lib, "owner_a", capture_id, lambda _: _output(),
+                            extractor_version="v2", vocabulary=vocabulary)
+        new = reconcile_extraction(lib, "owner_a", capture_id, "v2")
+        assert len(new) == len(old)
+        assert all(trace["vocabulary_version"] == "personal-v1" for trace in new)
+        relations = [json.loads(row[0]) for row in lib.db.execute(
+            "SELECT body FROM records WHERE owner_id='owner_a' AND model='TraceRelation' AND current=1")]
+        assert len(relations) == len(old)
+        assert {relation["source_trace_ref"]["trace_id"] for relation in relations} == {
+            trace["id"] for trace in new}
+        assert {relation["target"]["id"] for relation in relations} == {
+            trace["id"] for trace in old}
+        assert all(relation["relation"] == "supersedes" for relation in relations)
+
+
 def test_reextract_merge_of_old_mark_groups_requires_review(tmp_path: Path) -> None:
     with Library(tmp_path) as lib:
         receipt = lib.ingest("owner_a", transport="gateway", account_id="account",

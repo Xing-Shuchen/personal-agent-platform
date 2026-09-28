@@ -70,6 +70,8 @@ def _validate_semantics(model: str, value: dict[str, Any]) -> None:
         raise LibrarianError("VALIDATION_FAILED", "revision and supersedes_revision disagree")
     if model == "CaptureBatch" and len(set(value["capture_ids"])) != len(value["capture_ids"]):
         raise LibrarianError("VALIDATION_FAILED", "capture IDs must be unique")
+    if model == "ProcessingRun" and bool(value.get("vocabulary_version")) != bool(value.get("vocabulary_config_ref")):
+        raise LibrarianError("VALIDATION_FAILED", "vocabulary version and snapshot must travel together")
     if model == "CaptureResolution":
         for field in ("session", "work", "edition", "book_instance"):
             identity = value[field]
