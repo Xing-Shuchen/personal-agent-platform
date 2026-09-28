@@ -274,6 +274,8 @@ def build(conn: sqlite3.Connection, directory: Path, *, note_paths: dict[str, st
     timeline = []
     for row in events:
         eid = row["id"]
+        claim_state_summary = {state: sum(claim["state"] == state for claim in claims_by_event[eid])
+                               for state in sorted({claim["state"] for claim in claims_by_event[eid]})}
         item = {
             "event_id": eid, "thread_ids": sorted(event_threads[eid]),
             "title": row["title"] or ((row["occurred_at"] or row["reported_at"] or row["observed_at"] or "")[:10] + " · 事件记录"),
@@ -284,6 +286,9 @@ def build(conn: sqlite3.Connection, directory: Path, *, note_paths: dict[str, st
             "location_ids": sorted(event_locations[eid]), "claim_count": len(claims_by_event[eid]),
             "source_count": len({claim["source"]["source_id"] for claim in claims_by_event[eid] if claim["source"]}),
             "claim_states": sorted({claim["state"] for claim in claims_by_event[eid]}),
+            "claim_state_summary": claim_state_summary,
+            "has_corrected_claim": any(state in claim_state_summary for state in ("corrected", "superseded", "retracted")),
+            "has_contested_claim": "contested" in claim_state_summary,
             "canonical_ref": _canonical("events", eid, next((note_paths[tid] for tid in event_threads[eid] if tid in note_paths), None)),
         }
         timeline.append(item)
@@ -328,6 +333,7 @@ def build(conn: sqlite3.Connection, directory: Path, *, note_paths: dict[str, st
             "last_source_ingested_at": _meaningful(*source_ingestions),
             "last_event_at": latest_event["occurred_at"] or latest_event["reported_at"] if latest_event else None,
             "latest_event_id": latest_event["id"] if latest_event else None,
+            "latest_event_title": timeline_by_id[latest_event["id"]]["title"] if latest_event else None,
             "latest_event_summary": latest_event["summary"] if latest_event else None,
             "activity_series": _activity_series(linked_events),
             "recent_change_types": sorted({"claim_retracted" if c["state"] == "retracted" else "claim_corrected" if c["state"] in {"corrected", "superseded"} else "claim_contested"
@@ -386,10 +392,10 @@ def build(conn: sqlite3.Connection, directory: Path, *, note_paths: dict[str, st
               "contextual_questions": contextual_questions})
     entity_list.sort(key=lambda e: (-e["thread_count"], -e["event_count"], e["name"], e["entity_id"]))
 
-    nodes = {"thread:" + t["thread_id"]: {"type": "thread", "label": t["title"], "canonical_ref": t["canonical_ref"]} for t in thread_list}
-    nodes.update({"event:" + e["event_id"]: {"type": "event", "label": e["title"], "canonical_ref": e["canonical_ref"]} for e in timeline})
-    nodes.update({"entity:" + e["entity_id"]: {"type": "entity", "label": e["name"], "canonical_ref": e["canonical_ref"]} for e in entity_list})
-    nodes.update({"location:" + l["location_id"]: {"type": "location", "label": l["name"], "canonical_ref": l["canonical_source_ref"]} for l in location_by_id.values()})
+    nodes = {"thread:" + t["thread_id"]: {"type": "thread", "label": t["title"], "summary": t["current_state_excerpt"] or t["latest_event_title"] or "", "activity_events_12w": sum(bin["count"] for bin in t["activity_series"]["bins"]), "canonical_ref": t["canonical_ref"]} for t in thread_list}
+    nodes.update({"event:" + e["event_id"]: {"type": "event", "label": e["title"], "summary": (e["summary"] or "")[:240], "canonical_ref": e["canonical_ref"]} for e in timeline})
+    nodes.update({"entity:" + e["entity_id"]: {"type": "entity", "label": e["name"], "summary": "别名：" + "、".join(e["aliases"][:4]) if e["aliases"] else "", "activity_events_12w": sum(bin["count"] for bin in e["activity_series"]["bins"]), "canonical_ref": e["canonical_ref"]} for e in entity_list})
+    nodes.update({"location:" + l["location_id"]: {"type": "location", "label": l["name"], "geo_precision": l["geo_precision"], "canonical_ref": l["canonical_source_ref"]} for l in location_by_id.values()})
     nodes.update({"question:" + q["id"]: {"type": "question", "label": q["question"], "state": q["status"], "owner_thread_id": q["thread_id"], "canonical_ref": _canonical("open_questions", q["id"])} for q in questions})
     nodes.update({"claim:" + c["id"]: {"type": "claim", "label": c["statement"][:120], "state": _claim_state(c["status"]), "confidence": c["confidence"], "owner_event_id": c["event_id"], "canonical_ref": _canonical("claims", c["id"])} for c in claims})
     linked_source_ids = {c["source_id"] for c in claims}
@@ -417,6 +423,13 @@ def build(conn: sqlite3.Connection, directory: Path, *, note_paths: dict[str, st
                           "confidence": row["confidence"], "evidence_refs": json.loads(row["evidence_json"] or "[]"),
                           "canonical_ref": _canonical("relations", row["id"])})
     edges.sort(key=lambda edge: edge["id"])
+    relation_counts: dict[str, int] = defaultdict(int)
+    for edge in edges:
+        relation_counts[edge["source"]] += 1
+        if edge["target"] != edge["source"]:
+            relation_counts[edge["target"]] += 1
+    for node_id, node in nodes.items():
+        node["relation_count"] = relation_counts[node_id]
     writer.write("threads.json", thread_list)
     partitions: dict[str, list[dict]] = defaultdict(list)
     for event in timeline:
@@ -442,6 +455,37 @@ def build(conn: sqlite3.Connection, directory: Path, *, note_paths: dict[str, st
             buckets[bucket_for(edge["target"])]["adjacency"][edge["target"]].append(edge)
     for prefix, bucket in buckets.items():
         writer.write(f"graph/{prefix}.json", bucket)
+    search_path = directory / "search.sqlite"
+    search = sqlite3.connect(search_path)
+    try:
+        search_backend = "fts5-trigram"
+        try:
+            search.execute("CREATE VIRTUAL TABLE objects USING fts5(object_type UNINDEXED, object_id UNINDEXED, label, summary, owner_event_id UNINDEXED, owner_thread_id UNINDEXED, tokenize='trigram')")
+        except sqlite3.OperationalError as error:
+            if "no such tokenizer" not in str(error) and "no such module: fts5" not in str(error):
+                raise
+            search_backend = "sqlite-like"
+            search.execute("CREATE TABLE objects (object_type TEXT, object_id TEXT, label TEXT, summary TEXT, owner_event_id TEXT, owner_thread_id TEXT)")
+        source_owner = {}
+        for claim in claims:
+            if claim["source_id"]:
+                source_owner.setdefault(claim["source_id"], claim["event_id"])
+        records = (
+            (("thread", row["thread_id"], row["title"], (row["latest_event_summary"] or "")[:500], "", row["thread_id"]) for row in thread_list),
+            (("event", row["event_id"], row["title"], (row["summary"] or "")[:500], row["event_id"], (row["thread_ids"] or [""])[0]) for row in timeline),
+            (("entity", row["entity_id"], row["name"], " ".join(row["aliases"]), "", "") for row in entity_list),
+            (("question", row["id"], row["question"], "", "", row["thread_id"]) for row in questions),
+            (("claim", row["id"], row["statement"], "", row["event_id"], "") for row in claims),
+            (("source", row["id"], row["title"] or row["canonical_url"], row["publisher"] or "", source_owner.get(row["id"], ""), "") for row in sources.values()),
+            (("location", row["location_id"], row["name"], row.get("region") or row.get("country_code") or "", "", "") for row in location_by_id.values()),
+        )
+        with search:
+            for group in records:
+                search.executemany("INSERT INTO objects VALUES (?,?,?,?,?,?)", group)
+        search_count = search.execute("SELECT count(*) FROM objects").fetchone()[0]
+    finally:
+        search.close()
+    search_path.chmod(0o600)
     writer.write("graph-manifest.json", {"format": "sharded-adjacency.v1", "node_count": len(nodes),
            "edge_count": len(edges), "edge_types": sorted({edge["type"] for edge in edges}),
            "buckets": sorted(buckets)})
@@ -450,6 +494,8 @@ def build(conn: sqlite3.Connection, directory: Path, *, note_paths: dict[str, st
                 "thread_count": len(threads), "event_count": len(events),
                 "entity_count": len(entities), "location_count": len(location_by_id),
                 "claim_count": len(claims), "relation_count": len(edges),
+                "search_count": search_count,
+                "search_backend": search_backend,
                 "reused_file_count": writer.reused, "written_file_count": writer.written}
     _json(directory / "manifest.json", manifest)
     validate(directory)
@@ -462,6 +508,15 @@ def validate(directory: Path) -> None:
     manifest = read("manifest.json")
     if manifest.get("schema_version") != SCHEMA:
         raise ValueError("unsupported dashboard schema")
+    search_file = directory / "search.sqlite"
+    if not search_file.is_file():
+        raise ValueError("missing search index")
+    search = sqlite3.connect(f"{search_file.resolve().as_uri()}?mode=ro", uri=True)
+    try:
+        if search.execute("SELECT count(*) FROM objects").fetchone()[0] != manifest.get("search_count"):
+            raise ValueError("invalid search index count")
+    finally:
+        search.close()
     def activity_ok(item: dict) -> bool:
         series = item.get("activity_series")
         if not isinstance(series, dict) or series.get("measure") != "event_count" or series.get("aggregation") != "week" or series.get("window") != "latest_12_weeks":
@@ -521,6 +576,13 @@ def validate(directory: Path) -> None:
             raise ValueError("event has invalid time precision")
         if event["claim_count"] != len(event["claims"]):
             raise ValueError("event claim count mismatch")
+        if event.get("claim_state_summary") != {state: sum(claim["state"] == state for claim in event["claims"])
+                                                for state in sorted({claim["state"] for claim in event["claims"]})}:
+            raise ValueError("event claim state summary mismatch")
+        if event.get("has_corrected_claim") != any(claim["state"] in {"corrected", "superseded", "retracted"} for claim in event["claims"]):
+            raise ValueError("event correction marker mismatch")
+        if event.get("has_contested_claim") != any(claim["state"] == "contested" for claim in event["claims"]):
+            raise ValueError("event contest marker mismatch")
         for claim in event["claims"]:
             if not claim.get("canonical_ref") or claim.get("state") not in {"supported", "uncertain", "analytical", "contested", "corrected", "superseded", "retracted"}:
                 raise ValueError("invalid claim")
@@ -539,6 +601,8 @@ def validate(directory: Path) -> None:
         for node_id, node in bucket["nodes"].items():
             if hashlib.sha256(node_id.encode()).hexdigest()[:2] != prefix or not node.get("canonical_ref"):
                 raise ValueError("invalid graph node")
+            if node.get("relation_count") != len(bucket["adjacency"].get(node_id, [])):
+                raise ValueError("graph relation count mismatch")
             graph_nodes.add(node_id)
         for node_id, adjacency in bucket["adjacency"].items():
             if node_id not in bucket["nodes"]:
@@ -637,7 +701,33 @@ def publish(db_path: Path, output: Path, *, note_index: Path | None = None,
             os.fsync(stream.fileno())
         pointer.replace(output / "CURRENT")
         _fsync_directory(output)
-        return manifest
+    return manifest
+
+
+def search_read_model(output: Path, query: str, limit: int = 20) -> list[dict]:
+    """Search the disposable local index without reading or changing Chronicle."""
+    if not query.strip():
+        return []
+    pointer = (output / "CURRENT").read_text(encoding="utf-8").strip()
+    if not re.fullmatch(r"world-historian-dashboard\.v1-0\.7\.1-[a-f0-9]{20}", pointer):
+        raise ValueError("invalid dashboard generation pointer")
+    index = output / "generations" / pointer / "search.sqlite"
+    pattern = "%" + query.strip()[:120].replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+    conn = sqlite3.connect(f"{index.resolve().as_uri()}?mode=ro", uri=True)
+    conn.row_factory = sqlite3.Row
+    try:
+        rows = conn.execute("""SELECT object_type AS type, object_id AS id, label, summary,
+                                  owner_event_id, owner_thread_id FROM objects
+                               WHERE label LIKE ? ESCAPE '\\' OR summary LIKE ? ESCAPE '\\'
+                               ORDER BY CASE WHEN label LIKE ? ESCAPE '\\' THEN 0 ELSE 1 END,
+                                        CASE object_type WHEN 'thread' THEN 0 WHEN 'event' THEN 1
+                                             WHEN 'entity' THEN 2 WHEN 'location' THEN 3
+                                             WHEN 'question' THEN 4 WHEN 'claim' THEN 5 ELSE 6 END,
+                                        label LIMIT ?""",
+                            (pattern, pattern, pattern, max(1, min(limit, 50)))).fetchall()
+        return [dict(row) for row in rows]
+    finally:
+        conn.close()
 
 
 def inspect_canonical(db_path: Path, table: str, identifier: str) -> dict:
@@ -666,8 +756,11 @@ def main() -> None:
     parser.add_argument("--vault", type=Path)
     parser.add_argument("--inspect-table")
     parser.add_argument("--inspect-id")
+    parser.add_argument("--search-query")
     args = parser.parse_args()
-    if args.inspect_table or args.inspect_id:
+    if args.search_query is not None:
+        result = search_read_model(args.output, args.search_query)
+    elif args.inspect_table or args.inspect_id:
         if not args.inspect_table or not args.inspect_id:
             parser.error("--inspect-table and --inspect-id are required together")
         result = inspect_canonical(args.db, args.inspect_table, args.inspect_id)

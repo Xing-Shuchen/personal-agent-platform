@@ -4,7 +4,7 @@ import { statSync } from 'node:fs';
 import { join } from 'node:path';
 import { mount, unmount } from 'svelte';
 import Dashboard from './Dashboard.svelte';
-import { Repository, type Ref } from './model';
+import { Repository, type Ref, type SearchHit } from './model';
 
 const VIEW_TYPE='world-historian-dashboard';
 type Settings={database:string;output:string;projector:string;pythonExecutable:string;noteIndex:string;locationRegistry:string};
@@ -29,6 +29,7 @@ class DashboardView extends ItemView {
         refresh:()=>this.plugin.refreshAndRender(),
         openNote:(path:string)=>this.plugin.openNote(path),
         openCanonical:(ref:Ref)=>this.plugin.openCanonical(ref),
+        searchAll:this.plugin.settings.projector?(query:string)=>this.plugin.search(query):undefined,
         settings:()=>this.plugin.openSettings()}});
     } catch (cause) {
       root.textContent=`World Historian Dashboard failed to open: ${String(cause)}`;
@@ -63,6 +64,12 @@ export default class HistorianPlugin extends Plugin {
     new Notice('World Historian read model refreshed');
   }
   async refreshAndRender(){try{await this.refresh();for(const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE))await (leaf.view as DashboardView).render()}catch(e){new Notice(`Refresh failed: ${String(e)}`,10000)}}
+  async search(query:string):Promise<SearchHit[]>{
+    if(!this.settings.projector||!this.settings.output)return [];
+    const args=[this.settings.projector,'--output',this.settings.output,'--search-query',query];
+    const raw=await new Promise<string>((resolve,reject)=>execFile(this.settings.pythonExecutable,args,{timeout:15000,maxBuffer:256*1024},(error,stdout,stderr)=>error?reject(new Error(stderr||error.message)):resolve(stdout)));
+    return JSON.parse(raw) as SearchHit[];
+  }
   async openNote(path:string){const file=this.app.vault.getFileByPath(path);if(file)await this.app.workspace.getLeaf('tab').openFile(file);else new Notice(`Note missing: ${path}`)}
   async openCanonical(ref:Ref){
     if(ref.kind!=='chronicle'||!ref.table||!ref.id){new Notice('Canonical record is unavailable');return}

@@ -51,6 +51,16 @@ try {
   [...document.querySelectorAll('.wh-inspector-switch button')].find(button=>button.textContent==='Map').click();flushSync();
   assert.equal(document.querySelector('.wh-projection').dataset.projection,'Map');
   [...document.querySelectorAll('.wh-inspector-switch button')].find(button=>button.textContent==='Time').click();flushSync();
+  const recentDay=lazyThread.event_summaries[0].occurred_at?.slice(0,10);
+  if(recentDay){
+    [...document.querySelectorAll('.wh-toolbar button')].find(button=>button.textContent.startsWith('筛选')).click();flushSync();
+    const from=document.querySelector('.wh-filters input[type=date]');from.value=recentDay;from.dispatchEvent(new dom.window.Event('change',{bubbles:true}));flushSync();
+    const activeTitle=document.querySelector('.wh-visual-inspector h3')?.textContent;
+    const activeThread=repo.threads.find(thread=>thread.title===activeTitle);
+    assert.equal(document.querySelectorAll('.wh-mini-event').length,Math.min(6,repo.thread(activeThread.thread_id).event_summaries.filter(event=>repo.matchesEvent(event,{search:'',from:recentDay,to:'',threadId:'',entityId:'',locationId:'',status:'',priority:'',claimState:''})).length),'Inspector Time projection respects date scope');
+    [...document.querySelectorAll('.wh-toolbar button')].find(button=>button.textContent==='清除范围').click();flushSync();
+    [...document.querySelectorAll('.wh-toolbar button')].find(button=>button.textContent.startsWith('筛选')).click();flushSync();
+  }
   assert.equal(repo._timeline, undefined, 'Threads first render should not load the timeline');
   assert.equal(repo.graphBuckets.size, 0, 'Threads first render should not load graph adjacency');
   const activeEvents=repo.filteredEvents({search:'',from:'',to:'',threadId:'',entityId:'',locationId:'',status:'active',priority:'',claimState:''});
@@ -76,6 +86,9 @@ try {
   assert.ok(document.querySelector('.wh-event-card'), 'Time projection carries into Thread Timeline');
   [...document.querySelectorAll('.wh-tabs button')].find(button => button.textContent === 'Overview').click();flushSync();
   assert.ok(document.body.textContent.includes('Current State'));
+  assert.equal(document.querySelectorAll('.wh-context-charts .wh-chart-bars').length,2,'Thread shows source coverage and Claim state context');
+  const chartWeek=[...document.querySelectorAll('.wh-context-charts .wh-chart-bars button')].find(button=>/\b[1-9]\d* Events 有 Source/.test(button.title));
+  if(chartWeek){chartWeek.click();flushSync();assert.ok(document.querySelector('.wh-event-card'),'Selecting a chart week opens scoped Timeline');assert.match(document.querySelector('.wh-scope').textContent,/\d{4}-\d{2}-\d{2}/);[...document.querySelectorAll('.wh-toolbar button')].find(button=>button.textContent==='清除范围').click();flushSync()}
   let detailLoads=0;const originalEvent=repo.event.bind(repo);repo.event=id=>{detailLoads++;return originalEvent(id)};
   const threadTimeline = [...document.querySelectorAll('.wh-tabs button')].find(button => button.textContent === 'Timeline');
   threadTimeline.click(); flushSync();
@@ -102,9 +115,21 @@ try {
   const graphScoped=[...document.querySelectorAll('nav button')].find(button=>button.textContent==='Graph');graphScoped.click();flushSync();
   assert.equal(document.querySelector('.wh-scope').textContent,scopedLabel);
   [...document.querySelectorAll('.wh-toolbar button')].find(button=>button.textContent==='清除范围').click();flushSync();
+  timeline.click();flushSync();
+  if(repo.manifest.event_count>300){
+    assert.equal(document.querySelectorAll('.wh-timeline-row').length<=300,true,'Timeline DOM stays within the event window');
+    assert.ok(document.querySelector('.wh-period-toggle'),'All range aggregates date groups by month');
+    const firstEvent=document.querySelector('.wh-timeline-row');firstEvent.click();flushSync();
+    assert.ok(document.querySelector('.wh-timeline-expanded'));
+    [...document.querySelectorAll('.wh-timeline-pager button')].at(-1).click();flushSync();
+    assert.ok(document.querySelector('.wh-timeline-pager').textContent.includes('301–'));
+    [...document.querySelectorAll('.wh-timeline-pager button')][0].click();flushSync();
+    assert.ok(document.querySelector('.wh-timeline-expanded'),'Timeline selection survives window paging');
+  }
   const entities = [...document.querySelectorAll('nav button')].find(button => button.textContent === 'Entities');
   entities.click(); flushSync();
   assert.ok(document.querySelectorAll('.wh-entity-row').length > 0);
+  assert.ok(document.querySelector('.wh-entity-row .wh-spark'));
   document.querySelector('.wh-entity-row').click(); flushSync();
   assert.ok(document.body.textContent.includes('Event Activity'));
   assert.ok(document.querySelector('.wh-detail .wh-spark'));
@@ -114,36 +139,62 @@ try {
   map.click(); flushSync();
   assert.match(document.body.textContent, /没有已地理编码的 Event/);
   const mapEvent=repo.timeline.find(event=>event.thread_ids.length);
+  const originalThreadDetail=repo.thread.bind(repo);
+  repo.thread=id=>{const detail=originalThreadDetail(id);if(id===mapEvent.thread_ids[0])detail.annotations=[{text:'Fixture annotation',canonical_ref:{kind:'vault',path:'fixture.md'}}];return detail};
   const mockLocation={location_id:'smoke_location',name:'Test port',country_code:'XY',lat:12.5,lon:43.3,geo_precision:'city',event_ids:[mapEvent.event_id],thread_ids:mapEvent.thread_ids,canonical_source_ref:{kind:'fixture',id:'smoke_location'}};
   const secondLocation={...mockLocation,location_id:'smoke_second',name:'Second port',lon:55,geo_precision:'region'};
   for(const location of [mockLocation,secondLocation]){repo.locations.push(location);repo.locationById.set(location.location_id,location);mapEvent.location_ids.push(location.location_id)}
+  const originalGraphNode=repo.graphNode.bind(repo);
+  repo.graphNode=id=>id==='location:smoke_location'?{type:'location',label:'Test port',canonical_ref:mockLocation.canonical_source_ref}:originalGraphNode(id);
   entities.click();flushSync();timeline.click();flushSync();
   [...document.querySelectorAll('.wh-timeline-row')].find(row=>row.textContent.includes(mapEvent.title)).click();flushSync();
   assert.ok(document.querySelector('.wh-timeline-expanded'), 'Timeline selection expands Event evidence');
   assert.equal(document.querySelectorAll('.wh-timeline-expanded .wh-claim').length,mapEvent.claim_count);
+  assert.match(document.querySelector('.wh-timeline-expanded').textContent,/Fixture annotation/);
+  [...document.querySelectorAll('.wh-timeline-actions button')].find(button=>button.textContent==='在 Graph 高亮').click();flushSync();
+  assert.ok(document.querySelector('.wh-graph-node.focused'),'Timeline selection highlights Graph Event node');
+  timeline.click();flushSync();
+  [...document.querySelectorAll('.wh-timeline-row')].find(row=>row.textContent.includes(mapEvent.title)).click();flushSync();
   [...document.querySelectorAll('.wh-inspector button')].find(button=>button.textContent==='在 Map 高亮地点').click();flushSync();
   assert.ok(document.querySelector('.wh-map-marker.focused'),'Timeline selection highlights Map location');
   assert.ok(document.querySelector('.wh-map-marker.approximate'),'Map shows geographic uncertainty');
   assert.equal(document.querySelectorAll('.wh-map-marker').length,1,'country locations cluster at low zoom');
   document.querySelector('.wh-map-marker').dispatchEvent(new dom.window.MouseEvent('click',{bubbles:true}));flushSync();
   assert.ok(document.body.textContent.includes('2 个地点'));
+  assert.match(document.querySelector('.wh-inspector').textContent,/地理来源：fixture/);
+  [...document.querySelectorAll('.wh-inspector button')].find(button=>button.textContent==='在 Graph 高亮地点').click();flushSync();
+  assert.ok(document.querySelector('.wh-graph-node.focused'),'Map selection highlights Graph Location node');
+  [...document.querySelectorAll('.wh-toolbar button')].find(button=>button.textContent==='清除范围').click();flushSync();
+  map.click();flushSync();
+  document.querySelector('.wh-map-marker').dispatchEvent(new dom.window.MouseEvent('click',{bubbles:true}));flushSync();
   for(let i=0;i<3;i++){[...document.querySelectorAll('.wh-section-bar button')].find(button=>button.textContent==='＋').click();flushSync()}
   assert.equal(document.querySelectorAll('.wh-map-marker').length,2,'high zoom separates locations');
+  assert.ok(!document.querySelector('.wh-map svg > g').getAttribute('transform').includes('translate(-450,-225)'),'Zoom follows selected location');
   [...document.querySelectorAll('.wh-inspector button')].find(button=>button.textContent==='在 Timeline 查看').click();flushSync();
   assert.ok(document.querySelector('.wh-scope').textContent.includes('Test port'));
   [...document.querySelectorAll('.wh-toolbar button')].find(button=>button.textContent==='清除范围').click();flushSync();
   const graph = [...document.querySelectorAll('nav button')].find(button => button.textContent === 'Graph');
   graph.click(); flushSync();
+  [...document.querySelectorAll('.wh-section-bar button')].find(button=>button.textContent==='重置布局').click();flushSync();
   assert.ok(document.querySelectorAll('.wh-graph-node').length > 0);
   assert.ok(document.querySelectorAll('.wh-graph-edge').length > 0);
+  assert.match(document.querySelector('.wh-graph-legend').textContent,/投影结构关系/);
+  const entityPreset=document.querySelector('.wh-section-bar select');entityPreset.value='Entity network';entityPreset.dispatchEvent(new dom.window.Event('change',{bubbles:true}));flushSync();
+  const graphEntity=document.querySelector('.wh-graph-node circle.entity')?.parentElement;
+  assert.ok(graphEntity,'Entity network contains typed Entity nodes');
+  graphEntity.dispatchEvent(new dom.window.MouseEvent('click',{bubbles:true}));flushSync();
+  assert.ok([...document.querySelectorAll('.wh-inspector button')].some(button=>button.textContent==='按 Entity 筛选 Timeline'));
   const graphLayout=[...document.querySelectorAll('.wh-section-bar label')].find(label=>label.textContent.includes('布局')).querySelector('select');
   graphLayout.value='force';graphLayout.dispatchEvent(new dom.window.Event('change',{bubbles:true}));flushSync();
   assert.equal(document.querySelectorAll('.wh-graph-node').length>0,true);
   const preset=document.querySelector('.wh-section-bar select');preset.value='Evidence chain';preset.dispatchEvent(new dom.window.Event('change',{bubbles:true}));flushSync();
   assert.ok([...document.querySelectorAll('.wh-graph-node title')].some(title=>title.textContent.startsWith('claim:')));
   assert.ok([...document.querySelectorAll('.wh-graph-node title')].some(title=>title.textContent.startsWith('source:')));
+  document.querySelector('.wh-graph-edge').dispatchEvent(new dom.window.MouseEvent('click',{bubbles:true}));flushSync();
+  assert.match(document.querySelector('.wh-inspector').textContent,/关系有效期：Chronicle 未提供/);
   document.querySelector('.wh-graph-node').dispatchEvent(new dom.window.MouseEvent('click',{bubbles:true}));flushSync();
   assert.ok(document.querySelector('.wh-inspector'));
+  assert.match(document.querySelector('.wh-inspector').textContent,/关系：全局/);
   [...document.querySelectorAll('.wh-inspector button')].find(button=>button.textContent==='展开邻居').click();flushSync();
   repo.bucket=()=>{throw Error('corrupt fixture bucket')};
   [...document.querySelectorAll('.wh-section-bar button')].find(button=>button.textContent==='重置布局').click();flushSync();
@@ -152,6 +203,22 @@ try {
   const staleTarget=document.createElement('div');document.body.append(staleTarget);
   mount(Dashboard,{target:staleTarget,props:{repository:repo,error:'',stale:true,refresh:()=>{},openNote:()=>{},openCanonical:()=>{},settings:()=>{}}});flushSync();
   assert.match(staleTarget.textContent,/Chronicle 数据比当前读模型更新/);
+  const searchTarget=document.createElement('div');document.body.append(searchTarget);
+  mount(Dashboard,{target:searchTarget,props:{repository:repo,error:'',refresh:()=>{},openNote:()=>{},openCanonical:()=>{},settings:()=>{},searchAll:async()=>[{type:'question',id:'fixture-question',label:'Question hit',summary:'',owner_thread_id:repo.threads[0].thread_id}]}});flushSync();
+  const asyncSearch=searchTarget.querySelector('.wh-search input');asyncSearch.focus();asyncSearch.value='Question hit';asyncSearch.dispatchEvent(new dom.window.Event('input',{bubbles:true}));
+  await new Promise(resolve=>setTimeout(resolve,220));flushSync();
+  assert.equal(searchTarget.querySelector('.wh-search-results button .wh-badge').textContent,'question');
+  searchTarget.querySelector('.wh-search-results button').dispatchEvent(new dom.window.MouseEvent('mousedown',{bubbles:true}));flushSync();
+  assert.ok(searchTarget.querySelector('.wh-detail'),'Question search result navigates to its Thread');
+  assert.match(searchTarget.querySelector('.wh-detail').textContent,/Open Questions/);
+  const graphTarget=document.createElement('div');document.body.append(graphTarget);
+  const graphRepo=new Repository(process.argv[2]);
+  mount(Dashboard,{target:graphTarget,props:{repository:graphRepo,error:'',refresh:()=>{},openNote:()=>{},openCanonical:()=>{},settings:()=>{}}});flushSync();
+  const partitionsBeforeGraph=graphRepo.loadedPartitions.size;
+  [...graphTarget.querySelectorAll('nav button')].find(button=>button.textContent==='Graph').click();flushSync();
+  assert.ok(graphTarget.querySelector('.wh-graph-node'));
+  assert.equal(graphRepo._timeline,undefined,'Unscoped Graph should not materialize the full Timeline');
+  assert.equal(graphRepo.loadedPartitions.size,partitionsBeforeGraph,'Unscoped Thread Graph reads bounded adjacency only');
   console.log('Dashboard smoke passed: Threads, Timeline, Entities, Map empty state, Graph');
 } finally {
   rmSync(directory, { recursive: true, force: true });

@@ -1,6 +1,7 @@
 import { JSDOM } from 'jsdom';
 import { createRequire } from 'node:module';
-import { resolve } from 'node:path';
+import { resolve, join } from 'node:path';
+import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
 
 const dom = new JSDOM('<!doctype html><div id="app"></div>', { url: 'http://localhost/' });
@@ -18,7 +19,7 @@ HTMLElement.prototype.addClass = function (name) { this.classList.add(name); };
 let factory;
 class Plugin {
   app = { vault: { adapter: {} }, workspace: {} };
-  async loadData() { return { database: '', output: resolve(process.argv[2]), projector: '' }; }
+  async loadData() { return { database: '', output: resolve(process.argv[2]), projector: resolve('../../agents/world-historian/runtime/dashboard_projector.py') }; }
   registerView(_type, value) { factory = value; }
   addRibbonIcon() {}
   addCommand() {}
@@ -38,6 +39,10 @@ try { PluginClass = require('./main.js').default; }
 finally { Module._load = originalLoad; }
 const plugin = new PluginClass();
 await plugin.onload();
+const output=resolve(process.argv[2]);
+const pointer=readFileSync(join(output,'CURRENT'),'utf8').trim();
+const firstThread=JSON.parse(readFileSync(join(output,'generations',pointer,'threads.json'),'utf8'))[0];
+assert.ok((await plugin.search(firstThread.title.slice(0,5))).some(hit=>hit.type==='thread'&&hit.id===firstThread.thread_id));
 assert.equal(typeof factory, 'function');
 const view = factory({});
 await view.onOpen();

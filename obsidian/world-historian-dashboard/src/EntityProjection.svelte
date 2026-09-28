@@ -2,14 +2,19 @@
   import worldPath from './world-path.json';
   export let entity;
   export let repository;
+  export let scope = {search:'',from:'',to:'',threadId:'',entityId:'',locationId:'',status:'',priority:'',claimState:''};
   export let projection = 'Graph';
   export let openThread = () => {};
   export let openEntity = () => {};
   export let openLocation = () => {};
-  $: threads = (entity?.thread_ids || []).slice(0, 5).map(id => repository.threadById.get(id)).filter(Boolean);
+  $: scoped = Object.values(scope).some(Boolean);
+  $: visibleThreads = scoped?new Set(repository.filteredThreads(scope).map(thread=>thread.thread_id)):null;
+  $: threads = (entity?.thread_ids || []).filter(id=>!visibleThreads||visibleThreads.has(id)).slice(0, 5).map(id => repository.threadById.get(id)).filter(Boolean);
   $: related = (entity?.related_entity_ids || []).slice(0, 4).map(id => repository.entityById.get(id)).filter(Boolean);
   $: neighbors = [...threads.map(thread => ({id:thread.thread_id,label:thread.title,type:'thread'})), ...related.map(item => ({id:item.entity_id,label:item.name,type:'entity'}))];
-  $: locations = (entity?.location_ids || []).slice(0, 18).map(id => repository.locationById.get(id)).filter(Boolean);
+  $: scopedEvents = scoped?(entity?.event_ids||[]).map(id=>repository.eventById.get(id)).filter(event=>event&&repository.matchesEvent(event,scope)):[];
+  $: locationIds = scoped?[...new Set(scopedEvents.flatMap(event=>event.location_ids))]:(entity?.location_ids||[]);
+  $: locations = locationIds.slice(0, 18).map(id => repository.locationById.get(id)).filter(Boolean);
 </script>
 
 <div class="wh-projection" data-projection={projection}>

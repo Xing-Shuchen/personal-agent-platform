@@ -3,20 +3,35 @@
   import ActivitySparkline from './ActivitySparkline.svelte';
   export let thread;
   export let repository;
+  export let scope = {search:'',from:'',to:'',threadId:'',entityId:'',locationId:'',status:'',priority:'',claimState:''};
   export let projection = 'Time';
   export let openEvent = () => {};
   export let openEntity = () => {};
   export let openLocation = () => {};
-  $: events = (thread?.event_summaries || []).slice(0, 6);
-  $: entities = (thread?.top_entity_ids || []).slice(0, 5).map(id => repository.entityById.get(id)).filter(Boolean);
-  $: locations = (thread?.location_ids || []).slice(0, 18).map(id => repository.locationById.get(id)).filter(Boolean);
+  function scopedSeries(items){
+    const dated=items.map(event=>event.occurred_at||event.reported_at||event.first_observed_at).filter(Boolean).map(value=>new Date(value.slice(0,10)+'T00:00:00Z')).filter(date=>Number.isFinite(date.getTime()));
+    if(!dated.length)return {measure:'event_count',aggregation:'week',window:'latest_12_weeks',bins:[]};
+    const end=new Date(dated.reduce((latest,date)=>Math.max(latest,date.getTime()),0));end.setUTCDate(end.getUTCDate()-(end.getUTCDay()+6)%7);
+    const start=new Date(end);start.setUTCDate(start.getUTCDate()-77);
+    const bins=Array.from({length:12},(_,i)=>{const day=new Date(start);day.setUTCDate(day.getUTCDate()+i*7);return {start:day.toISOString().slice(0,10),count:0}});
+    for(const date of dated){const week=new Date(date);week.setUTCDate(week.getUTCDate()-(week.getUTCDay()+6)%7);const index=Math.floor((week.getTime()-start.getTime())/604800000);if(index>=0&&index<12)bins[index].count++}
+    return {measure:'event_count',aggregation:'week',window:'latest_12_weeks',bins};
+  }
+  $: scoped = Object.values(scope).some(Boolean);
+  $: scopedEvents = (thread?.event_summaries || []).filter(event=>!scoped||repository.matchesEvent(event,scope));
+  $: events = scopedEvents.slice(0, 6);
+  $: series = scoped?scopedSeries(scopedEvents):thread.activity_series;
+  $: entityIds = scoped?[...new Set(scopedEvents.flatMap(event=>event.entity_ids))]:(thread?.top_entity_ids || []);
+  $: entities = entityIds.slice(0, 5).map(id => repository.entityById.get(id)).filter(Boolean);
+  $: locationIds = scoped?[...new Set(scopedEvents.flatMap(event=>event.location_ids))]:(thread?.location_ids || []);
+  $: locations = locationIds.slice(0, 18).map(id => repository.locationById.get(id)).filter(Boolean);
 </script>
 
 <div class="wh-projection" data-projection={projection}>
   {#if projection === 'Time'}
-    <ActivitySparkline series={thread.activity_series} width={220} height={46}/>
+    <ActivitySparkline {series} width={220} height={46}/>
     <div class="wh-mini-timeline">
-      {#each events as event}<button class="wh-mini-event" on:click={() => openEvent(event)} title={event.title}><span class:approximate={event.time_precision !== 'day'} class="wh-mini-dot"></span><time>{(event.occurred_at || event.reported_at || event.first_observed_at || '未知').slice(0, 10)}</time><span>{event.title}</span></button>{:else}<p class="wh-muted">尚无 Event。</p>{/each}
+      {#each events as event}<button class="wh-mini-event" on:click={() => openEvent(event)} title={event.title}><span class:approximate={event.time_precision !== 'day'} class:corrected={event.has_corrected_claim} class:contested={event.has_contested_claim} class="wh-mini-dot"></span><time>{(event.occurred_at || event.reported_at || event.first_observed_at || '未知').slice(0, 10)}</time><span>{event.title}</span>{#if event.has_corrected_claim}<small title="Claim 修正">↺</small>{/if}{#if event.has_contested_claim}<small title="Claim 争议">⇄</small>{/if}</button>{:else}<p class="wh-muted">尚无 Event。</p>{/each}
     </div>
   {:else if projection === 'Graph'}
     <svg class="wh-mini-graph" viewBox="0 0 280 180" role="img" aria-label={`Thread ${thread.title} 与 ${entities.length} 个关联 Entity`}>

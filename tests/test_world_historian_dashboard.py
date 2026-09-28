@@ -46,6 +46,7 @@ def test_projection_preserves_semantics_and_canonical_database(tmp_path):
     thread = json.loads((root / "threads" / "t1.json").read_text())
     assert thread["current_state"]["provenance"] == "unavailable"
     assert thread["last_meaningful_change_at"] == "2026-02-05"
+    assert thread["latest_event_title"] == "Route changed"
     assert thread["attention"]["reasons"] == ["contested_or_corrected_claim", "high_priority_open_questions"]
     assert thread["activity_series"]["measure"] == "event_count"
     assert thread["activity_series"]["aggregation"] == "week"
@@ -56,6 +57,8 @@ def test_projection_preserves_semantics_and_canonical_database(tmp_path):
     assert json.loads((root / "threads" / "t2.json").read_text())["activity_series"]["bins"] == []
     event = json.loads((root / "events" / "e1.json").read_text())
     assert event["occurred_at"] == "2026-02-01" and event["time_precision"] == "day"
+    assert event["claim_state_summary"] == {"contested": 1}
+    assert event["has_contested_claim"] is True and event["has_corrected_claim"] is False
     assert event["claims"][0]["state"] == "contested"
     assert event["claims"][0]["source"]["url"] == "https://example.test/report"
     entity = json.loads((root / "entities" / "actor1.json").read_text())
@@ -64,6 +67,10 @@ def test_projection_preserves_semantics_and_canonical_database(tmp_path):
     assert sum(bin["count"] for bin in entity["activity_series"]["bins"]) == 1
     buckets = [json.loads(path.read_text()) for path in (root / "graph").glob("*.json")]
     assert {"thread", "event", "claim", "source", "entity", "question"} <= {node["type"] for bucket in buckets for node in bucket["nodes"].values()}
+    graph_nodes = {key: node for bucket in buckets for key, node in bucket["nodes"].items()}
+    assert graph_nodes["thread:t1"]["activity_events_12w"] == 1
+    assert graph_nodes["entity:actor1"]["relation_count"] >= 1
+    assert graph_nodes["event:e1"]["summary"] == "Vessels diverted"
     assert {edge["type"] for bucket in buckets for edges in bucket["adjacency"].values() for edge in edges} >= {"event_contains_claim", "claim_supported_by_source", "question_about_thread"}
     assert hashlib.sha256(db_path.read_bytes()).digest() == before
     assert projector.publish(db_path, output)["source_revision"] == manifest["source_revision"]
@@ -98,6 +105,24 @@ def test_corrected_claim_has_visual_change_marker(tmp_path):
     thread = next(row for row in json.loads((generation(output) / "threads.json").read_text()) if row["thread_id"] == "t1")
     assert "claim_corrected" in thread["recent_change_types"]
     assert thread["attention"]["required"] is True
+    event = json.loads((generation(output) / "events" / "e1.json").read_text())
+    assert event["has_corrected_claim"] is True and event["claim_state_summary"] == {"superseded": 1}
+
+
+def test_search_index_covers_historical_object_types(tmp_path):
+    projector = load_runtime_module("dashboard_projector")
+    db_path, output = tmp_path / "chronicle.sqlite", tmp_path / "dashboard"
+    fixture_db(db_path)
+    registry = tmp_path / "locations.json"
+    registry.write_text(json.dumps([{"location_id": "loc1", "name": "Test port", "lat": 12.5,
+                                     "lon": 43.3, "geo_precision": "city", "canonical_source_ref": {"kind": "manual_registry", "id": "loc1"}}]))
+    projector.publish(db_path, output, location_registry=registry)
+    queries = {"Trade route": "thread", "Route changed": "event", "Carrier": "entity",
+               "traffic recover": "question", "Traffic declined": "claim", "Report": "source", "Test port": "location"}
+    for query, kind in queries.items():
+        assert kind in {hit["type"] for hit in projector.search_read_model(output, query)}, query
+    assert projector.search_read_model(output, "") == []
+    projector.validate(generation(output))
 
 
 def test_explicit_geography_and_vault_reference(tmp_path):

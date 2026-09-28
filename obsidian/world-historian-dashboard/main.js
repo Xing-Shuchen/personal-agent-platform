@@ -1373,11 +1373,11 @@ var Batch = class _Batch {
         this.#unlink();
         infinite_loop_guard();
       }
-      for (const root5 of this.#resolve()) {
+      for (const root6 of this.#resolve()) {
         try {
-          this.#traverse(root5, effects, render_effects);
+          this.#traverse(root6, effects, render_effects);
         } catch (e) {
-          reset_all(root5);
+          reset_all(root6);
           if (!this.#is_deferred()) this.discard();
           throw e;
         }
@@ -1454,9 +1454,9 @@ var Batch = class _Batch {
    * @param {Effect[]} effects
    * @param {Effect[]} render_effects
    */
-  #traverse(root5, effects, render_effects) {
-    root5.f ^= CLEAN;
-    var effect2 = root5.first;
+  #traverse(root6, effects, render_effects) {
+    root6.f ^= CLEAN;
+    var effect2 = root6.first;
     while (effect2 !== null) {
       var flags2 = effect2.f;
       var is_branch = (flags2 & (BRANCH_EFFECT | ROOT_EFFECT)) !== 0;
@@ -1701,8 +1701,8 @@ var Batch = class _Batch {
         }
         if (batch.#scheduled.length > 0 && !batch.#decrement_queued) {
           batch.apply();
-          for (var root5 of batch.#resolve()) {
-            batch.#traverse(root5, [], []);
+          for (var root6 of batch.#resolve()) {
+            batch.#traverse(root6, [], []);
           }
         }
         batch.deactivate();
@@ -3272,7 +3272,7 @@ function is_dirty(reaction) {
   }
   return false;
 }
-function schedule_possible_effect_self_invalidation(signal, effect2, root5 = true) {
+function schedule_possible_effect_self_invalidation(signal, effect2, root6 = true) {
   var reactions = signal.reactions;
   if (reactions === null) return;
   if (!async_mode_flag && current_sources !== null && current_sources.has(signal)) {
@@ -3288,7 +3288,7 @@ function schedule_possible_effect_self_invalidation(signal, effect2, root5 = tru
         false
       );
     } else if (effect2 === reaction) {
-      if (root5) {
+      if (root6) {
         set_signal_status(reaction, DIRTY);
       } else if ((reaction.f & CLEAN) !== 0) {
         set_signal_status(reaction, MAYBE_DIRTY);
@@ -4003,21 +4003,21 @@ function from_namespace(content, flags2, ns = "svg") {
         /** @type {DocumentFragment} */
         create_fragment_from_html(wrapped)
       );
-      var root5 = (
+      var root6 = (
         /** @type {Element} */
         get_first_child(fragment)
       );
       if (is_fragment) {
         node = document.createDocumentFragment();
-        while (get_first_child(root5)) {
+        while (get_first_child(root6)) {
           node.appendChild(
             /** @type {TemplateNode} */
-            get_first_child(root5)
+            get_first_child(root6)
           );
         }
       } else {
         node = /** @type {Element} */
-        get_first_child(root5);
+        get_first_child(root6);
       }
     }
     var clone = (
@@ -4043,6 +4043,25 @@ function from_namespace(content, flags2, ns = "svg") {
 // @__NO_SIDE_EFFECTS__
 function from_svg(content, flags2) {
   return /* @__PURE__ */ from_namespace(content, flags2, "svg");
+}
+function text(value = "") {
+  if (!hydrating) {
+    var t = create_text(value + "");
+    assign_nodes(t, t);
+    return t;
+  }
+  var node = hydrate_node;
+  if (node.nodeType !== TEXT_NODE) {
+    node.before(node = create_text());
+    set_hydrate_node(node);
+  } else {
+    merge_text_nodes(
+      /** @type {Text} */
+      node
+    );
+  }
+  assign_nodes(node, node);
+  return node;
 }
 function comment() {
   if (hydrating) {
@@ -6679,25 +6698,43 @@ function ActivitySparkline($$anchor, $$props) {
 }
 
 // src/ThreadProjection.svelte
-var root2 = from_html(`<button class="wh-mini-event"><span></span><time> </time><span> </span></button>`);
-var root_12 = from_html(`<p class="wh-muted">\u5C1A\u65E0 Event\u3002</p>`);
-var root_22 = from_html(`<!> <div class="wh-mini-timeline"></div>`, 1);
-var root_3 = from_svg(`<line x1="140" y1="90" class="wh-mini-edge"><title>\u6D89\u53CA Entity</title></line>`);
-var root_4 = from_svg(`<g role="button" tabindex="0"><circle r="12" class="wh-mini-entity"></circle><title> </title></g>`);
-var root_5 = from_html(`<button class="wh-mini-link"> </button>`);
-var root_6 = from_html(`<p class="wh-muted">\u6B64 Thread \u6682\u65E0\u5173\u8054 Entity\u3002</p>`);
-var root_7 = from_html(`<svg class="wh-mini-graph" viewBox="0 0 280 180" role="img"><!><rect x="98" y="74" width="84" height="32" rx="12" class="wh-mini-thread"></rect><text x="140" y="94" text-anchor="middle">Thread</text><!></svg> <div class="wh-mini-legend">\u25A2 Thread\u3000\u25CF Entity \xB7 \u5173\u7CFB\uFF1A\u6D89\u53CA</div> <!>`, 1);
-var root_8 = from_svg(`<g role="button" tabindex="0"><circle></circle><title> </title></g>`);
-var root_9 = from_html(`<svg class="wh-mini-map" viewBox="0 0 900 450" role="img"><path class="wh-world-shape"></path><!></svg> <div class="wh-mini-legend">\u25CF \u7CBE\u786E / \u57CE\u5E02\u3000\u25CC \u533A\u57DF / \u8FD1\u4F3C</div> <!>`, 1);
-var root_10 = from_html(`<p class="wh-muted">\u6B64 Thread \u6CA1\u6709\u6709\u5750\u6807\u7684 Event \u5730\u70B9\u3002</p>`);
-var root_11 = from_html(`<div class="wh-projection"><!></div>`);
+var root2 = from_html(`<small title="Claim \u4FEE\u6B63">\u21BA</small>`);
+var root_12 = from_html(`<small title="Claim \u4E89\u8BAE">\u21C4</small>`);
+var root_22 = from_html(`<button class="wh-mini-event"><span></span><time> </time><span> </span><!><!></button>`);
+var root_3 = from_html(`<p class="wh-muted">\u5C1A\u65E0 Event\u3002</p>`);
+var root_4 = from_html(`<!> <div class="wh-mini-timeline"></div>`, 1);
+var root_5 = from_svg(`<line x1="140" y1="90" class="wh-mini-edge"><title>\u6D89\u53CA Entity</title></line>`);
+var root_6 = from_svg(`<g role="button" tabindex="0"><circle r="12" class="wh-mini-entity"></circle><title> </title></g>`);
+var root_7 = from_html(`<button class="wh-mini-link"> </button>`);
+var root_8 = from_html(`<p class="wh-muted">\u6B64 Thread \u6682\u65E0\u5173\u8054 Entity\u3002</p>`);
+var root_9 = from_html(`<svg class="wh-mini-graph" viewBox="0 0 280 180" role="img"><!><rect x="98" y="74" width="84" height="32" rx="12" class="wh-mini-thread"></rect><text x="140" y="94" text-anchor="middle">Thread</text><!></svg> <div class="wh-mini-legend">\u25A2 Thread\u3000\u25CF Entity \xB7 \u5173\u7CFB\uFF1A\u6D89\u53CA</div> <!>`, 1);
+var root_10 = from_svg(`<g role="button" tabindex="0"><circle></circle><title> </title></g>`);
+var root_11 = from_html(`<svg class="wh-mini-map" viewBox="0 0 900 450" role="img"><path class="wh-world-shape"></path><!></svg> <div class="wh-mini-legend">\u25CF \u7CBE\u786E / \u57CE\u5E02\u3000\u25CC \u533A\u57DF / \u8FD1\u4F3C</div> <!>`, 1);
+var root_122 = from_html(`<p class="wh-muted">\u6B64 Thread \u6CA1\u6709\u6709\u5750\u6807\u7684 Event \u5730\u70B9\u3002</p>`);
+var root_13 = from_html(`<div class="wh-projection"><!></div>`);
 function ThreadProjection($$anchor, $$props) {
   push($$props, false);
+  const scoped = mutable_source();
+  const scopedEvents = mutable_source();
   const events = mutable_source();
+  const series = mutable_source();
+  const entityIds = mutable_source();
   const entities = mutable_source();
+  const locationIds = mutable_source();
   const locations = mutable_source();
   let thread = prop($$props, "thread", 8);
   let repository = prop($$props, "repository", 8);
+  let scope = prop($$props, "scope", 24, () => ({
+    search: "",
+    from: "",
+    to: "",
+    threadId: "",
+    entityId: "",
+    locationId: "",
+    status: "",
+    priority: "",
+    claimState: ""
+  }));
   let projection = prop($$props, "projection", 8, "Time");
   let openEvent = prop($$props, "openEvent", 8, () => {
   });
@@ -6705,26 +6742,87 @@ function ThreadProjection($$anchor, $$props) {
   });
   let openLocation = prop($$props, "openLocation", 8, () => {
   });
-  legacy_pre_effect(() => deep_read_state(thread()), () => {
-    set(events, (thread()?.event_summaries || []).slice(0, 6));
+  function scopedSeries(items) {
+    const dated = items.map((event2) => event2.occurred_at || event2.reported_at || event2.first_observed_at).filter(Boolean).map((value) => /* @__PURE__ */ new Date(value.slice(0, 10) + "T00:00:00Z")).filter((date) => Number.isFinite(date.getTime()));
+    if (!dated.length) return {
+      measure: "event_count",
+      aggregation: "week",
+      window: "latest_12_weeks",
+      bins: []
+    };
+    const end = new Date(dated.reduce((latest, date) => Math.max(latest, date.getTime()), 0));
+    end.setUTCDate(end.getUTCDate() - (end.getUTCDay() + 6) % 7);
+    const start = new Date(end);
+    start.setUTCDate(start.getUTCDate() - 77);
+    const bins = Array.from({ length: 12 }, (_, i) => {
+      const day = new Date(start);
+      day.setUTCDate(day.getUTCDate() + i * 7);
+      return { start: day.toISOString().slice(0, 10), count: 0 };
+    });
+    for (const date of dated) {
+      const week = new Date(date);
+      week.setUTCDate(week.getUTCDate() - (week.getUTCDay() + 6) % 7);
+      const index2 = Math.floor((week.getTime() - start.getTime()) / 6048e5);
+      if (index2 >= 0 && index2 < 12) bins[index2].count++;
+    }
+    return {
+      measure: "event_count",
+      aggregation: "week",
+      window: "latest_12_weeks",
+      bins
+    };
+  }
+  legacy_pre_effect(() => deep_read_state(scope()), () => {
+    set(scoped, Object.values(scope()).some(Boolean));
   });
-  legacy_pre_effect(() => (deep_read_state(thread()), deep_read_state(repository())), () => {
-    set(entities, (thread()?.top_entity_ids || []).slice(0, 5).map((id) => repository().entityById.get(id)).filter(Boolean));
+  legacy_pre_effect(
+    () => (deep_read_state(thread()), get(scoped), deep_read_state(repository()), deep_read_state(scope())),
+    () => {
+      set(scopedEvents, (thread()?.event_summaries || []).filter((event2) => !get(scoped) || repository().matchesEvent(event2, scope())));
+    }
+  );
+  legacy_pre_effect(() => get(scopedEvents), () => {
+    set(events, get(scopedEvents).slice(0, 6));
   });
-  legacy_pre_effect(() => (deep_read_state(thread()), deep_read_state(repository())), () => {
-    set(locations, (thread()?.location_ids || []).slice(0, 18).map((id) => repository().locationById.get(id)).filter(Boolean));
+  legacy_pre_effect(
+    () => (get(scoped), get(scopedEvents), deep_read_state(thread())),
+    () => {
+      set(series, get(scoped) ? scopedSeries(get(scopedEvents)) : thread().activity_series);
+    }
+  );
+  legacy_pre_effect(
+    () => (get(scoped), get(scopedEvents), deep_read_state(thread())),
+    () => {
+      set(entityIds, get(scoped) ? [
+        ...new Set(get(scopedEvents).flatMap((event2) => event2.entity_ids))
+      ] : thread()?.top_entity_ids || []);
+    }
+  );
+  legacy_pre_effect(() => (get(entityIds), deep_read_state(repository())), () => {
+    set(entities, get(entityIds).slice(0, 5).map((id) => repository().entityById.get(id)).filter(Boolean));
+  });
+  legacy_pre_effect(
+    () => (get(scoped), get(scopedEvents), deep_read_state(thread())),
+    () => {
+      set(locationIds, get(scoped) ? [
+        ...new Set(get(scopedEvents).flatMap((event2) => event2.location_ids))
+      ] : thread()?.location_ids || []);
+    }
+  );
+  legacy_pre_effect(() => (get(locationIds), deep_read_state(repository())), () => {
+    set(locations, get(locationIds).slice(0, 18).map((id) => repository().locationById.get(id)).filter(Boolean));
   });
   legacy_pre_effect_reset();
   init();
-  var div = root_11();
+  var div = root_13();
   var node = child(div);
   {
-    var consequent = ($$anchor2) => {
-      var fragment = root_22();
+    var consequent_2 = ($$anchor2) => {
+      var fragment = root_4();
       var node_1 = first_child(fragment);
       ActivitySparkline(node_1, {
         get series() {
-          return deep_read_state(thread()), untrack(() => thread().activity_series);
+          return get(series);
         },
         width: 220,
         height: 46
@@ -6736,18 +6834,42 @@ function ThreadProjection($$anchor, $$props) {
         () => get(events),
         index,
         ($$anchor3, event2) => {
-          var button = root2();
+          var button = root_22();
           var span = child(button);
           let classes;
           var time = sibling(span);
           var text2 = only_child(time, true);
           var span_1 = sibling(time);
           var text_1 = only_child(span_1, true);
+          var node_2 = sibling(span_1);
+          {
+            var consequent = ($$anchor4) => {
+              var small = root2();
+              append($$anchor4, small);
+            };
+            if_block(node_2, ($$render) => {
+              if (get(event2), untrack(() => get(event2).has_corrected_claim)) $$render(consequent);
+            });
+          }
+          var node_3 = sibling(node_2);
+          {
+            var consequent_1 = ($$anchor4) => {
+              var small_1 = root_12();
+              append($$anchor4, small_1);
+            };
+            if_block(node_3, ($$render) => {
+              if (get(event2), untrack(() => get(event2).has_contested_claim)) $$render(consequent_1);
+            });
+          }
           reset(button);
           template_effect(
             ($0) => {
               set_attribute2(button, "title", (get(event2), untrack(() => get(event2).title)));
-              classes = set_class(span, 1, "wh-mini-dot", null, classes, { approximate: get(event2).time_precision !== "day" });
+              classes = set_class(span, 1, "wh-mini-dot", null, classes, {
+                approximate: get(event2).time_precision !== "day",
+                corrected: get(event2).has_corrected_claim,
+                contested: get(event2).has_contested_claim
+              });
               set_text(text2, $0);
               set_text(text_1, (get(event2), untrack(() => get(event2).title)));
             },
@@ -6759,19 +6881,19 @@ function ThreadProjection($$anchor, $$props) {
           append($$anchor3, button);
         },
         ($$anchor3) => {
-          var p = root_12();
+          var p = root_3();
           append($$anchor3, p);
         }
       );
       reset(div_1);
       append($$anchor2, fragment);
     };
-    var consequent_1 = ($$anchor2) => {
-      var fragment_1 = root_7();
+    var consequent_3 = ($$anchor2) => {
+      var fragment_1 = root_9();
       var svg = first_child(fragment_1);
-      var node_2 = child(svg);
-      each(node_2, 1, () => get(entities), index, ($$anchor3, entity, i) => {
-        var line = root_3();
+      var node_4 = child(svg);
+      each(node_4, 1, () => get(entities), index, ($$anchor3, entity, i) => {
+        var line = root_5();
         template_effect(
           ($0, $1) => {
             set_attribute2(line, "x2", $0);
@@ -6784,9 +6906,9 @@ function ThreadProjection($$anchor, $$props) {
         );
         append($$anchor3, line);
       });
-      var node_3 = sibling(node_2, 3);
-      each(node_3, 1, () => get(entities), index, ($$anchor3, entity, i) => {
-        var g = root_4();
+      var node_5 = sibling(node_4, 3);
+      each(node_5, 1, () => get(entities), index, ($$anchor3, entity, i) => {
+        var g = root_6();
         var circle = child(g);
         var title = sibling(circle);
         var text_2 = only_child(title);
@@ -6807,21 +6929,21 @@ function ThreadProjection($$anchor, $$props) {
         append($$anchor3, g);
       });
       reset(svg);
-      var node_4 = sibling(svg, 4);
+      var node_6 = sibling(svg, 4);
       each(
-        node_4,
+        node_6,
         1,
         () => get(entities),
         index,
         ($$anchor3, entity) => {
-          var button_1 = root_5();
+          var button_1 = root_7();
           var text_3 = only_child(button_1, true);
           template_effect(() => set_text(text_3, (get(entity), untrack(() => get(entity).name))));
           event("click", button_1, () => openEntity()(get(entity).entity_id));
           append($$anchor3, button_1);
         },
         ($$anchor3) => {
-          var p_1 = root_6();
+          var p_1 = root_8();
           append($$anchor3, p_1);
         }
       );
@@ -6830,15 +6952,15 @@ function ThreadProjection($$anchor, $$props) {
     };
     var alternate_1 = ($$anchor2) => {
       var fragment_2 = comment();
-      var node_5 = first_child(fragment_2);
+      var node_7 = first_child(fragment_2);
       {
-        var consequent_2 = ($$anchor3) => {
-          var fragment_3 = root_9();
+        var consequent_4 = ($$anchor3) => {
+          var fragment_3 = root_11();
           var svg_1 = first_child(fragment_3);
           var path = child(svg_1);
-          var node_6 = sibling(path);
-          each(node_6, 1, () => get(locations), index, ($$anchor4, location) => {
-            var g_1 = root_8();
+          var node_8 = sibling(path);
+          each(node_8, 1, () => get(locations), index, ($$anchor4, location) => {
+            var g_1 = root_10();
             var circle_1 = child(g_1);
             let classes_1;
             var title_1 = sibling(circle_1);
@@ -6858,9 +6980,9 @@ function ThreadProjection($$anchor, $$props) {
             append($$anchor4, g_1);
           });
           reset(svg_1);
-          var node_7 = sibling(svg_1, 4);
-          each(node_7, 1, () => get(locations), index, ($$anchor4, location) => {
-            var button_2 = root_5();
+          var node_9 = sibling(svg_1, 4);
+          each(node_9, 1, () => get(locations), index, ($$anchor4, location) => {
+            var button_2 = root_7();
             var text_5 = only_child(button_2);
             template_effect(() => set_text(text_5, `${(get(location), untrack(() => get(location).name)) ?? ""} \xB7 ${(get(location), untrack(() => get(location).geo_precision)) ?? ""}`));
             event("click", button_2, () => openLocation()(get(location).location_id));
@@ -6873,19 +6995,19 @@ function ThreadProjection($$anchor, $$props) {
           append($$anchor3, fragment_3);
         };
         var alternate = ($$anchor3) => {
-          var p_2 = root_10();
+          var p_2 = root_122();
           append($$anchor3, p_2);
         };
-        if_block(node_5, ($$render) => {
-          if (get(locations), untrack(() => get(locations).length)) $$render(consequent_2);
+        if_block(node_7, ($$render) => {
+          if (get(locations), untrack(() => get(locations).length)) $$render(consequent_4);
           else $$render(alternate, -1);
         });
       }
       append($$anchor2, fragment_2);
     };
     if_block(node, ($$render) => {
-      if (projection() === "Time") $$render(consequent);
-      else if (projection() === "Graph") $$render(consequent_1, 1);
+      if (projection() === "Time") $$render(consequent_2);
+      else if (projection() === "Graph") $$render(consequent_3, 1);
       else $$render(alternate_1, -1);
     });
   }
@@ -6897,7 +7019,7 @@ function ThreadProjection($$anchor, $$props) {
 
 // src/EntityProjection.svelte
 var root3 = from_svg(`<line x1="140" y1="90" class="wh-mini-edge"><title> </title></line>`);
-var root_13 = from_svg(`<g role="button" tabindex="0"><circle r="10"></circle><title> </title></g>`);
+var root_14 = from_svg(`<g role="button" tabindex="0"><circle r="10"></circle><title> </title></g>`);
 var root_23 = from_html(`<button class="wh-mini-link"> </button>`);
 var root_32 = from_html(`<p class="wh-muted">\u6CA1\u6709\u53EF\u89C1\u5173\u7CFB\u3002</p>`);
 var root_42 = from_html(`<svg class="wh-mini-graph" viewBox="0 0 280 180" role="img"><!><circle cx="140" cy="90" r="16" class="wh-mini-entity"></circle><text x="140" y="94" text-anchor="middle">E</text><!></svg> <div class="wh-mini-legend">\u25CF Entity\u3000\u25EF Thread \xB7 \u5173\u7CFB\u89C1\u8282\u70B9\u63D0\u793A</div> <!>`, 1);
@@ -6907,12 +7029,27 @@ var root_72 = from_html(`<p class="wh-muted">\u6CA1\u6709\u6709\u5750\u6807\u768
 var root_82 = from_html(`<div class="wh-projection"><!></div>`);
 function EntityProjection($$anchor, $$props) {
   push($$props, false);
+  const scoped = mutable_source();
+  const visibleThreads = mutable_source();
   const threads = mutable_source();
   const related = mutable_source();
   const neighbors = mutable_source();
+  const scopedEvents = mutable_source();
+  const locationIds = mutable_source();
   const locations = mutable_source();
   let entity = prop($$props, "entity", 8);
   let repository = prop($$props, "repository", 8);
+  let scope = prop($$props, "scope", 24, () => ({
+    search: "",
+    from: "",
+    to: "",
+    threadId: "",
+    entityId: "",
+    locationId: "",
+    status: "",
+    priority: "",
+    claimState: ""
+  }));
   let projection = prop($$props, "projection", 8, "Graph");
   let openThread = prop($$props, "openThread", 8, () => {
   });
@@ -6920,9 +7057,21 @@ function EntityProjection($$anchor, $$props) {
   });
   let openLocation = prop($$props, "openLocation", 8, () => {
   });
-  legacy_pre_effect(() => (deep_read_state(entity()), deep_read_state(repository())), () => {
-    set(threads, (entity()?.thread_ids || []).slice(0, 5).map((id) => repository().threadById.get(id)).filter(Boolean));
+  legacy_pre_effect(() => deep_read_state(scope()), () => {
+    set(scoped, Object.values(scope()).some(Boolean));
   });
+  legacy_pre_effect(
+    () => (get(scoped), deep_read_state(repository()), deep_read_state(scope())),
+    () => {
+      set(visibleThreads, get(scoped) ? new Set(repository().filteredThreads(scope()).map((thread) => thread.thread_id)) : null);
+    }
+  );
+  legacy_pre_effect(
+    () => (deep_read_state(entity()), get(visibleThreads), deep_read_state(repository())),
+    () => {
+      set(threads, (entity()?.thread_ids || []).filter((id) => !get(visibleThreads) || get(visibleThreads).has(id)).slice(0, 5).map((id) => repository().threadById.get(id)).filter(Boolean));
+    }
+  );
   legacy_pre_effect(() => (deep_read_state(entity()), deep_read_state(repository())), () => {
     set(related, (entity()?.related_entity_ids || []).slice(0, 4).map((id) => repository().entityById.get(id)).filter(Boolean));
   });
@@ -6932,8 +7081,22 @@ function EntityProjection($$anchor, $$props) {
       ...get(related).map((item) => ({ id: item.entity_id, label: item.name, type: "entity" }))
     ]);
   });
-  legacy_pre_effect(() => (deep_read_state(entity()), deep_read_state(repository())), () => {
-    set(locations, (entity()?.location_ids || []).slice(0, 18).map((id) => repository().locationById.get(id)).filter(Boolean));
+  legacy_pre_effect(
+    () => (get(scoped), deep_read_state(entity()), deep_read_state(repository()), deep_read_state(scope())),
+    () => {
+      set(scopedEvents, get(scoped) ? (entity()?.event_ids || []).map((id) => repository().eventById.get(id)).filter((event2) => event2 && repository().matchesEvent(event2, scope())) : []);
+    }
+  );
+  legacy_pre_effect(
+    () => (get(scoped), get(scopedEvents), deep_read_state(entity())),
+    () => {
+      set(locationIds, get(scoped) ? [
+        ...new Set(get(scopedEvents).flatMap((event2) => event2.location_ids))
+      ] : entity()?.location_ids || []);
+    }
+  );
+  legacy_pre_effect(() => (get(locationIds), deep_read_state(repository())), () => {
+    set(locations, get(locationIds).slice(0, 18).map((id) => repository().locationById.get(id)).filter(Boolean));
   });
   legacy_pre_effect_reset();
   init();
@@ -6964,7 +7127,7 @@ function EntityProjection($$anchor, $$props) {
       });
       var node_2 = sibling(node_1, 3);
       each(node_2, 1, () => get(neighbors), index, ($$anchor3, neighbor, i) => {
-        var g = root_13();
+        var g = root_14();
         var circle = child(g);
         let classes;
         var title_1 = sibling(circle);
@@ -7077,112 +7240,239 @@ function EntityProjection($$anchor, $$props) {
   pop();
 }
 
+// src/ContextCharts.svelte
+var root4 = from_html(`<button><span class="wh-chart-track"><span class="wh-chart-covered"></span></span></button>`);
+var root_15 = from_html(`<button><span class="wh-chart-track wh-claim-track"><span class="wh-chart-uncertain"></span><span class="wh-chart-contested"></span></span></button>`);
+var root_24 = from_html(`<div class="wh-context-charts"><div><h4>Source coverage</h4><div class="wh-chart-bars" aria-label="\u6BCF\u5468 Event \u6765\u6E90\u8986\u76D6\u7387"></div><small>\u6D45\u8272\uFF1A\u6709 Source \u7684 Event\uFF1B\u8F68\u9053\uFF1A\u5168\u90E8 Event\u3002\u6309\u53D1\u751F\u65E5\u671F\u5206\u5468\u3002</small></div> <div><h4>Claim states</h4><div class="wh-chart-bars" aria-label="\u6BCF\u5468 Event \u5173\u8054 Claim \u72B6\u6001"></div><small>\u6DF1\u8272\uFF1A\u4E89\u8BAE\u3001\u4FEE\u6B63\u3001\u53D6\u4EE3\u6216\u64A4\u56DE\uFF1B\u4E2D\u95F4\u8272\uFF1A\u4E0D\u786E\u5B9A\uFF1B\u5176\u4F59\u4E3A\u5176\u4ED6\u72B6\u6001\u3002\u6309 Event \u53D1\u751F\u65E5\u671F\u5206\u5468\uFF0C\u8BA1 Event\u2013Claim \u5173\u8054\u3002</small></div></div>`);
+function ContextCharts($$anchor, $$props) {
+  push($$props, false);
+  const weeks = mutable_source();
+  const maxEvents = mutable_source();
+  const maxClaims = mutable_source();
+  let series = prop($$props, "series", 8);
+  let events = prop($$props, "events", 24, () => []);
+  let openWeek = prop($$props, "openWeek", 8, () => {
+  });
+  function weekStart(value) {
+    if (!value) return "";
+    const date = /* @__PURE__ */ new Date(value.slice(0, 10) + "T00:00:00Z");
+    if (Number.isNaN(date.getTime())) return "";
+    date.setUTCDate(date.getUTCDate() - (date.getUTCDay() + 6) % 7);
+    return date.toISOString().slice(0, 10);
+  }
+  function summaries(bins, items) {
+    const byWeek = new Map((bins || []).map((bin) => [
+      bin.start,
+      { start: bin.start, events: 0, covered: 0, claimStates: {} }
+    ]));
+    for (const event2 of items) {
+      const week = byWeek.get(weekStart(event2.occurred_at));
+      if (!week) continue;
+      week.events++;
+      if (event2.source_count > 0) week.covered++;
+      for (const [state2, count] of Object.entries(event2.claim_state_summary || {})) week.claimStates[state2] = (week.claimStates[state2] || 0) + count;
+    }
+    return [...byWeek.values()].map((week) => ({
+      ...week,
+      claims: Object.values(week.claimStates).reduce((sum, count) => sum + count, 0)
+    }));
+  }
+  legacy_pre_effect(() => (deep_read_state(series()), deep_read_state(events())), () => {
+    set(weeks, summaries(series()?.bins, events()));
+  });
+  legacy_pre_effect(() => get(weeks), () => {
+    set(maxEvents, Math.max(1, ...get(weeks).map((week) => week.events)));
+  });
+  legacy_pre_effect(() => get(weeks), () => {
+    set(maxClaims, Math.max(1, ...get(weeks).map((week) => week.claims)));
+  });
+  legacy_pre_effect_reset();
+  init();
+  var fragment = comment();
+  var node = first_child(fragment);
+  {
+    var consequent = ($$anchor2) => {
+      var div = root_24();
+      var div_1 = child(div);
+      var div_2 = sibling(child(div_1));
+      each(div_2, 5, () => get(weeks), index, ($$anchor3, week) => {
+        var button = root4();
+        var span = child(button);
+        var span_1 = only_child(span);
+        reset(button);
+        template_effect(
+          ($0) => {
+            set_attribute2(button, "title", (get(week), untrack(() => `${get(week).start} \xB7 ${get(week).covered}/${get(week).events} Events \u6709 Source`)));
+            set_attribute2(button, "aria-label", (get(week), untrack(() => `${get(week).start}\uFF1A${get(week).covered}/${get(week).events} Events \u6709 Source`)));
+            set_style(span, $0);
+            set_style(span_1, (get(week), untrack(() => `height:${get(week).events ? get(week).covered / get(week).events * 100 : 0}%`)));
+          },
+          [
+            () => (get(week), get(maxEvents), untrack(() => `height:${Math.max(2, get(week).events / get(maxEvents) * 48)}px`))
+          ]
+        );
+        event("click", button, () => openWeek()(get(week).start));
+        append($$anchor3, button);
+      });
+      reset(div_2);
+      next();
+      reset(div_1);
+      var div_3 = sibling(div_1, 2);
+      var div_4 = sibling(child(div_3));
+      each(div_4, 5, () => get(weeks), index, ($$anchor3, week) => {
+        var button_1 = root_15();
+        var span_2 = child(button_1);
+        var span_3 = child(span_2);
+        var span_4 = sibling(span_3);
+        reset(span_2);
+        reset(button_1);
+        template_effect(
+          ($0, $1, $2) => {
+            set_attribute2(button_1, "title", $0);
+            set_attribute2(button_1, "aria-label", (get(week), untrack(() => `${get(week).start}\uFF1A${get(week).claims} \u6761 Event\u2013Claim \u5173\u8054`)));
+            set_style(span_2, $1);
+            set_style(span_3, (get(week), untrack(() => `height:${get(week).claims ? (get(week).claimStates.uncertain || 0) / get(week).claims * 100 : 0}%`)));
+            set_style(span_4, $2);
+          },
+          [
+            () => (get(week), untrack(() => `${get(week).start} \xB7 ${get(week).claims} \u6761 Event\u2013Claim \u5173\u8054 \xB7 ${Object.entries(get(week).claimStates).map(([state2, count]) => `${state2} ${count}`).join(" / ") || "\u65E0 Claim"}`)),
+            () => (get(week), get(maxClaims), untrack(() => `height:${Math.max(2, get(week).claims / get(maxClaims) * 48)}px`)),
+            () => (get(week), untrack(() => `height:${get(week).claims ? ["contested", "corrected", "superseded", "retracted"].reduce((sum, state2) => sum + (get(week).claimStates[state2] || 0), 0) / get(week).claims * 100 : 0}%`))
+          ]
+        );
+        event("click", button_1, () => openWeek()(get(week).start));
+        append($$anchor3, button_1);
+      });
+      reset(div_4);
+      next();
+      reset(div_3);
+      reset(div);
+      append($$anchor2, div);
+    };
+    if_block(node, ($$render) => {
+      if (get(weeks), untrack(() => get(weeks).length)) $$render(consequent);
+    });
+  }
+  append($$anchor, fragment);
+  pop();
+}
+
 // src/Dashboard.svelte
-var root4 = from_html(`<button> </button>`);
-var root_14 = from_html(`<button><span class="wh-badge"> </span><strong> </strong><small> </small></button>`);
-var root_24 = from_html(`<div class="wh-search-results"></div>`);
-var root_33 = from_html(`<option> </option>`);
-var root_43 = from_html(`<div class="wh-filters"><label>\u8D77\u59CB <input type="date"/></label><label>\u7ED3\u675F <input type="date"/></label><label>\u72B6\u6001 <select><option>\u5168\u90E8</option><!></select></label><label>\u4F18\u5148\u7EA7 <select><option>\u5168\u90E8</option><!></select></label><label>Thread <select><option>\u5168\u90E8</option><!></select></label><label>Entity <select><option>\u5168\u90E8</option><!></select></label><label>Location <select><option>\u5168\u90E8</option><!></select></label><label>Claim <select><option>\u5168\u90E8</option><!></select></label></div>`);
-var root_53 = from_html(`<div class="wh-alert"> <button>\u6784\u5EFA\u8BFB\u6A21\u578B</button><button>\u8BBE\u7F6E\u8DEF\u5F84</button></div>`);
-var root_63 = from_html(`<div class="wh-alert wh-warning"> <button>\u91CD\u65B0\u6784\u5EFA</button></div>`);
-var root_73 = from_html(`<div class="wh-alert wh-warning">Chronicle \u6570\u636E\u6BD4\u5F53\u524D\u8BFB\u6A21\u578B\u66F4\u65B0\u3002<button>\u5237\u65B0</button></div>`);
-var root_83 = from_html(`<span> </span>`);
-var root_92 = from_html(`<button> <!></button>`);
-var root_102 = from_html(`<div class="wh-empty">\u5F53\u524D\u8303\u56F4\u6CA1\u6709 Thread\u3002<button>\u6E05\u9664\u7B5B\u9009</button></div>`);
-var root_112 = from_html(`<span title="Claim \u5DF2\u4FEE\u6B63">\u21BA \u4FEE\u6B63</span>`);
-var root_122 = from_html(`<span title="Claim \u6709\u4E89\u8BAE">\u21C4 \u4E89\u8BAE</span>`);
-var root_132 = from_html(`<span title="Claim \u5DF2\u64A4\u56DE">\u2298 \u64A4\u56DE</span>`);
-var root_142 = from_html(`<span title="\u672A\u89E3\u95EE\u9898"> </span>`);
-var root_15 = from_html(`<div class="wh-attention"> </div>`);
-var root_16 = from_html(`<div role="button" tabindex="0"><div class="wh-row-head"><strong> </strong><span class="wh-badge"> </span><span class="wh-badge"> </span></div> <p> </p> <div class="wh-motion-signals"><!><span class="wh-change-markers" aria-label="\u72B6\u6001\u53D8\u5316"><!><!><!><!></span></div> <!> <small> </small></div>`);
-var root_17 = from_html(`<aside class="wh-sidebar"><h3>Saved Views</h3><!><p> </p></aside> <section class="wh-content wh-observatory"><div class="wh-observatory-strip" aria-label="\u6700\u8FD1 7 \u5929\u7684\u5386\u53F2\u52A8\u5411"><div><small>Needs Attention</small><strong> </strong><span>\u9700\u8981\u6838\u67E5\u7684 Thread</span></div><div><small>Events \xB7 7d</small><strong> </strong><span>\u6309 Event \u65F6\u95F4\u7EDF\u8BA1</span></div><div><small>Changed Threads \xB7 7d</small><strong> </strong><span>\u6700\u8FD1\u6709\u610F\u4E49\u53D8\u66F4</span></div><div><small>Open Questions</small><strong> </strong><span>\u5F53\u524D\u8303\u56F4\u5185\u672A\u89E3</span></div></div> <div class="wh-section-bar"><h2>Threads in Motion <small> </small></h2><label>\u6392\u5E8F <select><option>\u9700\u5173\u6CE8</option><option>\u6700\u8FD1\u6709\u610F\u4E49\u53D8\u66F4</option><option>\u4F18\u5148\u7EA7</option><option>\u6807\u9898</option><option>\u8DDF\u8E2A\u5F00\u59CB</option></select></label></div> <!> <!></section>`, 1);
-var root_18 = from_html(`<div class="wh-chips">\u5BA1\u8BA1\u5F15\u7528\uFF1A<!></div>`);
-var root_19 = from_html(`<button class="wh-event-link">\u67E5\u770B\u7EFC\u5408\u8BB0\u5F55</button>`);
-var root_20 = from_html(`<div class="wh-attention">\u65B0 Event \u665A\u4E8E\u5F53\u524D\u72B6\u6001\u7EFC\u5408\u3002</div>`);
-var root_21 = from_html(`<p> </p><small> </small><!><!><!>`, 1);
-var root_222 = from_html(`<p class="wh-muted">Chronicle \u5C1A\u65E0 Current State \u8BB0\u5F55\u3002</p>`);
-var root_232 = from_html(`<p class="wh-annotation"> </p><small>\u4EBA\u5DE5\u6279\u6CE8 \xB7 <button>\u6253\u5F00\u6E90\u7B14\u8BB0</button></small>`, 1);
-var root_242 = from_html(`<section class="wh-card"><h3>Manual annotations</h3><!></section>`);
-var root_25 = from_html(`<div class="wh-subrow"><strong> </strong><small> <button class="wh-canonical-link">\u67E5\u770B\u8BB0\u5F55</button></small></div>`);
-var root_26 = from_html(`<p class="wh-muted">\u6CA1\u6709\u672A\u89E3\u95EE\u9898\u3002</p>`);
-var root_27 = from_html(`<button class="wh-event-link">\u67E5\u770B\u56DE\u7B54 Event</button>`);
-var root_28 = from_html(`<div class="wh-subrow"> <!></div>`);
-var root_29 = from_html(`<div class="wh-subrow"><button> </button><small> </small></div>`);
-var root_30 = from_html(`<p class="wh-muted">\u6CA1\u6709\u663E\u5F0F\u5173\u8054\u3002</p>`);
-var root_31 = from_html(`<button class="wh-event-link"> </button>`);
-var root_322 = from_html(`<section class="wh-card"><h3>Current State</h3><!></section><!><section class="wh-card"><h3>Event activity</h3><!><p class="wh-muted">\u6700\u8FD1 12 \u5468\uFF0C\u4EE5\u6700\u65B0 Event \u6240\u5728\u5468\u4E3A\u7EC8\u70B9\uFF1B\u6309\u53D1\u751F\u65E5\u671F\u3001\u6BCF\u5468\u8BA1\u6570\u3002</p></section><section class="wh-card"><h3>Open Questions <span> </span></h3><!><details><summary>\u5DF2\u56DE\u7B54\u53CA\u5176\u4ED6\u95EE\u9898</summary><!></details></section><section class="wh-card"><h3>Entities</h3><div class="wh-chips"></div></section><section class="wh-card"><h3>Related Threads</h3><!></section><section class="wh-card"><h3>Recent Events</h3><!></section>`, 1);
-var root_332 = from_html(`<button class="wh-event-link">\u6253\u5F00\u6E90\u7B14\u8BB0</button>`);
-var root_34 = from_html(`<small> </small>`);
-var root_35 = from_html(`<button class="wh-canonical-link">Source \u8BB0\u5F55</button>`);
-var root_36 = from_html(`<a target="_blank" rel="noopener noreferrer">\u6253\u5F00\u6765\u6E90 \u2197</a>`);
-var root_37 = from_html(`<div class="wh-claim"><strong> </strong> <!><button class="wh-canonical-link">Claim \u8BB0\u5F55</button><small> <!> <!></small></div>`);
-var root_38 = from_html(`<div><span></span><div><button class="wh-title-link"> </button><small> </small></div><p> </p><details><summary>\u8BC1\u636E\u4E0E\u5143\u6570\u636E</summary><div class="wh-event-meta"> </div><div class="wh-chips"><!><!></div><small> </small><button class="wh-event-link">\u67E5\u770B Chronicle \u8BB0\u5F55</button><!><!></details></div>`);
-var root_39 = from_html(`<div class="wh-empty">\u5F53\u524D\u8303\u56F4\u6CA1\u6709 Event\u3002<button>\u6E05\u9664\u7B5B\u9009</button></div>`);
-var root_40 = from_html(`<button class="wh-load-more">\u518D\u52A0\u8F7D 100 \u4E2A Event</button>`);
-var root_41 = from_html(`<!><!>`, 1);
-var root_422 = from_html(`<div class="wh-location-list"></div>`);
-var root_432 = from_html(`<div class="wh-empty">\u6B64 Thread \u6CA1\u6709\u5E26\u660E\u786E\u5750\u6807\u7684 Event \u5730\u70B9\u3002</div>`);
-var root_44 = from_html(`<div class="wh-card"><h3>Thread Map</h3><!><!></div>`);
-var root_45 = from_html(`<div class="wh-card"><h3>Thread Graph</h3><!><button>\u6253\u5F00\u4EA4\u4E92\u56FE\u8C31 \u2192</button><p class="wh-muted">\u4EE5\u5F53\u524D Thread \u4E3A\u4E2D\u5FC3\uFF0C\u9010\u6B65\u5C55\u5F00\u5173\u7CFB\u3002</p></div>`);
-var root_46 = from_html(`<section class="wh-content wh-detail"><div class="wh-section-bar"><div><button>\u2190 \u8FD4\u56DE</button><h2> </h2><span class="wh-badge"> </span><span class="wh-badge"> </span></div><div><button>\u6253\u5F00\u6E90\u7B14\u8BB0</button><button>\u67E5\u770B Chronicle \u8BB0\u5F55</button></div></div><div class="wh-meta"> </div><div class="wh-tabs"></div> <!></section>`);
-var root_47 = from_html(`<p> </p>`);
-var root_48 = from_html(`<a target="_blank" rel="noopener noreferrer">\u6765\u6E90 \u2197</a>`);
-var root_49 = from_html(`<div class="wh-claim"><strong> </strong> <small> <!></small><button class="wh-canonical-link">Claim \u8BB0\u5F55</button></div>`);
-var root_50 = from_html(`<button>\u5728 Map \u9AD8\u4EAE</button>`);
-var root_51 = from_html(`<div class="wh-timeline-expanded"><div class="wh-event-meta"> </div> <p> </p><div class="wh-chips"><!><!></div> <!> <div class="wh-timeline-actions"><button>Event \u8BB0\u5F55</button><button>\u5728 Graph \u9AD8\u4EAE</button><!></div></div>`);
-var root_522 = from_html(`<div role="button" tabindex="0"><div class="wh-time"><span></span> </div><div><strong> </strong><small> </small><!><small> </small></div><button>\u6253\u5F00 \u2192</button><!></div>`);
-var root_532 = from_html(`<h3 class="wh-group"> <span class="wh-density-bar"></span><small> </small></h3><!>`, 1);
-var root_54 = from_html(`<button class="wh-load-more"> </button>`);
-var root_55 = from_html(`<section class="wh-content wh-wide"><div class="wh-section-bar"><h2>Timeline <small> </small></h2><div><div class="wh-range-switch" aria-label="Timeline \u65F6\u95F4\u8303\u56F4"></div><label>\u5206\u7EC4 <select><option>\u65E5\u671F</option><option>Thread</option><option>Entity</option></select></label><label>\u5BC6\u5EA6 <select><option>\u6807\u51C6</option><option>\u7D27\u51D1</option></select></label></div></div><!><!><!></section>`);
-var root_56 = from_html(`<div class="wh-empty">\u5F53\u524D\u8303\u56F4\u6CA1\u6709 Entity\u3002<button>\u6E05\u9664\u7B5B\u9009</button></div>`);
-var root_57 = from_html(`<button class="wh-entity-row"><strong> </strong><span class="wh-badge"> </span><span class="wh-entity-top"> </span><small> </small></button>`);
-var root_58 = from_html(`<p class="wh-muted">\u663E\u793A\u524D 500 \u4E2A Entity\u3002\u8BF7\u4F7F\u7528\u641C\u7D22\u7F29\u5C0F\u8303\u56F4\u3002</p>`);
-var root_59 = from_html(`<section class="wh-content wh-wide"><div class="wh-section-bar"><h2>Entities <small> </small></h2><div><label>\u7C7B\u578B <select><option>\u5168\u90E8</option><!></select></label><label>\u6700\u5C11 Events <input type="number" min="0" max="10000"/></label></div></div><!><div class="wh-entity-grid"></div><!></section>`);
-var root_60 = from_html(`<p class="wh-muted">\u6CA1\u6709\u6D3B\u8DC3\u7684\u5173\u8054 Thread\u3002</p>`);
-var root_61 = from_html(`<p class="wh-muted">\u6CA1\u6709\u5173\u8054 Thread\u3002</p>`);
-var root_622 = from_html(`<p class="wh-muted">\u6CA1\u6709\u663E\u5F0F Entity \u5173\u7CFB\u3002</p>`);
-var root_632 = from_html(`<div class="wh-subrow"><strong> </strong><button> </button></div>`);
-var root_64 = from_html(`<section class="wh-card"><h3>Current involvement</h3><!></section><section class="wh-card"><h3>Threads</h3><!></section><section class="wh-card"><h3>Event Activity</h3><!><p class="wh-muted">\u6700\u8FD1 12 \u5468\uFF0C\u4EE5\u6700\u65B0 Event \u6240\u5728\u5468\u4E3A\u7EC8\u70B9\uFF1B\u6309\u53D1\u751F\u65E5\u671F\u3001\u6BCF\u5468\u8BA1\u6570\u3002</p><!></section><section class="wh-card"><h3>Related Entities</h3><div class="wh-chips"></div></section><section class="wh-card"><h3>Thread questions (context)</h3><p class="wh-muted">\u4EE5\u4E0B\u95EE\u9898\u5C5E\u4E8E\u5173\u8054 Thread\uFF0C\u4E0D\u8868\u793A\u95EE\u9898\u76F4\u63A5\u5173\u4E8E\u6B64 Entity\u3002</p><!></section>`, 1);
-var root_65 = from_html(`<p class="wh-muted">\u6CA1\u6709\u6709\u5750\u6807\u7684\u76F8\u5173 Event \u5730\u70B9\u3002</p>`);
-var root_66 = from_html(`<section class="wh-card"><h3>Entity Map</h3><!><!></section>`);
-var root_67 = from_html(`<section class="wh-card"><h3>Entity Graph</h3><!><button>\u6253\u5F00\u4EA4\u4E92\u56FE\u8C31 \u2192</button></section>`);
-var root_68 = from_html(`<section class="wh-content wh-detail"><div class="wh-section-bar"><div><button>\u2190 \u8FD4\u56DE</button><h2> </h2><span class="wh-badge"> </span></div><button>\u67E5\u770B Chronicle \u8BB0\u5F55</button></div><div class="wh-meta"> </div><div class="wh-tabs"></div><!></section>`);
-var root_69 = from_html(`<div class="wh-empty">\u5F53\u524D\u8303\u56F4\u6CA1\u6709\u5DF2\u5730\u7406\u7F16\u7801\u7684 Event\u3002Chronicle \u5FEB\u7167\u6CA1\u6709 Event \u5730\u70B9\u5750\u6807\uFF1B\u4EC5\u63A5\u53D7\u6709\u660E\u786E\u53D1\u751F\u5730\u8BC1\u636E\u548C\u7CBE\u5EA6\u7684\u5730\u70B9\u3002<button>\u6E05\u9664\u7B5B\u9009</button></div>`);
-var root_70 = from_svg(`<line y1="0" y2="450" class="wh-map-grid"></line>`);
-var root_71 = from_svg(`<line x1="0" x2="900" class="wh-map-grid"></line>`);
-var root_722 = from_svg(`<g role="button" tabindex="0"><circle></circle><text text-anchor="middle" dy="4"> </text></g>`);
-var root_732 = from_html(`<div class="wh-map"><svg viewBox="0 0 900 450" role="img" aria-label="\u5730\u7406\u4E8B\u4EF6\u5206\u5E03"><rect x="0" y="0" width="900" height="450" class="wh-map-bg"></rect><g><path class="wh-world-shape"></path><!><!><!></g></svg><p class="wh-muted">\u7ECF\u7EAC\u7F51\u4E0E\u5750\u6807\u6765\u81EA\u672C\u5730\u8BFB\u6A21\u578B\u3002\u5706\u70B9\u805A\u5408\u968F\u7F29\u653E\u53D8\u5316\uFF1B\u5730\u70B9\u7CBE\u5EA6\u89C1\u68C0\u67E5\u5668\u3002</p></div>`);
-var root_74 = from_html(`<section class="wh-content wh-wide"><div class="wh-section-bar"><h2>Map <small> </small></h2><div><label>\u6A21\u5F0F <select><option>Events</option><option>Threads</option><option>Entities</option></select></label><button>\uFF0B</button><button>\uFF0D</button><button>\u91CD\u7F6E</button></div></div><!></section>`);
-var root_75 = from_html(`<label><input type="checkbox"/> </label>`);
-var root_76 = from_html(`<button>\u6E05\u9664\u5173\u7CFB\u8FC7\u6EE4</button>`);
-var root_77 = from_html(` <button>\u91CD\u5EFA\u8BFB\u6A21\u578B</button>`, 1);
-var root_78 = from_html(`\u5F53\u524D\u8303\u56F4\u6CA1\u6709\u5173\u7CFB\u56FE\u8282\u70B9\u3002<button>\u6E05\u9664\u7B5B\u9009</button>`, 1);
-var root_79 = from_html(`<div class="wh-empty"><!></div>`);
-var root_80 = from_svg(`<line class="wh-graph-edge" role="button" tabindex="0"><title> </title></line>`);
-var root_81 = from_svg(`<rect x="-15" y="-10" width="30" height="20" rx="6" class="wh-node-thread"></rect>`);
-var root_822 = from_svg(`<polygon></polygon>`);
-var root_832 = from_svg(`<rect x="-8" y="-10" width="16" height="20" class="wh-node-source"></rect>`);
-var root_84 = from_svg(`<circle r="9" class="wh-node-question"></circle>`);
-var root_85 = from_svg(`<circle></circle>`);
-var root_86 = from_svg(`<text y="-17" text-anchor="middle"> </text>`);
-var root_87 = from_svg(`<g role="button" tabindex="0"><!><!><title> </title></g>`);
-var root_88 = from_html(`<div class="wh-graph"><svg viewBox="0 0 700 500" role="img" aria-label="\u7C7B\u578B\u5316\u5173\u7CFB\u56FE"><!><!></svg></div>`);
-var root_89 = from_html(`<section class="wh-content wh-wide"><div class="wh-section-bar"><h2>Graph <small> </small></h2><div><label>\u9884\u8BBE <select><option>Thread relationships</option><option>Entity network</option><option>Event\u2013Entity network</option><option>Evidence chain</option><option>Full scoped graph</option></select></label><label>\u5E03\u5C40 <select><option>\u5F84\u5411</option><option>\u9759\u6001\u529B\u5BFC\u5411</option><option>\u8BC1\u636E\u5C42\u7EA7</option></select></label><label>\u6DF1\u5EA6 <select><option>1</option><option>2</option><option>3</option></select></label><label>\u8282\u70B9\u4E0A\u9650 <input type="number" min="5" max="150"/></label><button>\u91CD\u7F6E\u5E03\u5C40</button></div></div><div class="wh-graph-controls"><span>\u8282\u70B9</span><!><span>\u5173\u7CFB</span><select><option>\u9009\u62E9\u5173\u7CFB\u7C7B\u578B</option><!></select><!><input type="search" placeholder="\u641C\u7D22\u8282\u70B9"/></div><!></section>`);
-var root_90 = from_html(`<h3> </h3><p> </p><p> </p><p> </p>`, 1);
-var root_91 = from_html(`<button>\u6309 Entity \u7B5B\u9009 Timeline</button><button>\u6309 Entity \u7B5B\u9009 Threads</button>`, 1);
-var root_922 = from_html(`<button>\u67E5\u770B Chronicle \u8BB0\u5F55</button>`);
-var root_93 = from_html(`<h3> </h3><p> </p><!><p> </p><button>\u5C55\u5F00\u90BB\u5C45</button><button>\u9690\u85CF\u8282\u70B9</button><button> </button><button>\u6253\u5F00\u5BF9\u8C61</button><!><!>`, 1);
-var root_94 = from_html(`<span>\u2014</span>`);
-var root_95 = from_html(`<button>\u67E5\u770B\u5730\u70B9\u6765\u6E90</button>`);
-var root_96 = from_html(`<h3> </h3><!><p> </p><p> </p><p> </p><p>Entities\uFF1A</p><div class="wh-chips"></div><!><h4>\u6700\u8FD1 Events</h4><!><button>\u5728 Timeline \u67E5\u770B</button><button>\u7B5B\u9009 Threads</button><button>\u5728 Graph \u67E5\u770B</button><!>`, 1);
-var root_97 = from_html(`<div class="wh-question-preview"> </div>`);
-var root_98 = from_html(`<div class="wh-visual-inspector"><small>VISUAL INSPECTOR</small><h3> </h3><p class="wh-inspector-state"> </p><div class="wh-inspector-switch" aria-label="Thread \u6295\u5F71"></div><!><h4> </h4><!><h4>Latest material change</h4><p> </p><button class="wh-primary-action">\u6253\u5F00 Thread \u2192</button><button>\u6253\u5F00\u6E90\u7B14\u8BB0</button></div>`);
-var root_99 = from_html(`<button>\u5728 Map \u9AD8\u4EAE\u5730\u70B9</button>`);
-var root_100 = from_html(`<h3> </h3><p> </p><p> </p><p> </p><button>\u5728 Thread \u4E2D\u6253\u5F00</button><!><button>\u5728 Graph \u9AD8\u4EAE Event</button>`, 1);
-var root_101 = from_html(`<h3> </h3><p> </p><button>\u6253\u5F00 Entity</button>`, 1);
-var root_1022 = from_html(`<aside><button class="wh-close">\xD7</button><!></aside>`);
-var root_103 = from_html(`<!> <!> <main class="wh-main"><!> <!></main> <footer class="wh-footer"> </footer>`, 1);
-var root_104 = from_html(`<div class="wh-app" tabindex="-1"><header class="wh-header"><div class="wh-brand"><strong>World Historian</strong><span>Dashboard</span></div><nav aria-label="\u4E3B\u5BFC\u822A"></nav><div class="wh-header-actions"><button title="\u540E\u9000">\u2190</button><button title="\u524D\u8FDB">\u2192</button><button title="\u5237\u65B0\u8BFB\u6A21\u578B">\u21BB</button><button title="\u8BBE\u7F6E">\u2699</button></div></header> <div class="wh-toolbar"><div class="wh-search"><input type="search" placeholder="\u641C\u7D22 Thread\u3001Event\u3001Entity  /"/><!></div><button> </button><span class="wh-scope"> </span><button>\u6E05\u9664\u8303\u56F4</button><small> </small></div> <!> <!></div>`);
+var root5 = from_html(`<button> </button>`);
+var root_16 = from_html(`<div class="wh-search-error"> </div>`);
+var root_25 = from_html(`<button><span class="wh-badge"> </span><strong> </strong><small> </small></button>`);
+var root_33 = from_html(`<div class="wh-search-results"><!><!></div>`);
+var root_43 = from_html(`<option> </option>`);
+var root_53 = from_html(`<div class="wh-filters"><label>\u8D77\u59CB <input type="date"/></label><label>\u7ED3\u675F <input type="date"/></label><label>\u72B6\u6001 <select><option>\u5168\u90E8</option><!></select></label><label>\u4F18\u5148\u7EA7 <select><option>\u5168\u90E8</option><!></select></label><label>Thread <select><option>\u5168\u90E8</option><!></select></label><label>Entity <select><option>\u5168\u90E8</option><!></select></label><label>Location <select><option>\u5168\u90E8</option><!></select></label><label>Claim <select><option>\u5168\u90E8</option><!></select></label></div>`);
+var root_63 = from_html(`<div class="wh-alert"> <button>\u6784\u5EFA\u8BFB\u6A21\u578B</button><button>\u8BBE\u7F6E\u8DEF\u5F84</button></div>`);
+var root_73 = from_html(`<div class="wh-alert wh-warning"> <button>\u91CD\u65B0\u6784\u5EFA</button></div>`);
+var root_83 = from_html(`<div class="wh-alert wh-warning">Chronicle \u6570\u636E\u6BD4\u5F53\u524D\u8BFB\u6A21\u578B\u66F4\u65B0\u3002<button>\u5237\u65B0</button></div>`);
+var root_92 = from_html(`<span> </span>`);
+var root_102 = from_html(`<button> <!></button>`);
+var root_112 = from_html(`<div class="wh-empty">\u5F53\u524D\u8303\u56F4\u6CA1\u6709 Thread\u3002<button>\u6E05\u9664\u7B5B\u9009</button></div>`);
+var root_123 = from_html(`<span title="Claim \u5DF2\u4FEE\u6B63">\u21BA \u4FEE\u6B63</span>`);
+var root_132 = from_html(`<span title="Claim \u6709\u4E89\u8BAE">\u21C4 \u4E89\u8BAE</span>`);
+var root_142 = from_html(`<span title="Claim \u5DF2\u64A4\u56DE">\u2298 \u64A4\u56DE</span>`);
+var root_152 = from_html(`<span title="\u672A\u89E3\u95EE\u9898"> </span>`);
+var root_162 = from_html(`<div class="wh-attention"> </div>`);
+var root_17 = from_html(`<div role="button" tabindex="0"><div class="wh-row-head"><strong> </strong><span class="wh-badge"> </span><span class="wh-badge"> </span></div> <p> </p> <div class="wh-motion-signals"><!><span class="wh-change-markers" aria-label="\u72B6\u6001\u53D8\u5316"><!><!><!><!></span></div> <!> <small> </small></div>`);
+var root_18 = from_html(`<aside class="wh-sidebar"><h3>Saved Views</h3><!><p> </p></aside> <section class="wh-content wh-observatory"><div class="wh-observatory-strip" aria-label="\u6700\u8FD1 7 \u5929\u7684\u5386\u53F2\u52A8\u5411"><div><small>Needs Attention</small><strong> </strong><span>\u9700\u8981\u6838\u67E5\u7684 Thread</span></div><div><small>Events \xB7 7d</small><strong> </strong><span>\u6309 Event \u65F6\u95F4\u7EDF\u8BA1</span></div><div><small>Changed Threads \xB7 7d</small><strong> </strong><span>\u6700\u8FD1\u6709\u610F\u4E49\u53D8\u66F4</span></div><div><small>Open Questions</small><strong> </strong><span>\u5F53\u524D\u8303\u56F4\u5185\u672A\u89E3</span></div></div> <div class="wh-section-bar"><h2>Threads in Motion <small> </small></h2><label>\u6392\u5E8F <select><option>\u9700\u5173\u6CE8</option><option>\u6700\u8FD1\u6709\u610F\u4E49\u53D8\u66F4</option><option>\u4F18\u5148\u7EA7</option><option>\u6807\u9898</option><option>\u8DDF\u8E2A\u5F00\u59CB</option></select></label></div> <!> <!></section>`, 1);
+var root_19 = from_html(`<div class="wh-chips">\u5BA1\u8BA1\u5F15\u7528\uFF1A<!></div>`);
+var root_20 = from_html(`<button class="wh-event-link">\u67E5\u770B\u7EFC\u5408\u8BB0\u5F55</button>`);
+var root_21 = from_html(`<div class="wh-attention">\u65B0 Event \u665A\u4E8E\u5F53\u524D\u72B6\u6001\u7EFC\u5408\u3002</div>`);
+var root_222 = from_html(`<p> </p><small> </small><!><!><!>`, 1);
+var root_232 = from_html(`<p class="wh-muted">Chronicle \u5C1A\u65E0 Current State \u8BB0\u5F55\u3002</p>`);
+var root_242 = from_html(`<p class="wh-annotation"> </p><small>\u4EBA\u5DE5\u6279\u6CE8 \xB7 <button>\u6253\u5F00\u6E90\u7B14\u8BB0</button></small>`, 1);
+var root_252 = from_html(`<section class="wh-card"><h3>Manual annotations</h3><!></section>`);
+var root_26 = from_html(`<div class="wh-subrow"><strong> </strong><small> <button class="wh-canonical-link">\u67E5\u770B\u8BB0\u5F55</button></small></div>`);
+var root_27 = from_html(`<p class="wh-muted">\u6CA1\u6709\u672A\u89E3\u95EE\u9898\u3002</p>`);
+var root_28 = from_html(`<button class="wh-event-link">\u67E5\u770B\u56DE\u7B54 Event</button>`);
+var root_29 = from_html(`<div class="wh-subrow"> <!></div>`);
+var root_30 = from_html(`<div class="wh-subrow"><button> </button><small> </small></div>`);
+var root_31 = from_html(`<p class="wh-muted">\u6CA1\u6709\u663E\u5F0F\u5173\u8054\u3002</p>`);
+var root_322 = from_html(`<button class="wh-event-link"> </button>`);
+var root_332 = from_html(`<section class="wh-card"><h3>Current State</h3><!></section><!><section class="wh-card"><h3>Event activity</h3><!><p class="wh-muted">\u6700\u8FD1 12 \u5468\uFF0C\u4EE5\u6700\u65B0 Event \u6240\u5728\u5468\u4E3A\u7EC8\u70B9\uFF1B\u6309\u53D1\u751F\u65E5\u671F\u3001\u6BCF\u5468\u8BA1\u6570\u3002</p><!></section><section class="wh-card"><h3>Open Questions <span> </span></h3><!><details><summary>\u5DF2\u56DE\u7B54\u53CA\u5176\u4ED6\u95EE\u9898</summary><!></details></section><section class="wh-card"><h3>Entities</h3><div class="wh-chips"></div></section><section class="wh-card"><h3>Related Threads</h3><!></section><section class="wh-card"><h3>Recent Events</h3><!></section>`, 1);
+var root_34 = from_html(`<span class="wh-event-state">\u21BA Claim \u4FEE\u6B63</span>`);
+var root_35 = from_html(`<span class="wh-event-state">\u21C4 Claim \u4E89\u8BAE</span>`);
+var root_36 = from_html(`<button class="wh-event-link">\u6253\u5F00\u6E90\u7B14\u8BB0</button>`);
+var root_37 = from_html(`<small> </small>`);
+var root_38 = from_html(`<button class="wh-canonical-link">Source \u8BB0\u5F55</button>`);
+var root_39 = from_html(`<a target="_blank" rel="noopener noreferrer">\u6253\u5F00\u6765\u6E90 \u2197</a>`);
+var root_40 = from_html(`<div class="wh-claim"><strong> </strong> <!><button class="wh-canonical-link">Claim \u8BB0\u5F55</button><small> <!> <!></small></div>`);
+var root_41 = from_html(`<div class="wh-annotation"> <button class="wh-canonical-link">\u6253\u5F00\u6E90\u7B14\u8BB0</button></div>`);
+var root_422 = from_html(`<div class="wh-event-meta">\u270E \u6240\u5C5E Thread \u7684\u4EBA\u5DE5\u6279\u6CE8\uFF08\u4E0D\u5F52\u5C5E\u4E8E\u6B64 Event\uFF09</div><!>`, 1);
+var root_432 = from_html(`<div><span></span><div><button class="wh-title-link"> </button><!><!><small> </small></div><p> </p><details><summary>\u8BC1\u636E\u4E0E\u5143\u6570\u636E</summary><div class="wh-event-meta"> </div><div class="wh-chips"><!><!></div><small> </small><button class="wh-event-link">\u67E5\u770B Chronicle \u8BB0\u5F55</button><!><!><!></details></div>`);
+var root_44 = from_html(`<div class="wh-empty">\u5F53\u524D\u8303\u56F4\u6CA1\u6709 Event\u3002<button>\u6E05\u9664\u7B5B\u9009</button></div>`);
+var root_45 = from_html(`<button class="wh-load-more">\u518D\u52A0\u8F7D 100 \u4E2A Event</button>`);
+var root_46 = from_html(`<!><!>`, 1);
+var root_47 = from_html(`<div class="wh-location-list"></div>`);
+var root_48 = from_html(`<div class="wh-empty">\u6B64 Thread \u6CA1\u6709\u5E26\u660E\u786E\u5750\u6807\u7684 Event \u5730\u70B9\u3002</div>`);
+var root_49 = from_html(`<div class="wh-card"><h3>Thread Map</h3><!><!></div>`);
+var root_50 = from_html(`<div class="wh-card"><h3>Thread Graph</h3><!><button>\u6253\u5F00\u4EA4\u4E92\u56FE\u8C31 \u2192</button><p class="wh-muted">\u4EE5\u5F53\u524D Thread \u4E3A\u4E2D\u5FC3\uFF0C\u9010\u6B65\u5C55\u5F00\u5173\u7CFB\u3002</p></div>`);
+var root_51 = from_html(`<section class="wh-content wh-detail"><div class="wh-section-bar"><div><button>\u2190 \u8FD4\u56DE</button><h2> </h2><span class="wh-badge"> </span><span class="wh-badge"> </span></div><div><button>\u6253\u5F00\u6E90\u7B14\u8BB0</button><button>\u67E5\u770B Chronicle \u8BB0\u5F55</button></div></div><div class="wh-meta"> </div><div class="wh-tabs"></div> <!></section>`);
+var root_522 = from_html(`<button class="wh-period-toggle"> </button>`);
+var root_532 = from_html(`<span class="wh-event-state" title="\u6B64 Event \u6709\u4FEE\u6B63\u3001\u53D6\u4EE3\u6216\u64A4\u56DE\u7684 Claim">\u21BA Claim \u4FEE\u6B63</span>`);
+var root_54 = from_html(`<span class="wh-event-state" title="\u6B64 Event \u6709\u4E89\u8BAE\u7684 Claim">\u21C4 Claim \u4E89\u8BAE</span>`);
+var root_55 = from_html(`<p> </p>`);
+var root_56 = from_html(`<a target="_blank" rel="noopener noreferrer">\u6765\u6E90 \u2197</a>`);
+var root_57 = from_html(`<div class="wh-claim"><strong> </strong> <small> <!></small><button class="wh-canonical-link">Claim \u8BB0\u5F55</button></div>`);
+var root_58 = from_html(`<div class="wh-event-meta"> </div><!>`, 1);
+var root_59 = from_html(`<button>\u5728 Map \u9AD8\u4EAE</button>`);
+var root_60 = from_html(`<div class="wh-timeline-expanded"><div class="wh-event-meta"> </div> <p> </p><div class="wh-chips"><!><!></div> <!> <!><div class="wh-timeline-actions"><button>Event \u8BB0\u5F55</button><button>\u5728 Graph \u9AD8\u4EAE</button><!></div></div>`);
+var root_61 = from_html(`<div role="button" tabindex="0"><div class="wh-time"><span></span> </div><div><strong> </strong><!><!><small> </small><!><small> </small></div><button>\u6253\u5F00 \u2192</button><!></div>`);
+var root_622 = from_html(`<h3 class="wh-group"><!> <span class="wh-density-bar"></span><small> </small></h3><!>`, 1);
+var root_632 = from_html(`<div class="wh-timeline-pager"><button>\u2190 \u8F83\u65B0\u7684 Events</button><span> </span><button>\u8F83\u65E9\u7684 Events \u2192</button></div>`);
+var root_64 = from_html(`<section class="wh-content wh-wide"><div class="wh-section-bar"><h2>Timeline <small> </small></h2><div><div class="wh-range-switch" aria-label="Timeline \u65F6\u95F4\u8303\u56F4"></div><label>\u5206\u7EC4 <select><option>\u65E5\u671F</option><option>Thread</option><option>Entity</option></select></label><label>\u5BC6\u5EA6 <select><option>\u6807\u51C6</option><option>\u7D27\u51D1</option></select></label></div></div><!><!><!></section>`);
+var root_65 = from_html(`<div class="wh-empty">\u5F53\u524D\u8303\u56F4\u6CA1\u6709 Entity\u3002<button>\u6E05\u9664\u7B5B\u9009</button></div>`);
+var root_66 = from_html(`<button class="wh-entity-row"><strong> </strong><span class="wh-badge"> </span><span class="wh-entity-top"> </span><!><small> </small></button>`);
+var root_67 = from_html(`<p class="wh-muted">\u663E\u793A\u524D 500 \u4E2A Entity\u3002\u8BF7\u4F7F\u7528\u641C\u7D22\u7F29\u5C0F\u8303\u56F4\u3002</p>`);
+var root_68 = from_html(`<section class="wh-content wh-wide"><div class="wh-section-bar"><h2>Entities <small> </small></h2><div><label>\u7C7B\u578B <select><option>\u5168\u90E8</option><!></select></label><label>\u6700\u5C11 Events <input type="number" min="0" max="10000"/></label></div></div><!><div class="wh-entity-grid"></div><!></section>`);
+var root_69 = from_html(`<p class="wh-muted">\u6CA1\u6709\u6D3B\u8DC3\u7684\u5173\u8054 Thread\u3002</p>`);
+var root_70 = from_html(`<p class="wh-muted">\u6CA1\u6709\u5173\u8054 Thread\u3002</p>`);
+var root_71 = from_html(`<p class="wh-muted">\u6CA1\u6709\u663E\u5F0F Entity \u5173\u7CFB\u3002</p>`);
+var root_722 = from_html(`<div class="wh-subrow"><strong> </strong><button> </button></div>`);
+var root_732 = from_html(`<section class="wh-card"><h3>Current involvement</h3><!></section><section class="wh-card"><h3>Threads</h3><!></section><section class="wh-card"><h3>Event Activity</h3><!><p class="wh-muted">\u6700\u8FD1 12 \u5468\uFF0C\u4EE5\u6700\u65B0 Event \u6240\u5728\u5468\u4E3A\u7EC8\u70B9\uFF1B\u6309\u53D1\u751F\u65E5\u671F\u3001\u6BCF\u5468\u8BA1\u6570\u3002</p><!></section><section class="wh-card"><h3>Related Entities</h3><div class="wh-chips"></div></section><section class="wh-card"><h3>Thread questions (context)</h3><p class="wh-muted">\u4EE5\u4E0B\u95EE\u9898\u5C5E\u4E8E\u5173\u8054 Thread\uFF0C\u4E0D\u8868\u793A\u95EE\u9898\u76F4\u63A5\u5173\u4E8E\u6B64 Entity\u3002</p><!></section>`, 1);
+var root_74 = from_html(`<section class="wh-card"><h3>Entity Map</h3><!></section>`);
+var root_75 = from_html(`<section class="wh-card"><h3>Entity Graph</h3><!><button>\u6253\u5F00\u4EA4\u4E92\u56FE\u8C31 \u2192</button></section>`);
+var root_76 = from_html(`<section class="wh-content wh-detail"><div class="wh-section-bar"><div><button>\u2190 \u8FD4\u56DE</button><h2> </h2><span class="wh-badge"> </span></div><button>\u67E5\u770B Chronicle \u8BB0\u5F55</button></div><div class="wh-meta"> </div><div class="wh-tabs"></div><!></section>`);
+var root_77 = from_html(`<div class="wh-empty">\u5F53\u524D\u8303\u56F4\u6CA1\u6709\u5DF2\u5730\u7406\u7F16\u7801\u7684 Event\u3002Chronicle \u5FEB\u7167\u6CA1\u6709 Event \u5730\u70B9\u5750\u6807\uFF1B\u4EC5\u63A5\u53D7\u6709\u660E\u786E\u53D1\u751F\u5730\u8BC1\u636E\u548C\u7CBE\u5EA6\u7684\u5730\u70B9\u3002<button>\u6E05\u9664\u7B5B\u9009</button></div>`);
+var root_78 = from_svg(`<line y1="0" y2="450" class="wh-map-grid"></line>`);
+var root_79 = from_svg(`<line x1="0" x2="900" class="wh-map-grid"></line>`);
+var root_80 = from_svg(`<g role="button" tabindex="0"><title> </title><circle></circle><text text-anchor="middle" dy="4"> </text></g>`);
+var root_81 = from_html(`<div class="wh-map"><svg viewBox="0 0 900 450" role="img" aria-label="\u5730\u7406\u4E8B\u4EF6\u5206\u5E03"><rect x="0" y="0" width="900" height="450" class="wh-map-bg"></rect><g><path class="wh-world-shape"></path><!><!><!></g></svg><p class="wh-muted">\u7ECF\u7EAC\u7F51\u4E0E\u5750\u6807\u6765\u81EA\u672C\u5730\u8BFB\u6A21\u578B\u3002\u5706\u70B9\u805A\u5408\u968F\u7F29\u653E\u53D8\u5316\uFF1B\u5730\u70B9\u7CBE\u5EA6\u89C1\u68C0\u67E5\u5668\u3002</p></div>`);
+var root_822 = from_html(`<section class="wh-content wh-wide"><div class="wh-section-bar"><h2>Map <small> </small></h2><div><label>\u6A21\u5F0F <select><option>Events</option><option>Threads</option><option>Entities</option></select></label><button>\uFF0B</button><button>\uFF0D</button><button>\u91CD\u7F6E</button></div></div><!></section>`);
+var root_832 = from_html(`<label><input type="checkbox"/> </label>`);
+var root_84 = from_html(`<button>\u6E05\u9664\u5173\u7CFB\u8FC7\u6EE4</button>`);
+var root_85 = from_html(` <button>\u91CD\u5EFA\u8BFB\u6A21\u578B</button>`, 1);
+var root_86 = from_html(`\u5F53\u524D\u8303\u56F4\u6CA1\u6709\u5173\u7CFB\u56FE\u8282\u70B9\u3002<button>\u6E05\u9664\u7B5B\u9009</button>`, 1);
+var root_87 = from_html(`<div class="wh-empty"><!></div>`);
+var root_88 = from_svg(`<line role="button" tabindex="0"><title> </title></line>`);
+var root_89 = from_svg(`<rect x="-15" y="-10" width="30" height="20" rx="6" class="wh-node-thread"></rect>`);
+var root_90 = from_svg(`<polygon></polygon>`);
+var root_91 = from_svg(`<rect x="-8" y="-10" width="16" height="20" class="wh-node-source"></rect>`);
+var root_922 = from_svg(`<circle r="9" class="wh-node-question"></circle>`);
+var root_93 = from_svg(`<circle></circle>`);
+var root_94 = from_svg(`<text y="-17" text-anchor="middle"> </text>`);
+var root_95 = from_svg(`<g role="button" tabindex="0"><!><!><title> </title></g>`);
+var root_96 = from_html(`<div class="wh-graph"><svg viewBox="0 0 700 500" role="img" aria-label="\u7C7B\u578B\u5316\u5173\u7CFB\u56FE"><!><!></svg></div>`);
+var root_97 = from_html(`<section class="wh-content wh-wide"><div class="wh-section-bar"><h2>Graph <small> </small></h2><div><label>\u9884\u8BBE <select><option>Thread relationships</option><option>Entity network</option><option>Event\u2013Entity network</option><option>Evidence chain</option><option>Full scoped graph</option></select></label><label>\u5E03\u5C40 <select><option>\u5F84\u5411</option><option>\u9759\u6001\u529B\u5BFC\u5411</option><option>\u8BC1\u636E\u5C42\u7EA7</option></select></label><label>\u6DF1\u5EA6 <select><option>1</option><option>2</option><option>3</option></select></label><label>\u8282\u70B9\u4E0A\u9650 <input type="number" min="5" max="150"/></label><button>\u91CD\u7F6E\u5E03\u5C40</button></div></div><div class="wh-graph-controls"><span>\u8282\u70B9</span><!><span>\u5173\u7CFB</span><select><option>\u9009\u62E9\u5173\u7CFB\u7C7B\u578B</option><!></select><!><input type="search" placeholder="\u641C\u7D22\u8282\u70B9"/></div><div class="wh-graph-legend">\u25A2 Thread \xB7 \u25CF Event \xB7 \u25C9 Entity \xB7 \u25C7 Claim / Location \xB7 \u25A1 Source \xB7 \u25CB Question\u3000\u5B9E\u7EBF\uFF1AChronicle Relation\uFF1B\u865A\u7EBF\uFF1A\u6295\u5F71\u7ED3\u6784\u5173\u7CFB</div><!></section>`);
+var root_98 = from_html(`<button>\u67E5\u770B\u5173\u7CFB\u8BB0\u5F55</button>`);
+var root_99 = from_html(`<h3> </h3><p> </p><p> </p><p> </p><p> </p><p>\u5173\u7CFB\u6709\u6548\u671F\uFF1AChronicle \u672A\u63D0\u4F9B</p><!>`, 1);
+var root_100 = from_html(`<p class="wh-graph-summary"> </p>`);
+var root_101 = from_html(`<button>\u6309 Entity \u7B5B\u9009 Timeline</button><button>\u6309 Entity \u7B5B\u9009 Threads</button>`, 1);
+var root_1022 = from_html(`<button>\u67E5\u770B Chronicle \u8BB0\u5F55</button>`);
+var root_103 = from_html(`<h3> </h3><p> </p><!><!><!><!><p> </p><h4>\u5F53\u524D\u56FE\u5185\u5173\u7CFB</h4><!><button> </button><button>\u9690\u85CF\u8282\u70B9</button><button> </button><button>\u6253\u5F00\u5BF9\u8C61</button><!><!>`, 1);
+var root_104 = from_html(`<span>\u2014</span>`);
+var root_105 = from_html(`<button>\u67E5\u770B\u5730\u70B9\u6765\u6E90</button>`);
+var root_106 = from_html(`<h3> </h3><!><p> </p><p> </p><p> </p><p> </p><p>Entities\uFF1A</p><div class="wh-chips"></div><!><h4>\u6700\u8FD1 Events</h4><!><button>\u5728 Timeline \u67E5\u770B</button><button>\u7B5B\u9009 Threads</button><button>\u5728 Graph \u9AD8\u4EAE\u5730\u70B9</button><!>`, 1);
+var root_107 = from_html(`<button class="wh-question-preview"> </button>`);
+var root_108 = from_html(`<div class="wh-visual-inspector"><small>VISUAL INSPECTOR</small><h3> </h3><p class="wh-inspector-state"> </p><div class="wh-inspector-switch" aria-label="Thread \u6295\u5F71"></div><!><h4> </h4><!><h4>Latest material change</h4><p class="wh-latest-change"> </p><button class="wh-primary-action">\u6253\u5F00 Thread \u2192</button><button>\u6253\u5F00\u6E90\u7B14\u8BB0</button></div>`);
+var root_109 = from_html(`<button>\u5728 Map \u9AD8\u4EAE\u5730\u70B9</button>`);
+var root_110 = from_html(`<h3> </h3><p> </p><p> </p><p> </p><button>\u5728 Thread \u4E2D\u6253\u5F00</button><!><button>\u5728 Graph \u9AD8\u4EAE Event</button>`, 1);
+var root_111 = from_html(`<h3> </h3><p> </p><button>\u6253\u5F00 Entity</button>`, 1);
+var root_1122 = from_html(`<aside><button class="wh-close">\xD7</button><!></aside>`);
+var root_113 = from_html(`<!> <!> <main class="wh-main"><!> <!></main> <footer class="wh-footer"> </footer>`, 1);
+var root_114 = from_html(`<div class="wh-app" tabindex="-1"><header class="wh-header"><div class="wh-brand"><strong>World Historian</strong><span>Dashboard</span></div><nav aria-label="\u4E3B\u5BFC\u822A"></nav><div class="wh-header-actions"><button title="\u540E\u9000">\u2190</button><button title="\u524D\u8FDB">\u2192</button><button title="\u5237\u65B0\u8BFB\u6A21\u578B">\u21BB</button><button title="\u8BBE\u7F6E">\u2699</button></div></header> <div class="wh-toolbar"><div class="wh-search"><input type="search" placeholder="\u641C\u7D22 Thread\u3001Event\u3001Entity\u3001Claim\u3001Source \u7B49  /"/><!></div><button> </button><span class="wh-scope"> </span><button>\u6E05\u9664\u8303\u56F4</button><small> </small></div> <!> <!></div>`);
 function Dashboard($$anchor, $$props) {
   push($$props, false);
   const visibleThreads = mutable_source();
@@ -7193,6 +7483,7 @@ function Dashboard($$anchor, $$props) {
   const changedCount = mutable_source();
   const openQuestionCount = mutable_source();
   const visibleEvents = mutable_source();
+  const timelineGroups = mutable_source();
   const visibleEntities = mutable_source();
   const currentThread = mutable_source();
   const currentEntity = mutable_source();
@@ -7204,13 +7495,13 @@ function Dashboard($$anchor, $$props) {
   const inspectedEvent = mutable_source();
   const inspectedThread = mutable_source();
   const inspectedEntity = mutable_source();
-  const searchResults = mutable_source();
   let repository = prop($$props, "repository", 8);
   let error = prop($$props, "error", 8, "");
   let stale = prop($$props, "stale", 8, false);
   let refresh = prop($$props, "refresh", 8);
   let openNote = prop($$props, "openNote", 8);
   let openCanonical = prop($$props, "openCanonical", 8);
+  let searchAll = prop($$props, "searchAll", 8);
   let settings = prop($$props, "settings", 8);
   const blank = () => ({
     search: "",
@@ -7252,17 +7543,24 @@ function Dashboard($$anchor, $$props) {
   let appRoot = mutable_source();
   onMount(() => get(appRoot)?.focus());
   let searchFocused = mutable_source(false);
+  let searchResults = mutable_source([]);
+  let searchError = mutable_source("");
+  let searchSeq = 0;
+  let searchTimer;
   let history = mutable_source([{ page: "threads", id: "", eventId: "", scrollTop: 0 }]);
   let historyIndex = mutable_source(0);
   let sequence = "";
   let showFilters = mutable_source(false);
   let showInspector = mutable_source(false);
   let zoom = mutable_source(1);
+  let mapCenter = mutable_source({ lat: 0, lon: 0 });
   let selectedLocation = mutable_source("");
   let selectedCluster = mutable_source([]);
   let entityKind = mutable_source("");
   let minimumActivity = mutable_source(0);
-  let timelineLimit = mutable_source(300);
+  let timelineStart = mutable_source(0);
+  const timelineWindow = 300;
+  let periodStates = /* @__PURE__ */ new Map();
   let threadEventLimit = mutable_source(100);
   let expandedEvents = mutable_source(/* @__PURE__ */ new Set());
   let graphRefresh = mutable_source(0);
@@ -7344,6 +7642,7 @@ function Dashboard($$anchor, $$props) {
   }
   function setScope(key2, value) {
     set(scope, { ...get(scope), [key2]: value });
+    set(timelineStart, 0);
   }
   function setTimeRange(value) {
     set(timeRange, value);
@@ -7357,7 +7656,7 @@ function Dashboard($$anchor, $$props) {
       from: days ? new Date(Date.now() - (days - 1) * 864e5).toISOString().slice(0, 10) : "",
       to: ""
     });
-    set(timelineLimit, 300);
+    set(timelineStart, 0);
   }
   function timeNumber(value) {
     return value ? Date.parse(value) || 0 : 0;
@@ -7366,6 +7665,7 @@ function Dashboard($$anchor, $$props) {
     set(scope, blank());
     set(saved, "Recently Changed");
     set(timeRange, "All");
+    set(timelineStart, 0);
   }
   function applySaved(name) {
     set(saved, name);
@@ -7399,14 +7699,56 @@ function Dashboard($$anchor, $$props) {
     return repository()?.entityById.get(id)?.name || id;
   }
   function openEvent(e) {
-    navigate("thread", e.thread_ids[0] || "", { eventId: e.event_id });
+    if (e.thread_ids?.length) navigate("thread", e.thread_ids[0], { eventId: e.event_id });
+    else {
+      navigate("timeline");
+      set(inspectorId, e.event_id);
+      set(showInspector, true);
+    }
+  }
+  function updateSearch(value) {
+    setScope("search", value);
+    const sequence2 = ++searchSeq;
+    clearTimeout(searchTimer);
+    set(searchError, "");
+    set(searchResults, value.trim() && repository() && !searchAll() ? repository().search(value) : []);
+    if (value.trim() && repository() && searchAll()) searchTimer = setTimeout(
+      () => searchAll()(value).then((hits) => {
+        if (sequence2 === searchSeq) set(searchResults, hits);
+      }).catch(() => {
+        if (sequence2 === searchSeq) set(searchError, "\u641C\u7D22\u7D22\u5F15\u4E0D\u53EF\u7528\uFF0C\u8BF7\u5237\u65B0\u8BFB\u6A21\u578B");
+      }),
+      180
+    );
   }
   function openSearchHit(hit) {
     set(searchFocused, false);
+    searchSeq++;
+    clearTimeout(searchTimer);
     set(scope, { ...get(scope), search: "" });
+    set(searchResults, []);
+    set(searchError, "");
     if (hit.type === "thread") navigate("thread", hit.id);
-    else if (hit.type === "event") openEvent(repository().eventById.get(hit.id));
-    else navigate("entity", hit.id);
+    else if (hit.type === "entity") navigate("entity", hit.id);
+    else if (hit.type === "location") showLocation(hit.id);
+    else if (hit.type === "question" && hit.owner_thread_id) {
+      navigate("thread", hit.owner_thread_id);
+      set(threadProjection, "Overview");
+    } else if (hit.type === "event" || hit.owner_event_id) {
+      const event2 = repository().eventById.get(hit.type === "event" ? hit.id : hit.owner_event_id);
+      if (event2) {
+        openEvent(event2);
+        set(threadProjection, "Timeline");
+      } else openCanonical()({
+        kind: "chronicle",
+        table: hit.type === "question" ? "open_questions" : hit.type + "s",
+        id: hit.id
+      });
+    } else openCanonical()({
+      kind: "chronicle",
+      table: hit.type === "question" ? "open_questions" : hit.type + "s",
+      id: hit.id
+    });
   }
   function inspectEvent(id) {
     set(inspectorId, id);
@@ -7472,37 +7814,41 @@ function Dashboard($$anchor, $$props) {
   }
   function scopedGraph(_scope, _depth, _maxNodes, _selectedNode, _nodeTypes, _edgeTypes, _hidden, _expanded, _refresh, _preset, _localContext) {
     if (repository().graphFault) return { nodes: [], edges: [] };
-    const scopedEvents = repository().filteredEvents(get(scope));
-    const eventIds = new Set(scopedEvents.map((e) => e.event_id));
+    const unrestricted = !Object.values(get(scope)).some(Boolean);
+    const scopedEvents = unrestricted ? [] : repository().filteredEvents(get(scope));
+    const eventIds = unrestricted ? null : new Set(scopedEvents.map((e) => e.event_id));
     const threadIds = new Set(repository().filteredThreads(get(scope)).map((t) => t.thread_id));
     const entityIds = new Set(repository().filteredEntities(get(scope)).map((e) => e.entity_id));
     const allowed = new Set([...threadIds].map((id) => "thread:" + id));
-    for (const id of eventIds) allowed.add("event:" + id);
+    if (eventIds) for (const id of eventIds) allowed.add("event:" + id);
     for (const id of entityIds) allowed.add("entity:" + id);
-    for (const location of repository().locations) if (location.event_ids.some((id) => eventIds.has(id))) allowed.add("location:" + location.location_id);
+    if (eventIds) {
+      for (const location of repository().locations) if (location.event_ids.some((id) => eventIds.has(id))) allowed.add("location:" + location.location_id);
+    }
     const evidence = get(graphPreset) === "Evidence chain" || get(graphPreset) === "Full scoped graph";
     if (evidence && get(selectedNode)) {
       const node = repository().graphNode(get(selectedNode));
-      if (node?.type === "claim" && eventIds.has(node.owner_event_id) || node?.type === "question" && threadIds.has(node.owner_thread_id) || node?.type === "source" && repository().neighbors(get(selectedNode)).some((edge) => eventIds.has(repository().graphNode(edge.source)?.owner_event_id))) allowed.add(get(selectedNode));
+      if (node?.type === "claim" && (unrestricted || eventIds.has(node.owner_event_id)) || node?.type === "question" && threadIds.has(node.owner_thread_id) || node?.type === "source" && repository().neighbors(get(selectedNode)).some((edge) => unrestricted || eventIds.has(repository().graphNode(edge.source)?.owner_event_id))) allowed.add(get(selectedNode));
     }
     const allows = (edge) => get(graphPreset) === "Full scoped graph" || get(graphPreset) === "Thread relationships" ? get(graphPreset) === "Full scoped graph" || edge.source.startsWith("thread:") || edge.target.startsWith("thread:") : get(graphPreset) === "Entity network" ? edge.source.startsWith("entity:") || edge.target.startsWith("entity:") : get(graphPreset) === "Event\u2013Entity network" ? ["event:", "entity:"].some((prefix) => edge.source.startsWith(prefix)) && ["event:", "entity:"].some((prefix) => edge.target.startsWith(prefix)) : [
       "event_contains_claim",
       "claim_supported_by_source",
       "thread_contains_event"
     ].includes(edge.type);
-    const admissible = (id, edge, from) => allowed.has(id) || evidence && (id.startsWith("claim:") && edge.type === "event_contains_claim" && from.startsWith("event:") || id.startsWith("question:") && edge.type === "question_about_thread" && from.startsWith("thread:") || id.startsWith("source:") && edge.type === "claim_supported_by_source" && from.startsWith("claim:"));
+    const admissible = (id, edge, from) => unrestricted || allowed.has(id) || evidence && (id.startsWith("claim:") && edge.type === "event_contains_claim" && from.startsWith("event:") || id.startsWith("question:") && edge.type === "question_about_thread" && from.startsWith("thread:") || id.startsWith("source:") && edge.type === "claim_supported_by_source" && from.startsWith("claim:"));
     let seeds = [];
     if (get(selectedNode)) seeds = [get(selectedNode)];
     else if (get(localContext)) seeds = [get(localContext).type + ":" + get(localContext).id];
     else if (get(scope).threadId) seeds = ["thread:" + get(scope).threadId];
     else if (get(scope).entityId) seeds = ["entity:" + get(scope).entityId];
     else if (get(graphPreset) === "Entity network") seeds = [...entityIds].slice(0, 8).map((id) => "entity:" + id);
-    else if (get(graphPreset) === "Event\u2013Entity network") seeds = [...eventIds].slice(0, 8).map((id) => "event:" + id);
-    else if (get(graphPreset) === "Evidence chain") seeds = scopedEvents.slice(0, 1).map((event2) => "event:" + event2.event_id);
+    else if (get(graphPreset) === "Event\u2013Entity network") seeds = (unrestricted ? repository().recentEvents(8) : scopedEvents.slice(0, 8)).map((event2) => "event:" + event2.event_id);
+    else if (get(graphPreset) === "Evidence chain") seeds = (unrestricted ? repository().recentEvents(1) : scopedEvents.slice(0, 1)).map((event2) => "event:" + event2.event_id);
     else seeds = [...threadIds].slice(0, 8).map((id) => "thread:" + id);
     if (get(localContext)) allowed.add(get(localContext).type + ":" + get(localContext).id);
+    if (unrestricted && get(selectedNode)) allowed.add(get(selectedNode));
     const cap = Math.max(5, Math.min(150, Number(get(maxNodes)) || 45));
-    const selected = new Set(seeds.filter((id) => repository().graphNode(id) && allowed.has(id) && !get(hidden).has(id)));
+    const selected = new Set(seeds.filter((id) => repository().graphNode(id) && (unrestricted || allowed.has(id)) && !get(hidden).has(id)));
     const edgeMap = /* @__PURE__ */ new Map();
     let frontier = [...selected];
     for (let level = 0; level < get(depth) && frontier.length && selected.size < cap; level++) {
@@ -7521,18 +7867,23 @@ function Dashboard($$anchor, $$props) {
       }
       frontier = next2;
     }
-    for (const from of get(expanded)) if (selected.has(from)) for (const edge of repository().neighbors(from)) {
-      if (!allows(edge)) continue;
-      const candidate = edge.source === from ? edge.target : edge.source;
-      if (!admissible(candidate, edge, from) || get(hidden).has(candidate)) continue;
-      const node = repository().graphNode(candidate);
-      if (node && get(graphNodeTypes).has(node.type) && selected.size < cap) {
-        selected.add(candidate);
-        edgeMap.set(edge.id, edge);
+    for (const from of get(expanded)) if (selected.has(from)) {
+      let added = 0;
+      for (const edge of repository().neighbors(from)) {
+        if (added >= 20) break;
+        if (!allows(edge)) continue;
+        const candidate = edge.source === from ? edge.target : edge.source;
+        if (!admissible(candidate, edge, from) || get(hidden).has(candidate)) continue;
+        const node = repository().graphNode(candidate);
+        if (node && get(graphNodeTypes).has(node.type) && selected.size < cap) {
+          if (!selected.has(candidate)) added++;
+          selected.add(candidate);
+          edgeMap.set(edge.id, edge);
+        }
       }
     }
     const nodes = [...selected].map((id) => ({ id, ...repository().graphNode(id) }));
-    const edges = [...edgeMap.values()].filter((edge) => selected.has(edge.source) && selected.has(edge.target)).slice(0, 300);
+    const edges = [...edgeMap.values()].filter((edge) => selected.has(edge.source) && selected.has(edge.target)).slice(0, 160);
     if (repository().graphFault) return { nodes: [], edges: [] };
     return { nodes, edges };
   }
@@ -7593,18 +7944,24 @@ function Dashboard($$anchor, $$props) {
     return get(graphPositions).get(id) || { x: 350, y: 250 };
   }
   function mapPoints(_scope, _mode) {
+    if (!repository().locations.length) return [];
     const events = repository().filteredEvents(get(scope));
     const eventIds = new Set(events.map((e) => e.event_id));
-    return repository().locations.filter((l) => l.event_ids.some((id) => eventIds.has(id))).map((l) => {
+    return repository().locations.filter((l) => (!get(scope).locationId || l.location_id === get(scope).locationId) && l.event_ids.some((id) => eventIds.has(id))).map((l) => {
       const scoped = l.event_ids.filter((id) => eventIds.has(id));
       const count = get(mapMode) === "threads" ? new Set(scoped.flatMap((id) => repository().eventById.get(id)?.thread_ids || [])).size : get(mapMode) === "entities" ? new Set(scoped.flatMap((id) => repository().eventById.get(id)?.entity_ids || [])).size : scoped.length;
       return { ...l, count };
     });
   }
-  function clusters(points) {
+  function visibleMapPoints(points, scale, center) {
+    if (scale === 1) return points;
+    return points.filter((location) => Math.abs((location.lon - center.lon + 540) % 360 - 180) <= 180 / scale && Math.abs(location.lat - center.lat) <= 90 / scale);
+  }
+  function clusters(points, scale) {
     const cells = /* @__PURE__ */ new Map();
+    const gridFactor = Math.max(1, Math.ceil(Math.sqrt(points.length / 400)));
     for (const l of points) {
-      const cell = get(zoom) <= 2 && l.country_code ? `country:${l.country_code}` : get(zoom) <= 2 && l.region ? `region:${l.region}` : `grid:${Math.round(l.lon / (25 / get(zoom)))}:${Math.round(l.lat / (20 / get(zoom)))}`;
+      const cell = scale >= 4 && points.length <= 400 ? `location:${l.location_id}` : scale <= 2 && l.country_code ? `country:${l.country_code}` : scale <= 2 && l.region ? `region:${l.region}` : `grid:${Math.round(l.lon / (25 * gridFactor / scale))}:${Math.round(l.lat / (20 * gridFactor / scale))}`;
       const group2 = cells.get(cell) || [];
       group2.push(l);
       cells.set(cell, group2);
@@ -7649,7 +8006,7 @@ function Dashboard($$anchor, $$props) {
       "source",
       "question"
     ] : ["thread", "event", "entity", "location"]));
-    set(depth, value === "Evidence chain" ? 3 : 1);
+    set(depth, value === "Evidence chain" || value === "Full scoped graph" ? 3 : 1);
     set(selectedNode, "");
     set(expanded, /* @__PURE__ */ new Set());
   }
@@ -7681,9 +8038,19 @@ function Dashboard($$anchor, $$props) {
     setScope("locationId", id);
     navigate("timeline");
   }
+  function showLocation(id) {
+    setScope("locationId", id);
+    set(selectedLocation, id);
+    set(selectedCluster, [id]);
+    const location = repository().locationById.get(id);
+    if (location) set(mapCenter, { lat: location.lat, lon: location.lon });
+    navigate("map");
+    set(showInspector, true);
+  }
   function mapPick(group2) {
     set(selectedCluster, group2.locations.map((l) => l.location_id));
     set(selectedLocation, group2.locations[0].location_id);
+    set(mapCenter, { lat: group2.lat, lon: group2.lon });
     set(showInspector, true);
   }
   function locationEvents(id) {
@@ -7700,6 +8067,8 @@ function Dashboard($$anchor, $$props) {
     if (!e.location_ids?.length) return;
     set(selectedLocation, e.location_ids[0]);
     set(selectedCluster, [get(selectedLocation)]);
+    const location = repository().locationById.get(get(selectedLocation));
+    if (location) set(mapCenter, { lat: location.lat, lon: location.lon });
     navigate("map");
     set(showInspector, true);
   }
@@ -7717,24 +8086,57 @@ function Dashboard($$anchor, $$props) {
   function formatDate(value) {
     return value ? value.slice(0, 16).replace("T", " ") : "\u2014";
   }
-  function groupedEvents() {
+  function groupedEvents(events, mode, start, limit) {
     const groups = /* @__PURE__ */ new Map();
-    for (const e of get(visibleEvents).slice(0, get(timelineLimit))) {
-      const keys = get(group) === "thread" ? e.thread_ids.map(threadName) : get(group) === "entity" ? e.entity_ids.map(entityName) : [dateOf(e).slice(0, 10)];
+    events.forEach((e, index2) => {
+      const keys = mode === "thread" ? e.thread_ids.map(threadName) : mode === "entity" ? e.entity_ids.map(entityName) : [
+        dateOf(e).slice(0, get(timeRange) === "All" || get(timeRange) === "1y" ? 7 : 10)
+      ];
       for (const key2 of keys.length ? keys : ["\u672A\u5173\u8054"]) {
-        if (!groups.has(key2)) groups.set(key2, []);
-        groups.get(key2).push(e);
+        if (!groups.has(key2)) groups.set(key2, { items: [], count: 0 });
+        const bucket = groups.get(key2);
+        bucket.count++;
+        if (index2 >= start && index2 < start + limit) bucket.items.push(e);
       }
-    }
-    return [...groups.entries()];
+    });
+    return [...groups.entries()].filter(([, bucket]) => bucket.items.length);
+  }
+  function isMonthly() {
+    return get(group) === "date" && (get(timeRange) === "All" || get(timeRange) === "1y");
+  }
+  function periodOpen(name) {
+    return periodStates.has(name) ? periodStates.get(name) : name === get(timelineGroups)[0]?.[0];
+  }
+  function togglePeriod(name) {
+    const next2 = new Map(periodStates);
+    next2.set(name, !periodOpen(name));
+    periodStates = next2;
+  }
+  function timelinePage(start) {
+    set(timelineStart, Math.max(0, Math.min(start, Math.max(0, get(visibleEvents).length - 1))));
+    tick().then(() => {
+      const pane = get(appRoot)?.querySelector(".wh-content");
+      if (pane) pane.scrollTop = 0;
+    });
+  }
+  function openThreadWeek(start) {
+    const end = /* @__PURE__ */ new Date(start + "T00:00:00Z");
+    end.setUTCDate(end.getUTCDate() + 6);
+    set(scope, {
+      ...get(scope),
+      from: start,
+      to: end.toISOString().slice(0, 10)
+    });
+    set(timeRange, "Custom");
+    set(threadProjection, "Timeline");
   }
   function currentProjectionEvents() {
     return get(currentThread) ? (get(currentThread).event_summaries || []).filter((e) => repository().matchesEvent(e, get(scope))) : [];
   }
   let threadProjection = mutable_source("Overview");
   let entityProjection = mutable_source("Overview");
-  legacy_pre_effect(() => (deep_read_state(repository()), get(scope)), () => {
-    set(visibleThreads, repository() ? sortedThreads(repository().filteredThreads(get(scope))) : []);
+  legacy_pre_effect(() => (deep_read_state(repository()), get(page), get(scope)), () => {
+    set(visibleThreads, repository() && get(page) === "threads" ? sortedThreads(repository().filteredThreads(get(scope))) : []);
   });
   legacy_pre_effect(() => (get(page), get(inspectorId), get(visibleThreads)), () => {
     set(homeThreadId, get(page) === "threads" ? get(inspectorId) && get(visibleThreads).some((t) => t.thread_id === get(inspectorId)) ? get(inspectorId) : get(visibleThreads)[0]?.thread_id : "");
@@ -7742,8 +8144,8 @@ function Dashboard($$anchor, $$props) {
   legacy_pre_effect(() => (deep_read_state(repository()), get(homeThreadId)), () => {
     set(homeThread, repository() && get(homeThreadId) ? repository().thread(get(homeThreadId)) : null);
   });
-  legacy_pre_effect(() => (deep_read_state(repository()), get(scope)), () => {
-    set(observatoryEvents, repository() ? repository().filteredEvents({
+  legacy_pre_effect(() => (deep_read_state(repository()), get(page), get(scope)), () => {
+    set(observatoryEvents, repository() && get(page) === "threads" ? repository().filteredEvents({
       ...get(scope),
       from: [
         get(scope).from,
@@ -7761,12 +8163,18 @@ function Dashboard($$anchor, $$props) {
     set(openQuestionCount, get(visibleThreads).reduce((sum, t) => sum + t.open_question_count, 0));
   });
   legacy_pre_effect(() => (deep_read_state(repository()), get(page), get(scope)), () => {
-    set(visibleEvents, repository() && ["timeline", "map", "graph"].includes(get(page)) ? repository().filteredEvents(get(scope)) : []);
+    set(visibleEvents, repository() && get(page) === "timeline" ? repository().filteredEvents(get(scope)) : []);
   });
   legacy_pre_effect(
-    () => (deep_read_state(repository()), get(scope), get(entityKind), get(minimumActivity)),
+    () => (get(page), get(visibleEvents), get(group), get(timelineStart)),
     () => {
-      set(visibleEntities, repository() ? repository().filteredEntities(get(scope)).filter((e) => (!get(entityKind) || e.kind === get(entityKind)) && e.event_count >= get(minimumActivity)) : []);
+      set(timelineGroups, get(page) === "timeline" ? groupedEvents(get(visibleEvents), get(group), get(timelineStart), timelineWindow) : []);
+    }
+  );
+  legacy_pre_effect(
+    () => (deep_read_state(repository()), get(page), get(scope), get(entityKind), get(minimumActivity)),
+    () => {
+      set(visibleEntities, repository() && get(page) === "entities" ? repository().filteredEntities(get(scope)).filter((e) => (!get(entityKind) || e.kind === get(entityKind)) && e.event_count >= get(minimumActivity)) : []);
     }
   );
   legacy_pre_effect(
@@ -7799,8 +8207,8 @@ function Dashboard($$anchor, $$props) {
       set(locationPoints, repository() && (get(page) === "map" || get(page) === "thread" && get(threadProjection) === "Map" || get(page) === "entity" && get(entityProjection) === "Map") ? mapPoints(get(scope), get(mapMode)) : []);
     }
   );
-  legacy_pre_effect(() => (get(locationPoints), get(zoom)), () => {
-    set(markerClusters, clusters(get(locationPoints), get(zoom)));
+  legacy_pre_effect(() => (get(locationPoints), get(zoom), get(mapCenter)), () => {
+    set(markerClusters, clusters(visibleMapPoints(get(locationPoints), get(zoom), get(mapCenter)), get(zoom)));
   });
   legacy_pre_effect(() => get(scope), () => {
     set(scopeCount, Object.values(get(scope)).filter(Boolean).length);
@@ -7817,17 +8225,14 @@ function Dashboard($$anchor, $$props) {
   legacy_pre_effect(() => (deep_read_state(repository()), get(inspectorId)), () => {
     set(inspectedEntity, repository() && get(inspectorId) && repository().entityById.has(get(inspectorId)) ? repository().entity(get(inspectorId)) : null);
   });
-  legacy_pre_effect(() => (deep_read_state(repository()), get(scope)), () => {
-    set(searchResults, repository() && get(scope).search ? repository().search(get(scope).search) : []);
-  });
   legacy_pre_effect_reset();
   init();
-  var div = root_104();
+  var div = root_114();
   event("keydown", $window, keyboard);
   var header = child(div);
   var nav_1 = sibling(child(header));
   each(nav_1, 5, () => navs, index, ($$anchor2, nav) => {
-    var button = root4();
+    var button = root5();
     let classes;
     var text2 = only_child(button, true);
     template_effect(() => {
@@ -7854,22 +8259,35 @@ function Dashboard($$anchor, $$props) {
   bind_this(input, ($$value) => set(searchInput, $$value), () => get(searchInput));
   var node_1 = sibling(input);
   {
-    var consequent = ($$anchor2) => {
-      var div_4 = root_24();
-      each(div_4, 5, () => get(searchResults), index, ($$anchor3, hit) => {
-        var button_5 = root_14();
+    var consequent_1 = ($$anchor2) => {
+      var div_4 = root_33();
+      var node_2 = child(div_4);
+      {
+        var consequent = ($$anchor3) => {
+          var div_5 = root_16();
+          var text_1 = only_child(div_5, true);
+          template_effect(() => set_text(text_1, get(searchError)));
+          append($$anchor3, div_5);
+        };
+        if_block(node_2, ($$render) => {
+          if (get(searchError)) $$render(consequent);
+        });
+      }
+      var node_3 = sibling(node_2);
+      each(node_3, 1, () => get(searchResults), index, ($$anchor3, hit) => {
+        var button_5 = root_25();
         var span = child(button_5);
-        var text_1 = only_child(span, true);
+        var text_2 = only_child(span, true);
         var strong = sibling(span);
-        var text_2 = only_child(strong, true);
+        var text_3 = only_child(strong, true);
         var small = sibling(strong);
-        var text_3 = only_child(small, true);
+        var text_4 = only_child(small, true);
         reset(button_5);
         template_effect(
           ($0) => {
-            set_text(text_1, (get(hit), untrack(() => get(hit).type)));
-            set_text(text_2, (get(hit), untrack(() => get(hit).label)));
-            set_text(text_3, $0);
+            set_text(text_2, (get(hit), untrack(() => get(hit).type)));
+            set_text(text_3, (get(hit), untrack(() => get(hit).label)));
+            set_text(text_4, $0);
           },
           [
             () => (get(hit), untrack(() => get(hit).summary.slice(0, 90)))
@@ -7882,23 +8300,23 @@ function Dashboard($$anchor, $$props) {
       append($$anchor2, div_4);
     };
     if_block(node_1, ($$render) => {
-      if (get(searchFocused), get(searchResults), untrack(() => get(searchFocused) && get(searchResults).length)) $$render(consequent);
+      if (get(searchFocused), get(searchResults), get(searchError), untrack(() => get(searchFocused) && (get(searchResults).length || get(searchError)))) $$render(consequent_1);
     });
   }
   reset(div_3);
   var button_6 = sibling(div_3);
-  var text_4 = only_child(button_6);
+  var text_5 = only_child(button_6);
   var span_1 = sibling(button_6);
-  var text_5 = only_child(span_1);
+  var text_6 = only_child(span_1);
   var button_7 = sibling(span_1);
   var small_1 = sibling(button_7);
-  var text_6 = only_child(small_1, true);
+  var text_7 = only_child(small_1, true);
   reset(div_2);
-  var node_2 = sibling(div_2, 2);
+  var node_4 = sibling(div_2, 2);
   {
-    var consequent_1 = ($$anchor2) => {
-      var div_5 = root_43();
-      var label = child(div_5);
+    var consequent_2 = ($$anchor2) => {
+      var div_6 = root_53();
+      var label = child(div_6);
       var input_1 = sibling(child(label));
       remove_input_defaults(input_1);
       reset(label);
@@ -7910,13 +8328,13 @@ function Dashboard($$anchor, $$props) {
       var select = sibling(child(label_2));
       var option = child(select);
       option.value = option.__value = "";
-      var node_3 = sibling(option);
-      each(node_3, 0, () => ["active", "watching", "dormant", "resolved", "archived"], index, ($$anchor3, s) => {
-        var option_1 = root_33();
-        var text_7 = only_child(option_1, true);
+      var node_5 = sibling(option);
+      each(node_5, 0, () => ["active", "watching", "dormant", "resolved", "archived"], index, ($$anchor3, s) => {
+        var option_1 = root_43();
+        var text_8 = only_child(option_1, true);
         var option_1_value = {};
         template_effect(() => {
-          set_text(text_7, s);
+          set_text(text_8, s);
           if (option_1_value !== (option_1_value = s)) {
             option_1.value = (option_1.__value = option_1_value) ?? "";
           }
@@ -7931,13 +8349,13 @@ function Dashboard($$anchor, $$props) {
       var select_1 = sibling(child(label_3));
       var option_2 = child(select_1);
       option_2.value = option_2.__value = "";
-      var node_4 = sibling(option_2);
-      each(node_4, 0, () => ["high", "normal", "low"], index, ($$anchor3, p) => {
-        var option_3 = root_33();
-        var text_8 = only_child(option_3, true);
+      var node_6 = sibling(option_2);
+      each(node_6, 0, () => ["high", "normal", "low"], index, ($$anchor3, p) => {
+        var option_3 = root_43();
+        var text_9 = only_child(option_3, true);
         var option_3_value = {};
         template_effect(() => {
-          set_text(text_8, p);
+          set_text(text_9, p);
           if (option_3_value !== (option_3_value = p)) {
             option_3.value = (option_3.__value = option_3_value) ?? "";
           }
@@ -7952,18 +8370,18 @@ function Dashboard($$anchor, $$props) {
       var select_2 = sibling(child(label_4));
       var option_4 = child(select_2);
       option_4.value = option_4.__value = "";
-      var node_5 = sibling(option_4);
+      var node_7 = sibling(option_4);
       each(
-        node_5,
+        node_7,
         1,
         () => (deep_read_state(repository()), untrack(() => repository()?.threads || [])),
         index,
         ($$anchor3, t) => {
-          var option_5 = root_33();
-          var text_9 = only_child(option_5, true);
+          var option_5 = root_43();
+          var text_10 = only_child(option_5, true);
           var option_5_value = {};
           template_effect(() => {
-            set_text(text_9, (get(t), untrack(() => get(t).title)));
+            set_text(text_10, (get(t), untrack(() => get(t).title)));
             if (option_5_value !== (option_5_value = (get(t), untrack(() => get(t).thread_id)))) {
               option_5.value = (option_5.__value = option_5_value) ?? "";
             }
@@ -7979,18 +8397,18 @@ function Dashboard($$anchor, $$props) {
       var select_3 = sibling(child(label_5));
       var option_6 = child(select_3);
       option_6.value = option_6.__value = "";
-      var node_6 = sibling(option_6);
+      var node_8 = sibling(option_6);
       each(
-        node_6,
+        node_8,
         1,
         () => (deep_read_state(repository()), untrack(() => repository()?.entities || [])),
         index,
         ($$anchor3, e) => {
-          var option_7 = root_33();
-          var text_10 = only_child(option_7, true);
+          var option_7 = root_43();
+          var text_11 = only_child(option_7, true);
           var option_7_value = {};
           template_effect(() => {
-            set_text(text_10, (get(e), untrack(() => get(e).name)));
+            set_text(text_11, (get(e), untrack(() => get(e).name)));
             if (option_7_value !== (option_7_value = (get(e), untrack(() => get(e).entity_id)))) {
               option_7.value = (option_7.__value = option_7_value) ?? "";
             }
@@ -8006,18 +8424,18 @@ function Dashboard($$anchor, $$props) {
       var select_4 = sibling(child(label_6));
       var option_8 = child(select_4);
       option_8.value = option_8.__value = "";
-      var node_7 = sibling(option_8);
+      var node_9 = sibling(option_8);
       each(
-        node_7,
+        node_9,
         1,
         () => (deep_read_state(repository()), untrack(() => repository()?.locations || [])),
         index,
         ($$anchor3, l) => {
-          var option_9 = root_33();
-          var text_11 = only_child(option_9, true);
+          var option_9 = root_43();
+          var text_12 = only_child(option_9, true);
           var option_9_value = {};
           template_effect(() => {
-            set_text(text_11, (get(l), untrack(() => get(l).name)));
+            set_text(text_12, (get(l), untrack(() => get(l).name)));
             if (option_9_value !== (option_9_value = (get(l), untrack(() => get(l).location_id)))) {
               option_9.value = (option_9.__value = option_9_value) ?? "";
             }
@@ -8033,13 +8451,13 @@ function Dashboard($$anchor, $$props) {
       var select_5 = sibling(child(label_7));
       var option_10 = child(select_5);
       option_10.value = option_10.__value = "";
-      var node_8 = sibling(option_10);
-      each(node_8, 0, () => ["supported", "uncertain", "contested", "superseded"], index, ($$anchor3, s) => {
-        var option_11 = root_33();
-        var text_12 = only_child(option_11, true);
+      var node_10 = sibling(option_10);
+      each(node_10, 0, () => ["supported", "uncertain", "contested", "superseded"], index, ($$anchor3, s) => {
+        var option_11 = root_43();
+        var text_13 = only_child(option_11, true);
         var option_11_value = {};
         template_effect(() => {
-          set_text(text_12, s);
+          set_text(text_13, s);
           if (option_11_value !== (option_11_value = s)) {
             option_11.value = (option_11.__value = option_11_value) ?? "";
           }
@@ -8050,7 +8468,7 @@ function Dashboard($$anchor, $$props) {
       var select_5_value;
       init_select(select_5);
       reset(label_7);
-      reset(div_5);
+      reset(div_6);
       template_effect(() => {
         set_value(input_1, (get(scope), untrack(() => get(scope).from)));
         set_value(input_2, (get(scope), untrack(() => get(scope).to)));
@@ -8087,72 +8505,72 @@ function Dashboard($$anchor, $$props) {
       event("change", select_3, (e) => setScope("entityId", e.currentTarget.value));
       event("change", select_4, (e) => setScope("locationId", e.currentTarget.value));
       event("change", select_5, (e) => setScope("claimState", e.currentTarget.value));
-      append($$anchor2, div_5);
+      append($$anchor2, div_6);
     };
-    if_block(node_2, ($$render) => {
-      if (get(showFilters)) $$render(consequent_1);
+    if_block(node_4, ($$render) => {
+      if (get(showFilters)) $$render(consequent_2);
     });
   }
-  var node_9 = sibling(node_2, 2);
+  var node_11 = sibling(node_4, 2);
   {
-    var consequent_2 = ($$anchor2) => {
-      var div_6 = root_53();
-      var text_13 = child(div_6);
-      var button_8 = sibling(text_13);
+    var consequent_3 = ($$anchor2) => {
+      var div_7 = root_63();
+      var text_14 = child(div_7);
+      var button_8 = sibling(text_14);
       var button_9 = sibling(button_8);
-      reset(div_6);
-      template_effect(() => set_text(text_13, `\u8BFB\u6A21\u578B\u4E0D\u53EF\u7528\uFF1A${error() ?? ""}`));
+      reset(div_7);
+      template_effect(() => set_text(text_14, `\u8BFB\u6A21\u578B\u4E0D\u53EF\u7528\uFF1A${error() ?? ""}`));
       event("click", button_8, function(...$$args) {
         refresh()?.apply(this, $$args);
       });
       event("click", button_9, function(...$$args) {
         settings()?.apply(this, $$args);
       });
-      append($$anchor2, div_6);
+      append($$anchor2, div_7);
     };
-    var consequent_67 = ($$anchor2) => {
-      var fragment = root_103();
-      var node_10 = first_child(fragment);
-      {
-        var consequent_3 = ($$anchor3) => {
-          var div_7 = root_63();
-          var text_14 = child(div_7, true);
-          var button_10 = sibling(text_14);
-          reset(div_7);
-          template_effect(() => set_text(text_14, (deep_read_state(repository()), untrack(() => repository().warning))));
-          event("click", button_10, function(...$$args) {
-            refresh()?.apply(this, $$args);
-          });
-          append($$anchor3, div_7);
-        };
-        if_block(node_10, ($$render) => {
-          if (deep_read_state(repository()), untrack(() => repository().warning)) $$render(consequent_3);
-        });
-      }
-      var node_11 = sibling(node_10, 2);
+    var consequent_80 = ($$anchor2) => {
+      var fragment = root_113();
+      var node_12 = first_child(fragment);
       {
         var consequent_4 = ($$anchor3) => {
           var div_8 = root_73();
-          var button_11 = sibling(child(div_8));
+          var text_15 = child(div_8, true);
+          var button_10 = sibling(text_15);
           reset(div_8);
-          event("click", button_11, function(...$$args) {
+          template_effect(() => set_text(text_15, (deep_read_state(repository()), untrack(() => repository().warning))));
+          event("click", button_10, function(...$$args) {
             refresh()?.apply(this, $$args);
           });
           append($$anchor3, div_8);
         };
-        if_block(node_11, ($$render) => {
-          if (stale()) $$render(consequent_4);
+        if_block(node_12, ($$render) => {
+          if (deep_read_state(repository()), untrack(() => repository().warning)) $$render(consequent_4);
         });
       }
-      var main = sibling(node_11, 2);
-      var node_12 = child(main);
+      var node_13 = sibling(node_12, 2);
       {
-        var consequent_12 = ($$anchor3) => {
-          var fragment_1 = root_17();
+        var consequent_5 = ($$anchor3) => {
+          var div_9 = root_83();
+          var button_11 = sibling(child(div_9));
+          reset(div_9);
+          event("click", button_11, function(...$$args) {
+            refresh()?.apply(this, $$args);
+          });
+          append($$anchor3, div_9);
+        };
+        if_block(node_13, ($$render) => {
+          if (stale()) $$render(consequent_5);
+        });
+      }
+      var main = sibling(node_13, 2);
+      var node_14 = child(main);
+      {
+        var consequent_13 = ($$anchor3) => {
+          var fragment_1 = root_18();
           var aside = first_child(fragment_1);
-          var node_13 = sibling(child(aside));
+          var node_15 = sibling(child(aside));
           each(
-            node_13,
+            node_15,
             0,
             () => [
               "Attention",
@@ -8166,62 +8584,62 @@ function Dashboard($$anchor, $$props) {
             ],
             index,
             ($$anchor4, view) => {
-              var button_12 = root_92();
+              var button_12 = root_102();
               let classes_1;
-              var text_15 = child(button_12, true);
-              var node_14 = sibling(text_15);
+              var text_16 = child(button_12, true);
+              var node_16 = sibling(text_16);
               {
-                var consequent_5 = ($$anchor5) => {
-                  var span_2 = root_83();
-                  var text_16 = only_child(span_2, true);
-                  template_effect(($0) => set_text(text_16, $0), [
+                var consequent_6 = ($$anchor5) => {
+                  var span_2 = root_92();
+                  var text_17 = only_child(span_2, true);
+                  template_effect(($0) => set_text(text_17, $0), [
                     () => (deep_read_state(repository()), untrack(() => repository().threads.filter((t) => t.attention.required).length))
                   ]);
                   append($$anchor5, span_2);
                 };
-                if_block(node_14, ($$render) => {
-                  if (view === "Attention") $$render(consequent_5);
+                if_block(node_16, ($$render) => {
+                  if (view === "Attention") $$render(consequent_6);
                 });
               }
               reset(button_12);
               template_effect(() => {
                 classes_1 = set_class(button_12, 1, "", null, classes_1, { active: get(saved) === view });
-                set_text(text_15, view);
+                set_text(text_16, view);
               });
               event("click", button_12, () => applySaved(view));
               append($$anchor4, button_12);
             }
           );
-          var p_1 = sibling(node_13);
-          var text_17 = only_child(p_1);
+          var p_1 = sibling(node_15);
+          var text_18 = only_child(p_1);
           reset(aside);
           var section = sibling(aside, 2);
-          var div_9 = child(section);
-          var div_10 = child(div_9);
-          var strong_1 = sibling(child(div_10));
-          var text_18 = only_child(strong_1, true);
-          next();
-          reset(div_10);
-          var div_11 = sibling(div_10);
-          var strong_2 = sibling(child(div_11));
-          var text_19 = only_child(strong_2, true);
+          var div_10 = child(section);
+          var div_11 = child(div_10);
+          var strong_1 = sibling(child(div_11));
+          var text_19 = only_child(strong_1, true);
           next();
           reset(div_11);
           var div_12 = sibling(div_11);
-          var strong_3 = sibling(child(div_12));
-          var text_20 = only_child(strong_3, true);
+          var strong_2 = sibling(child(div_12));
+          var text_20 = only_child(strong_2, true);
           next();
           reset(div_12);
           var div_13 = sibling(div_12);
-          var strong_4 = sibling(child(div_13));
-          var text_21 = only_child(strong_4, true);
+          var strong_3 = sibling(child(div_13));
+          var text_21 = only_child(strong_3, true);
           next();
           reset(div_13);
-          reset(div_9);
-          var div_14 = sibling(div_9, 2);
-          var h2 = child(div_14);
+          var div_14 = sibling(div_13);
+          var strong_4 = sibling(child(div_14));
+          var text_22 = only_child(strong_4, true);
+          next();
+          reset(div_14);
+          reset(div_10);
+          var div_15 = sibling(div_10, 2);
+          var h2 = child(div_15);
           var small_2 = sibling(child(h2));
-          var text_22 = only_child(small_2, true);
+          var text_23 = only_child(small_2, true);
           reset(h2);
           var label_8 = sibling(h2);
           var select_6 = sibling(child(label_8));
@@ -8238,235 +8656,236 @@ function Dashboard($$anchor, $$props) {
           reset(select_6);
           init_select(select_6);
           reset(label_8);
-          reset(div_14);
-          var node_15 = sibling(div_14, 2);
+          reset(div_15);
+          var node_17 = sibling(div_15, 2);
           {
-            var consequent_6 = ($$anchor4) => {
-              var div_15 = root_102();
-              var button_13 = sibling(child(div_15));
-              reset(div_15);
+            var consequent_7 = ($$anchor4) => {
+              var div_16 = root_112();
+              var button_13 = sibling(child(div_16));
+              reset(div_16);
               event("click", button_13, clearScope);
-              append($$anchor4, div_15);
+              append($$anchor4, div_16);
             };
-            if_block(node_15, ($$render) => {
-              if (get(visibleThreads), untrack(() => !get(visibleThreads).length)) $$render(consequent_6);
+            if_block(node_17, ($$render) => {
+              if (get(visibleThreads), untrack(() => !get(visibleThreads).length)) $$render(consequent_7);
             });
           }
-          var node_16 = sibling(node_15, 2);
-          each(node_16, 1, () => get(visibleThreads), index, ($$anchor4, thread) => {
-            var div_16 = root_16();
+          var node_18 = sibling(node_17, 2);
+          each(node_18, 1, () => get(visibleThreads), index, ($$anchor4, thread) => {
+            var div_17 = root_17();
             let classes_2;
-            var div_17 = child(div_16);
-            var strong_5 = child(div_17);
-            var text_23 = only_child(strong_5, true);
+            var div_18 = child(div_17);
+            var strong_5 = child(div_18);
+            var text_24 = only_child(strong_5, true);
             var span_3 = sibling(strong_5);
-            var text_24 = only_child(span_3, true);
+            var text_25 = only_child(span_3, true);
             var span_4 = sibling(span_3);
-            var text_25 = only_child(span_4, true);
-            reset(div_17);
-            var p_2 = sibling(div_17, 2);
-            var text_26 = only_child(p_2, true);
-            var div_18 = sibling(p_2, 2);
-            var node_17 = child(div_18);
-            ActivitySparkline(node_17, {
+            var text_26 = only_child(span_4, true);
+            reset(div_18);
+            var p_2 = sibling(div_18, 2);
+            var text_27 = only_child(p_2, true);
+            var div_19 = sibling(p_2, 2);
+            var node_19 = child(div_19);
+            ActivitySparkline(node_19, {
               get series() {
                 return get(thread), untrack(() => get(thread).activity_series);
               }
             });
-            var span_5 = sibling(node_17);
-            var node_18 = child(span_5);
+            var span_5 = sibling(node_19);
+            var node_20 = child(span_5);
             {
-              var consequent_7 = ($$anchor5) => {
-                var span_6 = root_112();
+              var consequent_8 = ($$anchor5) => {
+                var span_6 = root_123();
                 append($$anchor5, span_6);
               };
               var d_1 = user_derived(() => (get(thread), untrack(() => get(thread).recent_change_types?.includes("claim_corrected"))));
-              if_block(node_18, ($$render) => {
-                if (get(d_1)) $$render(consequent_7);
-              });
-            }
-            var node_19 = sibling(node_18);
-            {
-              var consequent_8 = ($$anchor5) => {
-                var span_7 = root_122();
-                append($$anchor5, span_7);
-              };
-              var d_2 = user_derived(() => (get(thread), untrack(() => get(thread).recent_change_types?.includes("claim_contested"))));
-              if_block(node_19, ($$render) => {
-                if (get(d_2)) $$render(consequent_8);
-              });
-            }
-            var node_20 = sibling(node_19);
-            {
-              var consequent_9 = ($$anchor5) => {
-                var span_8 = root_132();
-                append($$anchor5, span_8);
-              };
-              var d_3 = user_derived(() => (get(thread), untrack(() => get(thread).recent_change_types?.includes("claim_retracted"))));
               if_block(node_20, ($$render) => {
-                if (get(d_3)) $$render(consequent_9);
+                if (get(d_1)) $$render(consequent_8);
               });
             }
             var node_21 = sibling(node_20);
             {
+              var consequent_9 = ($$anchor5) => {
+                var span_7 = root_132();
+                append($$anchor5, span_7);
+              };
+              var d_2 = user_derived(() => (get(thread), untrack(() => get(thread).recent_change_types?.includes("claim_contested"))));
+              if_block(node_21, ($$render) => {
+                if (get(d_2)) $$render(consequent_9);
+              });
+            }
+            var node_22 = sibling(node_21);
+            {
               var consequent_10 = ($$anchor5) => {
-                var span_9 = root_142();
-                var text_27 = only_child(span_9);
-                template_effect(() => set_text(text_27, `\u25CB ${(get(thread), untrack(() => get(thread).open_question_count)) ?? ""} \u95EE\u9898`));
+                var span_8 = root_142();
+                append($$anchor5, span_8);
+              };
+              var d_3 = user_derived(() => (get(thread), untrack(() => get(thread).recent_change_types?.includes("claim_retracted"))));
+              if_block(node_22, ($$render) => {
+                if (get(d_3)) $$render(consequent_10);
+              });
+            }
+            var node_23 = sibling(node_22);
+            {
+              var consequent_11 = ($$anchor5) => {
+                var span_9 = root_152();
+                var text_28 = only_child(span_9);
+                template_effect(() => set_text(text_28, `\u25CB ${(get(thread), untrack(() => get(thread).open_question_count)) ?? ""} \u95EE\u9898`));
                 append($$anchor5, span_9);
               };
-              if_block(node_21, ($$render) => {
-                if (get(thread), untrack(() => get(thread).open_question_count)) $$render(consequent_10);
+              if_block(node_23, ($$render) => {
+                if (get(thread), untrack(() => get(thread).open_question_count)) $$render(consequent_11);
               });
             }
             reset(span_5);
-            reset(div_18);
-            var node_22 = sibling(div_18, 2);
+            reset(div_19);
+            var node_24 = sibling(div_19, 2);
             {
-              var consequent_11 = ($$anchor5) => {
-                var div_19 = root_15();
-                var text_28 = only_child(div_19, true);
-                template_effect(($0) => set_text(text_28, $0), [
+              var consequent_12 = ($$anchor5) => {
+                var div_20 = root_162();
+                var text_29 = only_child(div_20, true);
+                template_effect(($0) => set_text(text_29, $0), [
                   () => (get(thread), untrack(() => get(thread).attention.reasons.map((r) => reasons[r] || r).join("\uFF1B")))
                 ]);
-                append($$anchor5, div_19);
+                append($$anchor5, div_20);
               };
-              if_block(node_22, ($$render) => {
-                if (get(thread), untrack(() => get(thread).attention.required)) $$render(consequent_11);
+              if_block(node_24, ($$render) => {
+                if (get(thread), untrack(() => get(thread).attention.required)) $$render(consequent_12);
               });
             }
-            var small_3 = sibling(node_22, 2);
-            var text_29 = only_child(small_3);
-            reset(div_16);
+            var small_3 = sibling(node_24, 2);
+            var text_30 = only_child(small_3);
+            reset(div_17);
             template_effect(
-              ($0, $1) => {
-                classes_2 = set_class(div_16, 1, "wh-row wh-motion-row", null, classes_2, { selected: get(homeThreadId) === get(thread).thread_id });
-                set_text(text_23, (get(thread), untrack(() => get(thread).title)));
-                set_text(text_24, (get(thread), untrack(() => get(thread).status)));
-                set_text(text_25, (get(thread), untrack(() => get(thread).priority)));
-                set_text(text_26, (get(thread), untrack(() => get(thread).latest_event_summary || "\u5C1A\u65E0 Event")));
-                set_text(text_29, `${$0 ?? ""} \xB7 ${$1 ?? ""}`);
+              ($0, $1, $2) => {
+                classes_2 = set_class(div_17, 1, "wh-row wh-motion-row", null, classes_2, { selected: get(homeThreadId) === get(thread).thread_id });
+                set_text(text_24, (get(thread), untrack(() => get(thread).title)));
+                set_text(text_25, (get(thread), untrack(() => get(thread).status)));
+                set_text(text_26, (get(thread), untrack(() => get(thread).priority)));
+                set_text(text_27, $0);
+                set_text(text_30, `${$1 ?? ""} \xB7 ${$2 ?? ""}`);
               },
               [
+                () => (get(thread), untrack(() => get(thread).latest_event_title || get(thread).latest_event_summary?.slice(0, 100) || "\u5C1A\u65E0 Event")),
                 () => (get(thread), untrack(() => formatDate(get(thread).last_meaningful_change_at))),
                 () => (get(thread), untrack(() => get(thread).top_entity_ids.slice(0, 3).map(entityName).join(" \xB7 ")))
               ]
             );
-            event("keydown", div_16, (e) => e.key === "Enter" && set(inspectorId, get(thread).thread_id));
-            event("click", div_16, () => {
+            event("keydown", div_17, (e) => e.key === "Enter" && set(inspectorId, get(thread).thread_id));
+            event("click", div_17, () => {
               set(inspectorId, get(thread).thread_id);
               set(showInspector, true);
             });
-            event("dblclick", div_16, () => navigate("thread", get(thread).thread_id));
-            append($$anchor4, div_16);
+            event("dblclick", div_17, () => navigate("thread", get(thread).thread_id));
+            append($$anchor4, div_17);
           });
           reset(section);
           template_effect(() => {
-            set_text(text_17, `${(get(visibleThreads), untrack(() => get(visibleThreads).length)) ?? ""} Threads`);
-            set_text(text_18, get(attentionCount));
-            set_text(text_19, (get(observatoryEvents), untrack(() => get(observatoryEvents).length)));
-            set_text(text_20, get(changedCount));
-            set_text(text_21, get(openQuestionCount));
-            set_text(text_22, (get(visibleThreads), untrack(() => get(visibleThreads).length)));
+            set_text(text_18, `${(get(visibleThreads), untrack(() => get(visibleThreads).length)) ?? ""} Threads`);
+            set_text(text_19, get(attentionCount));
+            set_text(text_20, (get(observatoryEvents), untrack(() => get(observatoryEvents).length)));
+            set_text(text_21, get(changedCount));
+            set_text(text_22, get(openQuestionCount));
+            set_text(text_23, (get(visibleThreads), untrack(() => get(visibleThreads).length)));
           });
           bind_select_value(select_6, () => get(sort), ($$value) => set(sort, $$value));
           append($$anchor3, fragment_1);
         };
-        var consequent_29 = ($$anchor3) => {
-          var section_1 = root_46();
-          var div_20 = child(section_1);
-          var div_21 = child(div_20);
-          var button_14 = child(div_21);
+        var consequent_33 = ($$anchor3) => {
+          var section_1 = root_51();
+          var div_21 = child(section_1);
+          var div_22 = child(div_21);
+          var button_14 = child(div_22);
           var h2_1 = sibling(button_14);
-          var text_30 = only_child(h2_1, true);
+          var text_31 = only_child(h2_1, true);
           var span_10 = sibling(h2_1);
-          var text_31 = only_child(span_10, true);
+          var text_32 = only_child(span_10, true);
           var span_11 = sibling(span_10);
-          var text_32 = only_child(span_11, true);
-          reset(div_21);
-          var div_22 = sibling(div_21);
-          var button_15 = child(div_22);
-          var button_16 = sibling(button_15);
+          var text_33 = only_child(span_11, true);
           reset(div_22);
-          reset(div_20);
-          var div_23 = sibling(div_20);
-          var text_33 = only_child(div_23);
-          var div_24 = sibling(div_23);
-          each(div_24, 4, () => ["Overview", "Timeline", "Map", "Graph"], index, ($$anchor4, projection) => {
-            var button_17 = root4();
+          var div_23 = sibling(div_22);
+          var button_15 = child(div_23);
+          var button_16 = sibling(button_15);
+          reset(div_23);
+          reset(div_21);
+          var div_24 = sibling(div_21);
+          var text_34 = only_child(div_24);
+          var div_25 = sibling(div_24);
+          each(div_25, 4, () => ["Overview", "Timeline", "Map", "Graph"], index, ($$anchor4, projection) => {
+            var button_17 = root5();
             let classes_3;
-            var text_34 = only_child(button_17, true);
+            var text_35 = only_child(button_17, true);
             template_effect(() => {
               classes_3 = set_class(button_17, 1, "", null, classes_3, { active: get(threadProjection) === projection });
-              set_text(text_34, projection);
+              set_text(text_35, projection);
             });
             event("click", button_17, () => set(threadProjection, projection));
             append($$anchor4, button_17);
           });
-          reset(div_24);
-          var node_23 = sibling(div_24, 2);
+          reset(div_25);
+          var node_25 = sibling(div_25, 2);
           {
-            var consequent_19 = ($$anchor4) => {
-              var fragment_2 = root_322();
+            var consequent_20 = ($$anchor4) => {
+              var fragment_2 = root_332();
               var section_2 = first_child(fragment_2);
-              var node_24 = sibling(child(section_2));
+              var node_26 = sibling(child(section_2));
               {
-                var consequent_16 = ($$anchor5) => {
-                  var fragment_3 = root_21();
+                var consequent_17 = ($$anchor5) => {
+                  var fragment_3 = root_222();
                   var p_3 = first_child(fragment_3);
-                  var text_35 = only_child(p_3, true);
+                  var text_36 = only_child(p_3, true);
                   var small_4 = sibling(p_3);
-                  var text_36 = only_child(small_4);
-                  var node_25 = sibling(small_4);
+                  var text_37 = only_child(small_4);
+                  var node_27 = sibling(small_4);
                   {
-                    var consequent_13 = ($$anchor6) => {
-                      var div_25 = root_18();
-                      var node_26 = sibling(child(div_25));
+                    var consequent_14 = ($$anchor6) => {
+                      var div_26 = root_19();
+                      var node_28 = sibling(child(div_26));
                       each(
-                        node_26,
+                        node_28,
                         1,
                         () => (get(currentThread), untrack(() => get(currentThread).current_state.source_refs)),
                         index,
                         ($$anchor7, ref) => {
-                          var button_18 = root4();
-                          var text_37 = only_child(button_18, true);
-                          template_effect(() => set_text(text_37, get(ref)));
+                          var button_18 = root5();
+                          var text_38 = only_child(button_18, true);
+                          template_effect(() => set_text(text_38, get(ref)));
                           event("click", button_18, () => repository().eventById.has(get(ref)) ? openEvent(repository().eventById.get(get(ref))) : null);
                           append($$anchor7, button_18);
                         }
                       );
-                      reset(div_25);
-                      append($$anchor6, div_25);
+                      reset(div_26);
+                      append($$anchor6, div_26);
                     };
-                    if_block(node_25, ($$render) => {
-                      if (get(currentThread), untrack(() => get(currentThread).current_state.source_refs?.length)) $$render(consequent_13);
+                    if_block(node_27, ($$render) => {
+                      if (get(currentThread), untrack(() => get(currentThread).current_state.source_refs?.length)) $$render(consequent_14);
                     });
                   }
-                  var node_27 = sibling(node_25);
+                  var node_29 = sibling(node_27);
                   {
-                    var consequent_14 = ($$anchor6) => {
-                      var button_19 = root_19();
+                    var consequent_15 = ($$anchor6) => {
+                      var button_19 = root_20();
                       event("click", button_19, () => openCanonical()(get(currentThread).current_state.canonical_ref));
                       append($$anchor6, button_19);
                     };
-                    if_block(node_27, ($$render) => {
-                      if (get(currentThread), untrack(() => get(currentThread).current_state.canonical_ref)) $$render(consequent_14);
+                    if_block(node_29, ($$render) => {
+                      if (get(currentThread), untrack(() => get(currentThread).current_state.canonical_ref)) $$render(consequent_15);
                     });
                   }
-                  var node_28 = sibling(node_27);
+                  var node_30 = sibling(node_29);
                   {
-                    var consequent_15 = ($$anchor6) => {
-                      var div_26 = root_20();
-                      append($$anchor6, div_26);
+                    var consequent_16 = ($$anchor6) => {
+                      var div_27 = root_21();
+                      append($$anchor6, div_27);
                     };
-                    if_block(node_28, ($$render) => {
-                      if (get(currentThread), untrack(() => get(currentThread).current_state.stale)) $$render(consequent_15);
+                    if_block(node_30, ($$render) => {
+                      if (get(currentThread), untrack(() => get(currentThread).current_state.stale)) $$render(consequent_16);
                     });
                   }
                   template_effect(
                     ($0) => {
-                      set_text(text_35, (get(currentThread), untrack(() => get(currentThread).current_state.text)));
-                      set_text(text_36, `${(get(currentThread), untrack(() => get(currentThread).current_state.provenance)) ?? ""} \xB7 ${$0 ?? ""}${(get(currentThread), untrack(() => get(currentThread).current_state.revision ? ` \xB7 ${get(currentThread).current_state.revision}` : "")) ?? ""}`);
+                      set_text(text_36, (get(currentThread), untrack(() => get(currentThread).current_state.text)));
+                      set_text(text_37, `${(get(currentThread), untrack(() => get(currentThread).current_state.provenance)) ?? ""} \xB7 ${$0 ?? ""}${(get(currentThread), untrack(() => get(currentThread).current_state.revision ? ` \xB7 ${get(currentThread).current_state.revision}` : "")) ?? ""}`);
                     },
                     [
                       () => (get(currentThread), untrack(() => formatDate(get(currentThread).current_state.updated_at)))
@@ -8475,33 +8894,33 @@ function Dashboard($$anchor, $$props) {
                   append($$anchor5, fragment_3);
                 };
                 var alternate = ($$anchor5) => {
-                  var p_4 = root_222();
+                  var p_4 = root_232();
                   append($$anchor5, p_4);
                 };
-                if_block(node_24, ($$render) => {
-                  if (get(currentThread), untrack(() => get(currentThread).current_state?.text)) $$render(consequent_16);
+                if_block(node_26, ($$render) => {
+                  if (get(currentThread), untrack(() => get(currentThread).current_state?.text)) $$render(consequent_17);
                   else $$render(alternate, -1);
                 });
               }
               reset(section_2);
-              var node_29 = sibling(section_2);
+              var node_31 = sibling(section_2);
               {
-                var consequent_17 = ($$anchor5) => {
-                  var section_3 = root_242();
-                  var node_30 = sibling(child(section_3));
+                var consequent_18 = ($$anchor5) => {
+                  var section_3 = root_252();
+                  var node_32 = sibling(child(section_3));
                   each(
-                    node_30,
+                    node_32,
                     1,
                     () => (get(currentThread), untrack(() => get(currentThread).annotations)),
                     index,
                     ($$anchor6, annotation) => {
-                      var fragment_4 = root_232();
+                      var fragment_4 = root_242();
                       var p_5 = first_child(fragment_4);
-                      var text_38 = only_child(p_5, true);
+                      var text_39 = only_child(p_5, true);
                       var small_5 = sibling(p_5);
                       var button_20 = sibling(child(small_5));
                       reset(small_5);
-                      template_effect(() => set_text(text_38, (get(annotation), untrack(() => get(annotation).text))));
+                      template_effect(() => set_text(text_39, (get(annotation), untrack(() => get(annotation).text))));
                       event("click", button_20, () => openNote()(get(annotation).canonical_ref.path));
                       append($$anchor6, fragment_4);
                     }
@@ -8509,45 +8928,57 @@ function Dashboard($$anchor, $$props) {
                   reset(section_3);
                   append($$anchor5, section_3);
                 };
-                if_block(node_29, ($$render) => {
-                  if (get(currentThread), untrack(() => get(currentThread).annotations?.length)) $$render(consequent_17);
+                if_block(node_31, ($$render) => {
+                  if (get(currentThread), untrack(() => get(currentThread).annotations?.length)) $$render(consequent_18);
                 });
               }
-              var section_4 = sibling(node_29);
-              var node_31 = sibling(child(section_4));
-              ActivitySparkline(node_31, {
+              var section_4 = sibling(node_31);
+              var node_33 = sibling(child(section_4));
+              ActivitySparkline(node_33, {
                 get series() {
                   return get(currentThread), untrack(() => get(currentThread).activity_series);
                 },
                 width: 300,
                 height: 64
               });
-              next();
+              var node_34 = sibling(node_33, 2);
+              {
+                let $0 = derived_safe_equal(() => untrack(currentProjectionEvents));
+                ContextCharts(node_34, {
+                  get series() {
+                    return get(currentThread), untrack(() => get(currentThread).activity_series);
+                  },
+                  get events() {
+                    return get($0);
+                  },
+                  openWeek: openThreadWeek
+                });
+              }
               reset(section_4);
               var section_5 = sibling(section_4);
               var h3 = child(section_5);
               var span_12 = sibling(child(h3));
-              var text_39 = only_child(span_12, true);
+              var text_40 = only_child(span_12, true);
               reset(h3);
-              var node_32 = sibling(h3);
+              var node_35 = sibling(h3);
               each(
-                node_32,
+                node_35,
                 1,
                 () => (get(currentThread), untrack(() => get(currentThread).open_questions?.filter((q) => q.state === "open") || [])),
                 index,
                 ($$anchor5, q) => {
-                  var div_27 = root_25();
-                  var strong_6 = child(div_27);
-                  var text_40 = only_child(strong_6, true);
+                  var div_28 = root_26();
+                  var strong_6 = child(div_28);
+                  var text_41 = only_child(strong_6, true);
                   var small_6 = sibling(strong_6);
-                  var text_41 = child(small_6);
-                  var button_21 = sibling(text_41);
+                  var text_42 = child(small_6);
+                  var button_21 = sibling(text_42);
                   reset(small_6);
-                  reset(div_27);
+                  reset(div_28);
                   template_effect(
                     ($0, $1) => {
-                      set_text(text_40, (get(q), untrack(() => get(q).question)));
-                      set_text(text_41, `${(get(q), untrack(() => get(q).state)) ?? ""} \xB7 ${$0 ?? ""} \xB7 \u66F4\u65B0 ${$1 ?? ""} `);
+                      set_text(text_41, (get(q), untrack(() => get(q).question)));
+                      set_text(text_42, `${(get(q), untrack(() => get(q).state)) ?? ""} \xB7 ${$0 ?? ""} \xB7 \u66F4\u65B0 ${$1 ?? ""} `);
                     },
                     [
                       () => (get(q), untrack(() => formatDate(get(q).opened_at))),
@@ -8555,97 +8986,97 @@ function Dashboard($$anchor, $$props) {
                     ]
                   );
                   event("click", button_21, () => openCanonical()(get(q).canonical_ref));
-                  append($$anchor5, div_27);
+                  append($$anchor5, div_28);
                 },
                 ($$anchor5) => {
-                  var p_6 = root_26();
+                  var p_6 = root_27();
                   append($$anchor5, p_6);
                 }
               );
-              var details = sibling(node_32);
-              var node_33 = sibling(child(details));
+              var details = sibling(node_35);
+              var node_36 = sibling(child(details));
               each(
-                node_33,
+                node_36,
                 1,
                 () => (get(currentThread), untrack(() => get(currentThread).open_questions?.filter((q) => q.state !== "open") || [])),
                 index,
                 ($$anchor5, q) => {
-                  var div_28 = root_28();
-                  var text_42 = child(div_28);
-                  var node_34 = sibling(text_42);
+                  var div_29 = root_29();
+                  var text_43 = child(div_29);
+                  var node_37 = sibling(text_43);
                   {
-                    var consequent_18 = ($$anchor6) => {
-                      var button_22 = root_27();
+                    var consequent_19 = ($$anchor6) => {
+                      var button_22 = root_28();
                       event("click", button_22, () => openEvent(repository().eventById.get(get(q).answer_event_id)));
                       append($$anchor6, button_22);
                     };
                     var d_4 = user_derived(() => (get(q), deep_read_state(repository()), untrack(() => get(q).answer_event_id && repository().eventById.has(get(q).answer_event_id))));
-                    if_block(node_34, ($$render) => {
-                      if (get(d_4)) $$render(consequent_18);
+                    if_block(node_37, ($$render) => {
+                      if (get(d_4)) $$render(consequent_19);
                     });
                   }
-                  reset(div_28);
-                  template_effect(() => set_text(text_42, `${(get(q), untrack(() => get(q).question)) ?? ""} \xB7 ${(get(q), untrack(() => get(q).state)) ?? ""}`));
-                  append($$anchor5, div_28);
+                  reset(div_29);
+                  template_effect(() => set_text(text_43, `${(get(q), untrack(() => get(q).question)) ?? ""} \xB7 ${(get(q), untrack(() => get(q).state)) ?? ""}`));
+                  append($$anchor5, div_29);
                 }
               );
               reset(details);
               reset(section_5);
               var section_6 = sibling(section_5);
-              var div_29 = sibling(child(section_6));
+              var div_30 = sibling(child(section_6));
               each(
-                div_29,
+                div_30,
                 5,
                 () => (get(currentThread), untrack(() => get(currentThread).entity_ids || [])),
                 index,
                 ($$anchor5, id) => {
-                  var button_23 = root4();
-                  var text_43 = only_child(button_23, true);
-                  template_effect(($0) => set_text(text_43, $0), [() => (get(id), untrack(() => entityName(get(id))))]);
+                  var button_23 = root5();
+                  var text_44 = only_child(button_23, true);
+                  template_effect(($0) => set_text(text_44, $0), [() => (get(id), untrack(() => entityName(get(id))))]);
                   event("click", button_23, () => navigate("entity", get(id)));
                   append($$anchor5, button_23);
                 }
               );
-              reset(div_29);
+              reset(div_30);
               reset(section_6);
               var section_7 = sibling(section_6);
-              var node_35 = sibling(child(section_7));
+              var node_38 = sibling(child(section_7));
               each(
-                node_35,
+                node_38,
                 1,
                 () => (get(currentThread), untrack(() => get(currentThread).related_threads || [])),
                 index,
                 ($$anchor5, rel) => {
-                  var div_30 = root_29();
-                  var button_24 = child(div_30);
-                  var text_44 = only_child(button_24, true);
+                  var div_31 = root_30();
+                  var button_24 = child(div_31);
+                  var text_45 = only_child(button_24, true);
                   var small_7 = sibling(button_24);
-                  var text_45 = only_child(small_7, true);
-                  reset(div_30);
+                  var text_46 = only_child(small_7, true);
+                  reset(div_31);
                   template_effect(
                     ($0) => {
-                      set_text(text_44, $0);
-                      set_text(text_45, (get(rel), untrack(() => get(rel).type)));
+                      set_text(text_45, $0);
+                      set_text(text_46, (get(rel), untrack(() => get(rel).type)));
                     },
                     [
                       () => (get(rel), untrack(() => threadName(get(rel).thread_id)))
                     ]
                   );
                   event("click", button_24, () => navigate("thread", get(rel).thread_id));
-                  append($$anchor5, div_30);
+                  append($$anchor5, div_31);
                 },
                 ($$anchor5) => {
-                  var p_7 = root_30();
+                  var p_7 = root_31();
                   append($$anchor5, p_7);
                 }
               );
               reset(section_7);
               var section_8 = sibling(section_7);
-              var node_36 = sibling(child(section_8));
-              each(node_36, 1, () => untrack(() => currentProjectionEvents().slice(0, 8)), index, ($$anchor5, e) => {
-                var button_25 = root_31();
-                var text_46 = only_child(button_25);
-                template_effect(($0) => set_text(text_46, `${$0 ?? ""} \xB7 ${(get(e), untrack(() => get(e).title)) ?? ""}`), [() => (get(e), untrack(() => dateLabel(get(e))))]);
+              var node_39 = sibling(child(section_8));
+              each(node_39, 1, () => untrack(() => currentProjectionEvents().slice(0, 8)), index, ($$anchor5, e) => {
+                var button_25 = root_322();
+                var text_47 = only_child(button_25);
+                template_effect(($0) => set_text(text_47, `${$0 ?? ""} \xB7 ${(get(e), untrack(() => get(e).title)) ?? ""}`), [() => (get(e), untrack(() => dateLabel(get(e))))]);
                 event("click", button_25, () => {
                   set(threadProjection, "Timeline");
                   set(eventId, get(e).event_id);
@@ -8653,152 +9084,202 @@ function Dashboard($$anchor, $$props) {
                 append($$anchor5, button_25);
               });
               reset(section_8);
-              template_effect(($0) => set_text(text_39, $0), [
+              template_effect(($0) => set_text(text_40, $0), [
                 () => (get(currentThread), untrack(() => get(currentThread).open_questions?.filter((q) => q.state === "open").length || 0))
               ]);
               append($$anchor4, fragment_2);
             };
-            var consequent_26 = ($$anchor4) => {
-              var fragment_5 = root_41();
-              var node_37 = first_child(fragment_5);
+            var consequent_30 = ($$anchor4) => {
+              var fragment_5 = root_46();
+              var node_40 = first_child(fragment_5);
               each(
-                node_37,
+                node_40,
                 1,
                 () => (get(threadEventLimit), untrack(() => currentProjectionEvents().slice(0, get(threadEventLimit)))),
                 index,
                 ($$anchor5, e) => {
-                  var div_31 = root_38();
+                  var div_32 = root_432();
                   let classes_4;
-                  var span_13 = child(div_31);
+                  var span_13 = child(div_32);
                   let classes_5;
-                  var div_32 = sibling(span_13);
-                  var button_26 = child(div_32);
-                  var text_47 = only_child(button_26, true);
-                  var small_8 = sibling(button_26);
-                  var text_48 = only_child(small_8);
-                  reset(div_32);
-                  var p_8 = sibling(div_32);
-                  var text_49 = only_child(p_8, true);
+                  var div_33 = sibling(span_13);
+                  var button_26 = child(div_33);
+                  var text_48 = only_child(button_26, true);
+                  var node_41 = sibling(button_26);
+                  {
+                    var consequent_21 = ($$anchor6) => {
+                      var span_14 = root_34();
+                      append($$anchor6, span_14);
+                    };
+                    if_block(node_41, ($$render) => {
+                      if (get(e), untrack(() => get(e).has_corrected_claim)) $$render(consequent_21);
+                    });
+                  }
+                  var node_42 = sibling(node_41);
+                  {
+                    var consequent_22 = ($$anchor6) => {
+                      var span_15 = root_35();
+                      append($$anchor6, span_15);
+                    };
+                    if_block(node_42, ($$render) => {
+                      if (get(e), untrack(() => get(e).has_contested_claim)) $$render(consequent_22);
+                    });
+                  }
+                  var small_8 = sibling(node_42);
+                  var text_49 = only_child(small_8);
+                  reset(div_33);
+                  var p_8 = sibling(div_33);
+                  var text_50 = only_child(p_8, true);
                   var details_1 = sibling(p_8);
-                  var div_33 = sibling(child(details_1));
-                  var text_50 = only_child(div_33);
-                  var div_34 = sibling(div_33);
-                  var node_38 = child(div_34);
-                  each(node_38, 1, () => (get(e), untrack(() => get(e).entity_ids)), index, ($$anchor6, id) => {
-                    var button_27 = root4();
-                    var text_51 = only_child(button_27, true);
-                    template_effect(($0) => set_text(text_51, $0), [() => (get(id), untrack(() => entityName(get(id))))]);
+                  var div_34 = sibling(child(details_1));
+                  var text_51 = only_child(div_34);
+                  var div_35 = sibling(div_34);
+                  var node_43 = child(div_35);
+                  each(node_43, 1, () => (get(e), untrack(() => get(e).entity_ids)), index, ($$anchor6, id) => {
+                    var button_27 = root5();
+                    var text_52 = only_child(button_27, true);
+                    template_effect(($0) => set_text(text_52, $0), [() => (get(id), untrack(() => entityName(get(id))))]);
                     event("click", button_27, () => navigate("entity", get(id)));
                     append($$anchor6, button_27);
                   });
-                  var node_39 = sibling(node_38);
-                  each(node_39, 1, () => (get(e), untrack(() => get(e).location_ids)), index, ($$anchor6, id) => {
-                    var button_28 = root4();
-                    var text_52 = only_child(button_28, true);
-                    template_effect(($0) => set_text(text_52, $0), [
+                  var node_44 = sibling(node_43);
+                  each(node_44, 1, () => (get(e), untrack(() => get(e).location_ids)), index, ($$anchor6, id) => {
+                    var button_28 = root5();
+                    var text_53 = only_child(button_28, true);
+                    template_effect(($0) => set_text(text_53, $0), [
                       () => (deep_read_state(repository()), get(id), untrack(() => repository().locationById.get(get(id))?.name || get(id)))
                     ]);
                     event("click", button_28, () => filterLocation(get(id)));
                     append($$anchor6, button_28);
                   });
-                  reset(div_34);
-                  var small_9 = sibling(div_34);
-                  var text_53 = only_child(small_9);
+                  reset(div_35);
+                  var small_9 = sibling(div_35);
+                  var text_54 = only_child(small_9);
                   var button_29 = sibling(small_9);
-                  var node_40 = sibling(button_29);
+                  var node_45 = sibling(button_29);
                   {
-                    var consequent_20 = ($$anchor6) => {
-                      var button_30 = root_332();
+                    var consequent_23 = ($$anchor6) => {
+                      var button_30 = root_36();
                       event("click", button_30, () => openRef(get(e).canonical_ref));
                       append($$anchor6, button_30);
                     };
-                    if_block(node_40, ($$render) => {
-                      if (get(e), untrack(() => get(e).canonical_ref.obsidian_path)) $$render(consequent_20);
+                    if_block(node_45, ($$render) => {
+                      if (get(e), untrack(() => get(e).canonical_ref.obsidian_path)) $$render(consequent_23);
                     });
                   }
-                  var node_41 = sibling(node_40);
+                  var node_46 = sibling(node_45);
                   {
-                    var consequent_24 = ($$anchor6) => {
+                    var consequent_27 = ($$anchor6) => {
                       var fragment_6 = comment();
-                      var node_42 = first_child(fragment_6);
+                      var node_47 = first_child(fragment_6);
                       each(
-                        node_42,
+                        node_47,
                         1,
                         () => (deep_read_state(repository()), get(e), untrack(() => repository().event(get(e).event_id).claims || [])),
                         index,
                         ($$anchor7, claim) => {
-                          var div_35 = root_37();
-                          var strong_7 = child(div_35);
-                          var text_54 = only_child(strong_7);
-                          var text_55 = sibling(strong_7);
-                          var node_43 = sibling(text_55);
+                          var div_36 = root_40();
+                          var strong_7 = child(div_36);
+                          var text_55 = only_child(strong_7);
+                          var text_56 = sibling(strong_7);
+                          var node_48 = sibling(text_56);
                           {
-                            var consequent_21 = ($$anchor8) => {
-                              var small_10 = root_34();
-                              var text_56 = only_child(small_10);
-                              template_effect(() => set_text(text_56, `\u88AB Claim ${(get(claim), untrack(() => get(claim).superseded_by)) ?? ""} \u53D6\u4EE3`));
+                            var consequent_24 = ($$anchor8) => {
+                              var small_10 = root_37();
+                              var text_57 = only_child(small_10);
+                              template_effect(() => set_text(text_57, `\u88AB Claim ${(get(claim), untrack(() => get(claim).superseded_by)) ?? ""} \u53D6\u4EE3`));
                               append($$anchor8, small_10);
                             };
-                            if_block(node_43, ($$render) => {
-                              if (get(claim), untrack(() => get(claim).superseded_by)) $$render(consequent_21);
+                            if_block(node_48, ($$render) => {
+                              if (get(claim), untrack(() => get(claim).superseded_by)) $$render(consequent_24);
                             });
                           }
-                          var button_31 = sibling(node_43);
+                          var button_31 = sibling(node_48);
                           var small_11 = sibling(button_31);
-                          var text_57 = child(small_11);
-                          var node_44 = sibling(text_57);
+                          var text_58 = child(small_11);
+                          var node_49 = sibling(text_58);
                           {
-                            var consequent_22 = ($$anchor8) => {
-                              var button_32 = root_35();
+                            var consequent_25 = ($$anchor8) => {
+                              var button_32 = root_38();
                               event("click", button_32, () => openCanonical()(get(claim).source.canonical_ref));
                               append($$anchor8, button_32);
                             };
-                            if_block(node_44, ($$render) => {
-                              if (get(claim), untrack(() => get(claim).source)) $$render(consequent_22);
+                            if_block(node_49, ($$render) => {
+                              if (get(claim), untrack(() => get(claim).source)) $$render(consequent_25);
                             });
                           }
-                          var node_45 = sibling(node_44, 2);
+                          var node_50 = sibling(node_49, 2);
                           {
-                            var consequent_23 = ($$anchor8) => {
-                              var a_1 = root_36();
+                            var consequent_26 = ($$anchor8) => {
+                              var a_1 = root_39();
                               template_effect(() => set_attribute2(a_1, "href", (get(claim), untrack(() => get(claim).source.url))));
                               append($$anchor8, a_1);
                             };
-                            if_block(node_45, ($$render) => {
-                              if (get(claim), untrack(() => get(claim).source?.url)) $$render(consequent_23);
+                            if_block(node_50, ($$render) => {
+                              if (get(claim), untrack(() => get(claim).source?.url)) $$render(consequent_26);
                             });
                           }
                           reset(small_11);
-                          reset(div_35);
+                          reset(div_36);
                           template_effect(() => {
-                            set_text(text_54, `${(get(claim), untrack(() => stateGlyph[get(claim).state] || "\u25B3")) ?? ""} ${(get(claim), untrack(() => get(claim).state)) ?? ""}`);
-                            set_text(text_55, ` ${(get(claim), untrack(() => get(claim).statement)) ?? ""}`);
-                            set_text(text_57, `${(get(claim), untrack(() => get(claim).source?.publisher || "\u6765\u6E90\u672A\u77E5")) ?? ""} \xB7 ${(get(claim), untrack(() => get(claim).source?.title || "\u6765\u6E90\u7F3A\u5931")) ?? ""} \xB7 ${(get(claim), untrack(() => get(claim).source?.source_kind || "unknown")) ?? ""} \xB7 ${(get(claim), untrack(() => get(claim).source?.published_at || "\u65E5\u671F\u672A\u77E5")) ?? ""} \xB7 ${(get(claim), untrack(() => get(claim).source?.relationship || "\u6765\u6E90")) ?? ""} `);
+                            set_text(text_55, `${(get(claim), untrack(() => stateGlyph[get(claim).state] || "\u25B3")) ?? ""} ${(get(claim), untrack(() => get(claim).state)) ?? ""}`);
+                            set_text(text_56, ` ${(get(claim), untrack(() => get(claim).statement)) ?? ""}`);
+                            set_text(text_58, `${(get(claim), untrack(() => get(claim).source?.publisher || "\u6765\u6E90\u672A\u77E5")) ?? ""} \xB7 ${(get(claim), untrack(() => get(claim).source?.title || "\u6765\u6E90\u7F3A\u5931")) ?? ""} \xB7 ${(get(claim), untrack(() => get(claim).source?.source_kind || "unknown")) ?? ""} \xB7 ${(get(claim), untrack(() => get(claim).source?.published_at || "\u65E5\u671F\u672A\u77E5")) ?? ""} \xB7 ${(get(claim), untrack(() => get(claim).source?.relationship || "\u6765\u6E90")) ?? ""} `);
                           });
                           event("click", button_31, () => openCanonical()(get(claim).canonical_ref));
-                          append($$anchor7, div_35);
+                          append($$anchor7, div_36);
                         }
                       );
                       append($$anchor6, fragment_6);
                     };
                     var d_5 = user_derived(() => (get(expandedEvents), get(e), untrack(() => get(expandedEvents).has(get(e).event_id))));
-                    if_block(node_41, ($$render) => {
-                      if (get(d_5)) $$render(consequent_24);
+                    if_block(node_46, ($$render) => {
+                      if (get(d_5)) $$render(consequent_27);
+                    });
+                  }
+                  var node_51 = sibling(node_46);
+                  {
+                    var consequent_28 = ($$anchor6) => {
+                      var fragment_7 = root_422();
+                      var node_52 = sibling(first_child(fragment_7));
+                      each(
+                        node_52,
+                        1,
+                        () => (get(currentThread), untrack(() => get(currentThread).annotations)),
+                        index,
+                        ($$anchor7, annotation) => {
+                          var div_37 = root_41();
+                          var text_59 = child(div_37, true);
+                          var button_33 = sibling(text_59);
+                          reset(div_37);
+                          template_effect(() => set_text(text_59, (get(annotation), untrack(() => get(annotation).text))));
+                          event("click", button_33, () => openNote()(get(annotation).canonical_ref.path));
+                          append($$anchor7, div_37);
+                        }
+                      );
+                      append($$anchor6, fragment_7);
+                    };
+                    if_block(node_51, ($$render) => {
+                      if (get(currentThread), untrack(() => get(currentThread).annotations?.length)) $$render(consequent_28);
                     });
                   }
                   reset(details_1);
-                  reset(div_31);
+                  reset(div_32);
                   template_effect(
                     ($0, $1) => {
-                      classes_4 = set_class(div_31, 1, "wh-event-card", null, classes_4, { highlight: get(eventId) === get(e).event_id });
-                      classes_5 = set_class(span_13, 1, "wh-detail-time-node", null, classes_5, { approximate: get(e).time_precision !== "day" });
+                      classes_4 = set_class(div_32, 1, "wh-event-card", null, classes_4, { highlight: get(eventId) === get(e).event_id });
+                      classes_5 = set_class(span_13, 1, "wh-detail-time-node", null, classes_5, {
+                        approximate: get(e).time_precision !== "day",
+                        corrected: get(e).has_corrected_claim,
+                        contested: get(e).has_contested_claim
+                      });
                       set_attribute2(span_13, "title", $0);
-                      set_text(text_47, (get(e), untrack(() => get(e).title)));
-                      set_text(text_48, `${$1 ?? ""} \xB7 ${(get(e), untrack(() => get(e).claim_count)) ?? ""} Claims \xB7 ${(get(e), untrack(() => get(e).source_count)) ?? ""} Sources`);
-                      set_text(text_49, (get(e), untrack(() => get(e).summary)));
+                      set_text(text_48, (get(e), untrack(() => get(e).title)));
+                      set_text(text_49, `${$1 ?? ""} \xB7 ${(get(e), untrack(() => get(e).claim_count)) ?? ""} Claims \xB7 ${(get(e), untrack(() => get(e).source_count)) ?? ""} Sources`);
+                      set_text(text_50, (get(e), untrack(() => get(e).summary)));
                       details_1.open = (get(eventId), get(e), untrack(() => get(eventId) === get(e).event_id));
-                      set_text(text_50, `\u53D1\u751F ${(get(e), untrack(() => get(e).occurred_at || "\u672A\u77E5")) ?? ""}\uFF08${(get(e), untrack(() => get(e).time_precision)) ?? ""}\uFF09 \xB7 \u62A5\u9053 ${(get(e), untrack(() => get(e).reported_at || "\u2014")) ?? ""} \xB7 \u9996\u6B21\u89C2\u5BDF ${(get(e), untrack(() => get(e).first_observed_at || "\u2014")) ?? ""} \xB7 \u7F6E\u4FE1\u5EA6 ${(get(e), untrack(() => get(e).confidence)) ?? ""} \xB7 \u72B6\u6001 ${(get(e), untrack(() => get(e).state)) ?? ""}`);
-                      set_text(text_53, `Chronicle: ${(get(e), untrack(() => get(e).event_id)) ?? ""}`);
+                      set_text(text_51, `\u53D1\u751F ${(get(e), untrack(() => get(e).occurred_at || "\u672A\u77E5")) ?? ""}\uFF08${(get(e), untrack(() => get(e).time_precision)) ?? ""}\uFF09 \xB7 \u62A5\u9053 ${(get(e), untrack(() => get(e).reported_at || "\u2014")) ?? ""} \xB7 \u9996\u6B21\u89C2\u5BDF ${(get(e), untrack(() => get(e).first_observed_at || "\u2014")) ?? ""} \xB7 \u7F6E\u4FE1\u5EA6 ${(get(e), untrack(() => get(e).confidence)) ?? ""} \xB7 \u72B6\u6001 ${(get(e), untrack(() => get(e).state)) ?? ""}`);
+                      set_text(text_54, `Chronicle: ${(get(e), untrack(() => get(e).event_id)) ?? ""}`);
                     },
                     [
                       () => (get(e), untrack(() => dateLabel(get(e)))),
@@ -8808,115 +9289,118 @@ function Dashboard($$anchor, $$props) {
                   event("click", button_26, () => inspectEvent(get(e).event_id));
                   event("click", button_29, () => openCanonical()(get(e).canonical_ref));
                   event("toggle", details_1, (ev) => toggleEventDetail(get(e).event_id, ev.currentTarget.open));
-                  append($$anchor5, div_31);
+                  append($$anchor5, div_32);
                 },
                 ($$anchor5) => {
-                  var div_36 = root_39();
-                  var button_33 = sibling(child(div_36));
-                  reset(div_36);
-                  event("click", button_33, clearScope);
-                  append($$anchor5, div_36);
+                  var div_38 = root_44();
+                  var button_34 = sibling(child(div_38));
+                  reset(div_38);
+                  event("click", button_34, clearScope);
+                  append($$anchor5, div_38);
                 }
               );
-              var node_46 = sibling(node_37);
+              var node_53 = sibling(node_40);
               {
-                var consequent_25 = ($$anchor5) => {
-                  var button_34 = root_40();
-                  event("click", button_34, () => set(threadEventLimit, get(threadEventLimit) + 100));
-                  append($$anchor5, button_34);
+                var consequent_29 = ($$anchor5) => {
+                  var button_35 = root_45();
+                  event("click", button_35, () => set(threadEventLimit, get(threadEventLimit) + 100));
+                  append($$anchor5, button_35);
                 };
                 var d_6 = user_derived(() => (get(threadEventLimit), untrack(() => currentProjectionEvents().length > get(threadEventLimit))));
-                if_block(node_46, ($$render) => {
-                  if (get(d_6)) $$render(consequent_25);
+                if_block(node_53, ($$render) => {
+                  if (get(d_6)) $$render(consequent_29);
                 });
               }
               append($$anchor4, fragment_5);
             };
-            var consequent_28 = ($$anchor4) => {
+            var consequent_32 = ($$anchor4) => {
               const localPoints = derived_safe_equal(() => (get(locationPoints), get(currentThread), untrack(() => get(locationPoints).filter((l) => l.thread_ids.includes(get(currentThread).thread_id)))));
-              var div_37 = root_44();
-              var node_47 = sibling(child(div_37));
-              ThreadProjection(node_47, {
+              var div_39 = root_49();
+              var node_54 = sibling(child(div_39));
+              ThreadProjection(node_54, {
                 get thread() {
                   return get(currentThread);
                 },
                 get repository() {
                   return repository();
                 },
+                get scope() {
+                  return get(scope);
+                },
                 projection: "Map",
-                openLocation: (id) => {
-                  setScope("locationId", id);
-                  navigate("map");
-                }
+                openLocation: showLocation
               });
-              var node_48 = sibling(node_47);
+              var node_55 = sibling(node_54);
               {
-                var consequent_27 = ($$anchor5) => {
-                  var div_38 = root_422();
-                  each(div_38, 5, () => get(localPoints), index, ($$anchor6, l) => {
-                    var button_35 = root4();
-                    var text_58 = only_child(button_35);
-                    template_effect(() => set_text(text_58, `${(get(l), untrack(() => get(l).name)) ?? ""} \xB7 ${(get(l), untrack(() => get(l).geo_precision)) ?? ""} \xB7 ${(get(l), untrack(() => get(l).count)) ?? ""} Events`));
-                    event("click", button_35, () => {
+                var consequent_31 = ($$anchor5) => {
+                  var div_40 = root_47();
+                  each(div_40, 5, () => get(localPoints), index, ($$anchor6, l) => {
+                    var button_36 = root5();
+                    var text_60 = only_child(button_36);
+                    template_effect(() => set_text(text_60, `${(get(l), untrack(() => get(l).name)) ?? ""} \xB7 ${(get(l), untrack(() => get(l).geo_precision)) ?? ""} \xB7 ${(get(l), untrack(() => get(l).count)) ?? ""} Events`));
+                    event("click", button_36, () => {
                       set(selectedLocation, get(l).location_id);
                       set(selectedCluster, [get(l).location_id]);
                       set(showInspector, true);
                     });
-                    append($$anchor6, button_35);
+                    append($$anchor6, button_36);
                   });
-                  reset(div_38);
-                  append($$anchor5, div_38);
+                  reset(div_40);
+                  append($$anchor5, div_40);
                 };
                 var alternate_1 = ($$anchor5) => {
-                  var div_39 = root_432();
-                  append($$anchor5, div_39);
+                  var div_41 = root_48();
+                  append($$anchor5, div_41);
                 };
-                if_block(node_48, ($$render) => {
-                  if (deep_read_state(get(localPoints)), untrack(() => get(localPoints).length)) $$render(consequent_27);
+                if_block(node_55, ($$render) => {
+                  if (deep_read_state(get(localPoints)), untrack(() => get(localPoints).length)) $$render(consequent_31);
                   else $$render(alternate_1, -1);
                 });
               }
-              reset(div_37);
-              append($$anchor4, div_37);
+              reset(div_39);
+              append($$anchor4, div_39);
             };
             var alternate_2 = ($$anchor4) => {
-              var div_40 = root_45();
-              var node_49 = sibling(child(div_40));
-              ThreadProjection(node_49, {
+              var div_42 = root_50();
+              var node_56 = sibling(child(div_42));
+              ThreadProjection(node_56, {
                 get thread() {
                   return get(currentThread);
                 },
                 get repository() {
                   return repository();
                 },
+                get scope() {
+                  return get(scope);
+                },
                 projection: "Graph",
                 openEntity: (id) => navigate("entity", id)
               });
-              var button_36 = sibling(node_49);
+              var button_37 = sibling(node_56);
               next();
-              reset(div_40);
-              event("click", button_36, () => {
+              reset(div_42);
+              event("click", button_37, () => {
                 navigate("graph", "", {
                   localContext: { type: "thread", id: get(currentThread).thread_id }
                 });
               });
-              append($$anchor4, div_40);
+              append($$anchor4, div_42);
             };
-            if_block(node_23, ($$render) => {
-              if (get(threadProjection) === "Overview") $$render(consequent_19);
-              else if (get(threadProjection) === "Timeline") $$render(consequent_26, 1);
-              else if (get(threadProjection) === "Map") $$render(consequent_28, 2);
+            if_block(node_25, ($$render) => {
+              if (get(threadProjection) === "Overview") $$render(consequent_20);
+              else if (get(threadProjection) === "Timeline") $$render(consequent_30, 1);
+              else if (get(threadProjection) === "Map") $$render(consequent_32, 2);
               else $$render(alternate_2, -1);
             });
           }
           reset(section_1);
           template_effect(
             ($0, $1) => {
-              set_text(text_30, (get(currentThread), untrack(() => get(currentThread).title)));
-              set_text(text_31, (get(currentThread), untrack(() => get(currentThread).status)));
-              set_text(text_32, (get(currentThread), untrack(() => get(currentThread).priority)));
+              set_text(text_31, (get(currentThread), untrack(() => get(currentThread).title)));
+              set_text(text_32, (get(currentThread), untrack(() => get(currentThread).status)));
+              set_text(text_33, (get(currentThread), untrack(() => get(currentThread).priority)));
               button_15.disabled = (get(currentThread), untrack(() => !get(currentThread).canonical_ref.obsidian_path));
-              set_text(text_33, `\u8DDF\u8E2A\u81EA ${$0 ?? ""} \xB7 \u6700\u8FD1\u6709\u610F\u4E49\u53D8\u66F4 ${$1 ?? ""} \xB7 Chronicle ID ${(get(currentThread), untrack(() => get(currentThread).thread_id)) ?? ""}`);
+              set_text(text_34, `\u8DDF\u8E2A\u81EA ${$0 ?? ""} \xB7 \u6700\u8FD1\u6709\u610F\u4E49\u53D8\u66F4 ${$1 ?? ""} \xB7 Chronicle ID ${(get(currentThread), untrack(() => get(currentThread).thread_id)) ?? ""}`);
             },
             [
               () => (get(currentThread), untrack(() => formatDate(get(currentThread).tracking_since))),
@@ -8928,28 +9412,28 @@ function Dashboard($$anchor, $$props) {
           event("click", button_16, () => openCanonical()(get(currentThread).canonical_ref));
           append($$anchor3, section_1);
         };
-        var consequent_36 = ($$anchor3) => {
-          var section_9 = root_55();
-          var div_41 = child(section_9);
-          var h2_2 = child(div_41);
+        var consequent_45 = ($$anchor3) => {
+          var section_9 = root_64();
+          var div_43 = child(section_9);
+          var h2_2 = child(div_43);
           var small_12 = sibling(child(h2_2));
-          var text_59 = only_child(small_12);
+          var text_61 = only_child(small_12);
           reset(h2_2);
-          var div_42 = sibling(h2_2);
-          var div_43 = child(div_42);
-          each(div_43, 4, () => ["7d", "30d", "90d", "1y", "All", "Custom"], index, ($$anchor4, range) => {
-            var button_37 = root4();
+          var div_44 = sibling(h2_2);
+          var div_45 = child(div_44);
+          each(div_45, 4, () => ["7d", "30d", "90d", "1y", "All", "Custom"], index, ($$anchor4, range) => {
+            var button_38 = root5();
             let classes_6;
-            var text_60 = only_child(button_37, true);
+            var text_62 = only_child(button_38, true);
             template_effect(() => {
-              classes_6 = set_class(button_37, 1, "", null, classes_6, { active: get(timeRange) === range });
-              set_text(text_60, range);
+              classes_6 = set_class(button_38, 1, "", null, classes_6, { active: get(timeRange) === range });
+              set_text(text_62, range);
             });
-            event("click", button_37, () => setTimeRange(range));
-            append($$anchor4, button_37);
+            event("click", button_38, () => setTimeRange(range));
+            append($$anchor4, button_38);
           });
-          reset(div_43);
-          var label_9 = sibling(div_43);
+          reset(div_45);
+          var label_9 = sibling(div_45);
           var select_7 = sibling(child(label_9));
           var option_17 = child(select_7);
           option_17.value = option_17.__value = "date";
@@ -8969,243 +9453,344 @@ function Dashboard($$anchor, $$props) {
           reset(select_8);
           init_select(select_8);
           reset(label_10);
-          reset(div_42);
-          reset(div_41);
-          var node_50 = sibling(div_41);
+          reset(div_44);
+          reset(div_43);
+          var node_57 = sibling(div_43);
           {
-            var consequent_30 = ($$anchor4) => {
-              var div_44 = root_39();
-              var button_38 = sibling(child(div_44));
-              reset(div_44);
-              event("click", button_38, clearScope);
-              append($$anchor4, div_44);
+            var consequent_34 = ($$anchor4) => {
+              var div_46 = root_44();
+              var button_39 = sibling(child(div_46));
+              reset(div_46);
+              event("click", button_39, clearScope);
+              append($$anchor4, div_46);
             };
-            if_block(node_50, ($$render) => {
-              if (get(visibleEvents), untrack(() => !get(visibleEvents).length)) $$render(consequent_30);
+            if_block(node_57, ($$render) => {
+              if (get(visibleEvents), untrack(() => !get(visibleEvents).length)) $$render(consequent_34);
             });
           }
-          var node_51 = sibling(node_50);
-          each(node_51, 1, () => untrack(groupedEvents), index, ($$anchor4, $$item) => {
+          var node_58 = sibling(node_57);
+          each(node_58, 1, () => get(timelineGroups), index, ($$anchor4, $$item) => {
             var $$array = user_derived(() => to_array(get($$item), 2));
             let name = () => get($$array)[0];
-            let items = () => get($$array)[1];
-            var fragment_7 = root_532();
-            var h3_1 = first_child(fragment_7);
-            var text_61 = child(h3_1);
-            var span_14 = sibling(text_61);
-            var small_13 = sibling(span_14);
-            var text_62 = only_child(small_13);
+            let bucket = () => get($$array)[1];
+            var fragment_8 = root_622();
+            var h3_1 = first_child(fragment_8);
+            var node_59 = child(h3_1);
+            {
+              var consequent_35 = ($$anchor5) => {
+                var button_40 = root_522();
+                var text_63 = only_child(button_40);
+                template_effect(
+                  ($0, $1) => {
+                    set_attribute2(button_40, "aria-expanded", $0);
+                    set_text(text_63, `${$1 ?? ""} ${name() ?? ""}`);
+                  },
+                  [
+                    () => (name(), untrack(() => periodOpen(name()))),
+                    () => (name(), untrack(() => periodOpen(name()) ? "\u25BE" : "\u25B8"))
+                  ]
+                );
+                event("click", button_40, () => togglePeriod(name()));
+                append($$anchor5, button_40);
+              };
+              var d_7 = user_derived(() => untrack(isMonthly));
+              var alternate_3 = ($$anchor5) => {
+                var text_64 = text();
+                template_effect(() => set_text(text_64, name()));
+                append($$anchor5, text_64);
+              };
+              if_block(node_59, ($$render) => {
+                if (get(d_7)) $$render(consequent_35);
+                else $$render(alternate_3, -1);
+              });
+            }
+            var span_16 = sibling(node_59, 2);
+            var small_13 = sibling(span_16);
+            var text_65 = only_child(small_13);
             reset(h3_1);
-            var node_52 = sibling(h3_1);
-            each(node_52, 1, items, index, ($$anchor5, e) => {
-              var div_45 = root_522();
-              let classes_7;
-              var div_46 = child(div_45);
-              var span_15 = child(div_46);
-              let classes_8;
-              var text_63 = sibling(span_15, 1, true);
-              reset(div_46);
-              var div_47 = sibling(div_46);
-              var strong_8 = child(div_47);
-              var text_64 = only_child(strong_8, true);
-              var small_14 = sibling(strong_8);
-              var text_65 = only_child(small_14, true);
-              var node_53 = sibling(small_14);
-              {
-                var consequent_31 = ($$anchor6) => {
-                  var p_9 = root_47();
-                  var text_66 = only_child(p_9, true);
-                  template_effect(() => set_text(text_66, (get(e), untrack(() => get(e).summary))));
-                  append($$anchor6, p_9);
-                };
-                if_block(node_53, ($$render) => {
-                  if (get(density) !== "compact") $$render(consequent_31);
-                });
-              }
-              var small_15 = sibling(node_53);
-              var text_67 = only_child(small_15);
-              reset(div_47);
-              var button_39 = sibling(div_47);
-              var node_54 = sibling(button_39);
-              {
-                var consequent_34 = ($$anchor6) => {
-                  const detail = derived_safe_equal(() => (deep_read_state(repository()), get(e), untrack(() => repository().event(get(e).event_id))));
-                  var div_48 = root_51();
-                  var div_49 = child(div_48);
-                  var text_68 = only_child(div_49);
-                  var p_10 = sibling(div_49, 2);
-                  var text_69 = only_child(p_10, true);
-                  var div_50 = sibling(p_10);
-                  var node_55 = child(div_50);
-                  each(node_55, 1, () => (get(e), untrack(() => get(e).entity_ids)), index, ($$anchor7, id) => {
-                    var button_40 = root4();
-                    var text_70 = only_child(button_40, true);
-                    template_effect(($0) => set_text(text_70, $0), [() => (get(id), untrack(() => entityName(get(id))))]);
-                    event("click", button_40, () => navigate("entity", get(id)));
-                    append($$anchor7, button_40);
-                  });
-                  var node_56 = sibling(node_55);
-                  each(node_56, 1, () => (get(e), untrack(() => get(e).location_ids)), index, ($$anchor7, id) => {
-                    var button_41 = root4();
-                    var text_71 = only_child(button_41, true);
-                    template_effect(($0) => set_text(text_71, $0), [
-                      () => (deep_read_state(repository()), get(id), untrack(() => repository().locationById.get(get(id))?.name || get(id)))
-                    ]);
-                    event("click", button_41, () => {
-                      set(selectedLocation, get(id));
-                      set(selectedCluster, [get(id)]);
-                      navigate("map");
-                      set(showInspector, true);
-                    });
-                    append($$anchor7, button_41);
-                  });
-                  reset(div_50);
-                  var node_57 = sibling(div_50, 2);
-                  each(
-                    node_57,
-                    1,
-                    () => (deep_read_state(get(detail)), untrack(() => get(detail).claims || [])),
-                    index,
-                    ($$anchor7, claim) => {
-                      var div_51 = root_49();
-                      var strong_9 = child(div_51);
-                      var text_72 = only_child(strong_9);
-                      var text_73 = sibling(strong_9);
-                      var small_16 = sibling(text_73);
-                      var text_74 = child(small_16);
-                      var node_58 = sibling(text_74);
-                      {
-                        var consequent_32 = ($$anchor8) => {
-                          var a_2 = root_48();
-                          template_effect(() => set_attribute2(a_2, "href", (get(claim), untrack(() => get(claim).source.url))));
-                          append($$anchor8, a_2);
-                        };
-                        if_block(node_58, ($$render) => {
-                          if (get(claim), untrack(() => get(claim).source?.url)) $$render(consequent_32);
-                        });
-                      }
-                      reset(small_16);
-                      var button_42 = sibling(small_16);
-                      reset(div_51);
-                      template_effect(() => {
-                        set_text(text_72, `${(get(claim), untrack(() => stateGlyph[get(claim).state] || "\u25B3")) ?? ""} ${(get(claim), untrack(() => get(claim).state)) ?? ""}`);
-                        set_text(text_73, ` ${(get(claim), untrack(() => get(claim).statement)) ?? ""}`);
-                        set_text(text_74, `${(get(claim), untrack(() => get(claim).source?.publisher || "\u6765\u6E90\u672A\u77E5")) ?? ""} \xB7 ${(get(claim), untrack(() => get(claim).source?.title || "\u6765\u6E90\u7F3A\u5931")) ?? ""} `);
-                      });
-                      event("click", button_42, () => openCanonical()(get(claim).canonical_ref));
-                      append($$anchor7, div_51);
-                    }
-                  );
-                  var div_52 = sibling(node_57, 2);
-                  var button_43 = child(div_52);
-                  var button_44 = sibling(button_43);
-                  var node_59 = sibling(button_44);
+            var node_60 = sibling(h3_1);
+            {
+              var consequent_43 = ($$anchor5) => {
+                var fragment_10 = comment();
+                var node_61 = first_child(fragment_10);
+                each(node_61, 1, () => (bucket(), untrack(() => bucket().items)), index, ($$anchor6, e) => {
+                  var div_47 = root_61();
+                  let classes_7;
+                  var div_48 = child(div_47);
+                  var span_17 = child(div_48);
+                  let classes_8;
+                  var text_66 = sibling(span_17, 1, true);
+                  reset(div_48);
+                  var div_49 = sibling(div_48);
+                  var strong_8 = child(div_49);
+                  var text_67 = only_child(strong_8, true);
+                  var node_62 = sibling(strong_8);
                   {
-                    var consequent_33 = ($$anchor7) => {
-                      var button_45 = root_50();
-                      event("click", button_45, () => showEventMap(get(e)));
-                      append($$anchor7, button_45);
+                    var consequent_36 = ($$anchor7) => {
+                      var span_18 = root_532();
+                      append($$anchor7, span_18);
                     };
-                    if_block(node_59, ($$render) => {
-                      if (get(e), untrack(() => get(e).location_ids.length)) $$render(consequent_33);
+                    if_block(node_62, ($$render) => {
+                      if (get(e), untrack(() => get(e).has_corrected_claim)) $$render(consequent_36);
                     });
                   }
-                  reset(div_52);
-                  reset(div_48);
-                  template_effect(() => {
-                    set_text(text_68, `\u53D1\u751F ${(get(e), untrack(() => get(e).occurred_at || "\u672A\u77E5")) ?? ""}\uFF08${(get(e), untrack(() => get(e).time_precision)) ?? ""}\uFF09 \xB7 \u62A5\u9053 ${(get(e), untrack(() => get(e).reported_at || "\u2014")) ?? ""} \xB7 \u9996\u6B21\u89C2\u5BDF ${(get(e), untrack(() => get(e).first_observed_at || "\u2014")) ?? ""} \xB7 \u72B6\u6001 ${(get(e), untrack(() => get(e).state)) ?? ""}`);
-                    set_text(text_69, (get(e), untrack(() => get(e).summary)));
-                  });
-                  event("click", button_43, () => openCanonical()(get(e).canonical_ref));
-                  event("click", button_44, () => focusGraph("event:" + get(e).event_id));
-                  append($$anchor6, div_48);
-                };
-                if_block(node_54, ($$render) => {
-                  if (get(inspectorId), get(e), untrack(() => get(inspectorId) === get(e).event_id)) $$render(consequent_34);
+                  var node_63 = sibling(node_62);
+                  {
+                    var consequent_37 = ($$anchor7) => {
+                      var span_19 = root_54();
+                      append($$anchor7, span_19);
+                    };
+                    if_block(node_63, ($$render) => {
+                      if (get(e), untrack(() => get(e).has_contested_claim)) $$render(consequent_37);
+                    });
+                  }
+                  var small_14 = sibling(node_63);
+                  var text_68 = only_child(small_14, true);
+                  var node_64 = sibling(small_14);
+                  {
+                    var consequent_38 = ($$anchor7) => {
+                      var p_9 = root_55();
+                      var text_69 = only_child(p_9, true);
+                      template_effect(() => set_text(text_69, (get(e), untrack(() => get(e).summary))));
+                      append($$anchor7, p_9);
+                    };
+                    if_block(node_64, ($$render) => {
+                      if (get(density) !== "compact") $$render(consequent_38);
+                    });
+                  }
+                  var small_15 = sibling(node_64);
+                  var text_70 = only_child(small_15);
+                  reset(div_49);
+                  var button_41 = sibling(div_49);
+                  var node_65 = sibling(button_41);
+                  {
+                    var consequent_42 = ($$anchor7) => {
+                      const detail = derived_safe_equal(() => (deep_read_state(repository()), get(e), untrack(() => repository().event(get(e).event_id))));
+                      var div_50 = root_60();
+                      var div_51 = child(div_50);
+                      var text_71 = only_child(div_51);
+                      var p_10 = sibling(div_51, 2);
+                      var text_72 = only_child(p_10, true);
+                      var div_52 = sibling(p_10);
+                      var node_66 = child(div_52);
+                      each(node_66, 1, () => (get(e), untrack(() => get(e).entity_ids)), index, ($$anchor8, id) => {
+                        var button_42 = root5();
+                        var text_73 = only_child(button_42, true);
+                        template_effect(($0) => set_text(text_73, $0), [() => (get(id), untrack(() => entityName(get(id))))]);
+                        event("click", button_42, () => navigate("entity", get(id)));
+                        append($$anchor8, button_42);
+                      });
+                      var node_67 = sibling(node_66);
+                      each(node_67, 1, () => (get(e), untrack(() => get(e).location_ids)), index, ($$anchor8, id) => {
+                        var button_43 = root5();
+                        var text_74 = only_child(button_43, true);
+                        template_effect(($0) => set_text(text_74, $0), [
+                          () => (deep_read_state(repository()), get(id), untrack(() => repository().locationById.get(get(id))?.name || get(id)))
+                        ]);
+                        event("click", button_43, () => showLocation(get(id)));
+                        append($$anchor8, button_43);
+                      });
+                      reset(div_52);
+                      var node_68 = sibling(div_52, 2);
+                      each(
+                        node_68,
+                        1,
+                        () => (deep_read_state(get(detail)), untrack(() => get(detail).claims || [])),
+                        index,
+                        ($$anchor8, claim) => {
+                          var div_53 = root_57();
+                          var strong_9 = child(div_53);
+                          var text_75 = only_child(strong_9);
+                          var text_76 = sibling(strong_9);
+                          var small_16 = sibling(text_76);
+                          var text_77 = child(small_16);
+                          var node_69 = sibling(text_77);
+                          {
+                            var consequent_39 = ($$anchor9) => {
+                              var a_2 = root_56();
+                              template_effect(() => set_attribute2(a_2, "href", (get(claim), untrack(() => get(claim).source.url))));
+                              append($$anchor9, a_2);
+                            };
+                            if_block(node_69, ($$render) => {
+                              if (get(claim), untrack(() => get(claim).source?.url)) $$render(consequent_39);
+                            });
+                          }
+                          reset(small_16);
+                          var button_44 = sibling(small_16);
+                          reset(div_53);
+                          template_effect(() => {
+                            set_text(text_75, `${(get(claim), untrack(() => stateGlyph[get(claim).state] || "\u25B3")) ?? ""} ${(get(claim), untrack(() => get(claim).state)) ?? ""}`);
+                            set_text(text_76, ` ${(get(claim), untrack(() => get(claim).statement)) ?? ""}`);
+                            set_text(text_77, `${(get(claim), untrack(() => get(claim).source?.publisher || "\u6765\u6E90\u672A\u77E5")) ?? ""} \xB7 ${(get(claim), untrack(() => get(claim).source?.title || "\u6765\u6E90\u7F3A\u5931")) ?? ""} `);
+                          });
+                          event("click", button_44, () => openCanonical()(get(claim).canonical_ref));
+                          append($$anchor8, div_53);
+                        }
+                      );
+                      var node_70 = sibling(node_68, 2);
+                      each(node_70, 1, () => (get(e), untrack(() => get(e).thread_ids)), index, ($$anchor8, ownerId) => {
+                        const owner = derived_safe_equal(() => (deep_read_state(repository()), get(ownerId), untrack(() => repository().thread(get(ownerId)))));
+                        var fragment_11 = comment();
+                        var node_71 = first_child(fragment_11);
+                        {
+                          var consequent_40 = ($$anchor9) => {
+                            var fragment_12 = root_58();
+                            var div_54 = first_child(fragment_12);
+                            var text_78 = only_child(div_54);
+                            var node_72 = sibling(div_54);
+                            each(
+                              node_72,
+                              1,
+                              () => (deep_read_state(get(owner)), untrack(() => get(owner).annotations)),
+                              index,
+                              ($$anchor10, annotation) => {
+                                var div_55 = root_41();
+                                var text_79 = child(div_55, true);
+                                var button_45 = sibling(text_79);
+                                reset(div_55);
+                                template_effect(() => set_text(text_79, (get(annotation), untrack(() => get(annotation).text))));
+                                event("click", button_45, () => openNote()(get(annotation).canonical_ref.path));
+                                append($$anchor10, div_55);
+                              }
+                            );
+                            template_effect(() => set_text(text_78, `\u270E ${(deep_read_state(get(owner)), untrack(() => get(owner).title)) ?? ""} \u7684\u4EBA\u5DE5\u6279\u6CE8\uFF08Thread \u7EA7\u4E0A\u4E0B\u6587\uFF09`));
+                            append($$anchor9, fragment_12);
+                          };
+                          if_block(node_71, ($$render) => {
+                            if (deep_read_state(get(owner)), untrack(() => get(owner).annotations?.length)) $$render(consequent_40);
+                          });
+                        }
+                        append($$anchor8, fragment_11);
+                      });
+                      var div_56 = sibling(node_70);
+                      var button_46 = child(div_56);
+                      var button_47 = sibling(button_46);
+                      var node_73 = sibling(button_47);
+                      {
+                        var consequent_41 = ($$anchor8) => {
+                          var button_48 = root_59();
+                          event("click", button_48, () => showEventMap(get(e)));
+                          append($$anchor8, button_48);
+                        };
+                        if_block(node_73, ($$render) => {
+                          if (get(e), untrack(() => get(e).location_ids.length)) $$render(consequent_41);
+                        });
+                      }
+                      reset(div_56);
+                      reset(div_50);
+                      template_effect(() => {
+                        set_text(text_71, `\u53D1\u751F ${(get(e), untrack(() => get(e).occurred_at || "\u672A\u77E5")) ?? ""}\uFF08${(get(e), untrack(() => get(e).time_precision)) ?? ""}\uFF09 \xB7 \u62A5\u9053 ${(get(e), untrack(() => get(e).reported_at || "\u2014")) ?? ""} \xB7 \u9996\u6B21\u89C2\u5BDF ${(get(e), untrack(() => get(e).first_observed_at || "\u2014")) ?? ""} \xB7 \u72B6\u6001 ${(get(e), untrack(() => get(e).state)) ?? ""}`);
+                        set_text(text_72, (get(e), untrack(() => get(e).summary)));
+                      });
+                      event("click", button_46, () => openCanonical()(get(e).canonical_ref));
+                      event("click", button_47, () => focusGraph("event:" + get(e).event_id));
+                      append($$anchor7, div_50);
+                    };
+                    if_block(node_65, ($$render) => {
+                      if (get(inspectorId), get(e), untrack(() => get(inspectorId) === get(e).event_id)) $$render(consequent_42);
+                    });
+                  }
+                  reset(div_47);
+                  template_effect(
+                    ($0, $1, $2) => {
+                      classes_7 = set_class(div_47, 1, "wh-timeline-row", null, classes_7, { compact: get(density) === "compact" });
+                      classes_8 = set_class(span_17, 1, "wh-time-node", null, classes_8, {
+                        approximate: get(e).time_precision !== "day",
+                        corrected: get(e).has_corrected_claim,
+                        contested: get(e).has_contested_claim
+                      });
+                      set_text(text_66, $0);
+                      set_text(text_67, (get(e), untrack(() => get(e).title)));
+                      set_text(text_68, $1);
+                      set_text(text_70, `${$2 ?? ""} \xB7 ${(get(e), untrack(() => get(e).claim_count)) ?? ""} Claims \xB7 ${(get(e), untrack(() => get(e).source_count)) ?? ""} Sources`);
+                    },
+                    [
+                      () => (get(e), untrack(() => dateLabel(get(e)))),
+                      () => (get(e), untrack(() => get(e).thread_ids.map(threadName).join(" \xB7 "))),
+                      () => (get(e), untrack(() => get(e).entity_ids.slice(0, 4).map(entityName).join(" \xB7 ")))
+                    ]
+                  );
+                  event("click", button_41, stopPropagation(() => openEvent(get(e))));
+                  event("keydown", div_47, (ev) => ev.key === "Enter" && !ev.target.closest(".wh-timeline-expanded") && inspectEvent(get(e).event_id));
+                  event("click", div_47, (ev) => !ev.target.closest(".wh-timeline-expanded") && inspectEvent(get(e).event_id));
+                  append($$anchor6, div_47);
                 });
-              }
-              reset(div_45);
-              template_effect(
-                ($0, $1, $2) => {
-                  classes_7 = set_class(div_45, 1, "wh-timeline-row", null, classes_7, { compact: get(density) === "compact" });
-                  classes_8 = set_class(span_15, 1, "wh-time-node", null, classes_8, { approximate: get(e).time_precision !== "day" });
-                  set_text(text_63, $0);
-                  set_text(text_64, (get(e), untrack(() => get(e).title)));
-                  set_text(text_65, $1);
-                  set_text(text_67, `${$2 ?? ""} \xB7 ${(get(e), untrack(() => get(e).claim_count)) ?? ""} Claims \xB7 ${(get(e), untrack(() => get(e).source_count)) ?? ""} Sources`);
-                },
-                [
-                  () => (get(e), untrack(() => dateLabel(get(e)))),
-                  () => (get(e), untrack(() => get(e).thread_ids.map(threadName).join(" \xB7 "))),
-                  () => (get(e), untrack(() => get(e).entity_ids.slice(0, 4).map(entityName).join(" \xB7 ")))
-                ]
-              );
-              event("click", button_39, stopPropagation(() => openEvent(get(e))));
-              event("keydown", div_45, (ev) => ev.key === "Enter" && !ev.target.closest(".wh-timeline-expanded") && inspectEvent(get(e).event_id));
-              event("click", div_45, (ev) => !ev.target.closest(".wh-timeline-expanded") && inspectEvent(get(e).event_id));
-              append($$anchor5, div_45);
-            });
+                append($$anchor5, fragment_10);
+              };
+              var d_8 = user_derived(() => (name(), untrack(() => !isMonthly() || periodOpen(name()))));
+              if_block(node_60, ($$render) => {
+                if (get(d_8)) $$render(consequent_43);
+              });
+            }
             template_effect(
               ($0) => {
-                set_text(text_61, `${name() ?? ""} `);
-                set_style(span_14, $0);
-                set_attribute2(span_14, "title", (items(), untrack(() => `${items().length} Events`)));
-                set_text(text_62, `${(items(), untrack(() => items().length)) ?? ""} Events`);
+                set_style(span_16, $0);
+                set_attribute2(span_16, "title", (bucket(), untrack(() => `${bucket().count} Events \xB7 \u5F53\u524D\u8303\u56F4\u5185`)));
+                set_text(text_65, `${(bucket(), untrack(() => bucket().count)) ?? ""} Events`);
               },
               [
-                () => (items(), untrack(() => `width:${Math.min(100, Math.sqrt(items().length) * 12)}px`))
+                () => (bucket(), untrack(() => `width:${Math.min(100, Math.sqrt(bucket().count) * 12)}px`))
               ]
             );
-            append($$anchor4, fragment_7);
+            append($$anchor4, fragment_8);
           });
-          var node_60 = sibling(node_51);
+          var node_74 = sibling(node_58);
           {
-            var consequent_35 = ($$anchor4) => {
-              var button_46 = root_54();
-              var text_75 = only_child(button_46);
+            var consequent_44 = ($$anchor4) => {
+              var div_57 = root_632();
+              var button_49 = child(div_57);
+              var span_20 = sibling(button_49);
+              var text_80 = only_child(span_20);
+              var button_50 = sibling(span_20);
+              reset(div_57);
               template_effect(
-                ($0) => set_text(text_75, `\u518D\u52A0\u8F7D 300 \u6761\uFF08\u5DF2\u663E\u793A ${$0 ?? ""} / ${(get(visibleEvents), untrack(() => get(visibleEvents).length)) ?? ""}\uFF09`),
+                ($0) => {
+                  button_49.disabled = get(timelineStart) === 0;
+                  set_text(text_80, `\u663E\u793A ${get(timelineStart) + 1}\u2013${$0 ?? ""} / ${(get(visibleEvents), untrack(() => get(visibleEvents).length)) ?? ""}`);
+                  button_50.disabled = (get(timelineStart), get(visibleEvents), untrack(() => get(timelineStart) + timelineWindow >= get(visibleEvents).length));
+                },
                 [
-                  () => (get(timelineLimit), get(visibleEvents), untrack(() => Math.min(get(timelineLimit), get(visibleEvents).length)))
+                  () => (get(timelineStart), get(visibleEvents), untrack(() => Math.min(get(timelineStart) + timelineWindow, get(visibleEvents).length)))
                 ]
               );
-              event("click", button_46, () => set(timelineLimit, get(timelineLimit) + 300));
-              append($$anchor4, button_46);
+              event("click", button_49, () => timelinePage(get(timelineStart) - timelineWindow));
+              event("click", button_50, () => timelinePage(get(timelineStart) + timelineWindow));
+              append($$anchor4, div_57);
             };
-            if_block(node_60, ($$render) => {
-              if (get(visibleEvents), get(timelineLimit), untrack(() => get(visibleEvents).length > get(timelineLimit))) $$render(consequent_35);
+            if_block(node_74, ($$render) => {
+              if (get(visibleEvents), untrack(() => get(visibleEvents).length > timelineWindow)) $$render(consequent_44);
             });
           }
           reset(section_9);
-          template_effect(() => set_text(text_59, `${(get(visibleEvents), untrack(() => get(visibleEvents).length)) ?? ""} Events`));
+          template_effect(() => set_text(text_61, `${(get(visibleEvents), untrack(() => get(visibleEvents).length)) ?? ""} Events`));
           bind_select_value(select_7, () => get(group), ($$value) => set(group, $$value));
           bind_select_value(select_8, () => get(density), ($$value) => set(density, $$value));
           append($$anchor3, section_9);
         };
-        var consequent_39 = ($$anchor3) => {
-          var section_10 = root_59();
-          var div_53 = child(section_10);
-          var h2_3 = child(div_53);
+        var consequent_48 = ($$anchor3) => {
+          var section_10 = root_68();
+          var div_58 = child(section_10);
+          var h2_3 = child(div_58);
           var small_17 = sibling(child(h2_3));
-          var text_76 = only_child(small_17, true);
+          var text_81 = only_child(small_17, true);
           reset(h2_3);
-          var div_54 = sibling(h2_3);
-          var label_11 = child(div_54);
+          var div_59 = sibling(h2_3);
+          var label_11 = child(div_59);
           var select_9 = sibling(child(label_11));
           var option_22 = child(select_9);
           option_22.value = option_22.__value = "";
-          var node_61 = sibling(option_22);
+          var node_75 = sibling(option_22);
           each(
-            node_61,
+            node_75,
             1,
             () => (deep_read_state(repository()), untrack(() => [...new Set(repository().entities.map((e) => e.kind))].sort())),
             index,
             ($$anchor4, kind) => {
-              var option_23 = root_33();
-              var text_77 = only_child(option_23, true);
+              var option_23 = root_43();
+              var text_82 = only_child(option_23, true);
               var option_23_value = {};
               template_effect(() => {
-                set_text(text_77, get(kind));
+                set_text(text_82, get(kind));
                 if (option_23_value !== (option_23_value = get(kind))) {
                   option_23.value = (option_23.__value = option_23_value) ?? "";
                 }
@@ -9220,314 +9805,305 @@ function Dashboard($$anchor, $$props) {
           var input_3 = sibling(child(label_12));
           remove_input_defaults(input_3);
           reset(label_12);
-          reset(div_54);
-          reset(div_53);
-          var node_62 = sibling(div_53);
+          reset(div_59);
+          reset(div_58);
+          var node_76 = sibling(div_58);
           {
-            var consequent_37 = ($$anchor4) => {
-              var div_55 = root_56();
-              var button_47 = sibling(child(div_55));
-              reset(div_55);
-              event("click", button_47, clearScope);
-              append($$anchor4, div_55);
+            var consequent_46 = ($$anchor4) => {
+              var div_60 = root_65();
+              var button_51 = sibling(child(div_60));
+              reset(div_60);
+              event("click", button_51, clearScope);
+              append($$anchor4, div_60);
             };
-            if_block(node_62, ($$render) => {
-              if (get(visibleEntities), untrack(() => !get(visibleEntities).length)) $$render(consequent_37);
+            if_block(node_76, ($$render) => {
+              if (get(visibleEntities), untrack(() => !get(visibleEntities).length)) $$render(consequent_46);
             });
           }
-          var div_56 = sibling(node_62);
+          var div_61 = sibling(node_76);
           each(
-            div_56,
+            div_61,
             5,
             () => (get(visibleEntities), untrack(() => get(visibleEntities).slice(0, 500))),
             index,
             ($$anchor4, entity) => {
-              var button_48 = root_57();
-              var strong_10 = child(button_48);
-              var text_78 = only_child(strong_10, true);
-              var span_16 = sibling(strong_10);
-              var text_79 = only_child(span_16, true);
-              var span_17 = sibling(span_16);
-              var text_80 = only_child(span_17, true);
-              var small_18 = sibling(span_17);
-              var text_81 = only_child(small_18);
-              reset(button_48);
+              var button_52 = root_66();
+              var strong_10 = child(button_52);
+              var text_83 = only_child(strong_10, true);
+              var span_21 = sibling(strong_10);
+              var text_84 = only_child(span_21, true);
+              var span_22 = sibling(span_21);
+              var text_85 = only_child(span_22, true);
+              var node_77 = sibling(span_22);
+              ActivitySparkline(node_77, {
+                get series() {
+                  return get(entity), untrack(() => get(entity).activity_series);
+                },
+                width: 65,
+                height: 18
+              });
+              var small_18 = sibling(node_77);
+              var text_86 = only_child(small_18);
+              reset(button_52);
               template_effect(
                 ($0, $1) => {
-                  set_text(text_78, (get(entity), untrack(() => get(entity).name)));
-                  set_text(text_79, (get(entity), untrack(() => get(entity).kind)));
-                  set_text(text_80, $0);
-                  set_text(text_81, `${(get(entity), untrack(() => get(entity).thread_count)) ?? ""} Threads \xB7 ${(get(entity), untrack(() => get(entity).event_count)) ?? ""} Events \xB7 ${$1 ?? ""}`);
+                  set_text(text_83, (get(entity), untrack(() => get(entity).name)));
+                  set_text(text_84, (get(entity), untrack(() => get(entity).kind)));
+                  set_text(text_85, $0);
+                  set_text(text_86, `${(get(entity), untrack(() => get(entity).thread_count)) ?? ""} Threads \xB7 ${(get(entity), untrack(() => get(entity).event_count)) ?? ""} Events \xB7 ${$1 ?? ""}`);
                 },
                 [
                   () => (get(entity), untrack(() => get(entity).thread_ids.slice(0, 2).map(threadName).join(" \xB7 "))),
                   () => (get(entity), untrack(() => formatDate(get(entity).last_seen_at)))
                 ]
               );
-              event("click", button_48, () => navigate("entity", get(entity).entity_id));
-              append($$anchor4, button_48);
+              event("click", button_52, () => navigate("entity", get(entity).entity_id));
+              append($$anchor4, button_52);
             }
           );
-          reset(div_56);
-          var node_63 = sibling(div_56);
+          reset(div_61);
+          var node_78 = sibling(div_61);
           {
-            var consequent_38 = ($$anchor4) => {
-              var p_11 = root_58();
+            var consequent_47 = ($$anchor4) => {
+              var p_11 = root_67();
               append($$anchor4, p_11);
             };
-            if_block(node_63, ($$render) => {
-              if (get(visibleEntities), untrack(() => get(visibleEntities).length > 500)) $$render(consequent_38);
+            if_block(node_78, ($$render) => {
+              if (get(visibleEntities), untrack(() => get(visibleEntities).length > 500)) $$render(consequent_47);
             });
           }
           reset(section_10);
-          template_effect(() => set_text(text_76, (get(visibleEntities), untrack(() => get(visibleEntities).length))));
+          template_effect(() => set_text(text_81, (get(visibleEntities), untrack(() => get(visibleEntities).length))));
           bind_select_value(select_9, () => get(entityKind), ($$value) => set(entityKind, $$value));
           bind_value(input_3, () => get(minimumActivity), ($$value) => set(minimumActivity, $$value));
           append($$anchor3, section_10);
         };
-        var consequent_42 = ($$anchor3) => {
-          var section_11 = root_68();
-          var div_57 = child(section_11);
-          var div_58 = child(div_57);
-          var button_49 = child(div_58);
-          var h2_4 = sibling(button_49);
-          var text_82 = only_child(h2_4, true);
-          var span_18 = sibling(h2_4);
-          var text_83 = only_child(span_18, true);
-          reset(div_58);
-          var button_50 = sibling(div_58);
-          reset(div_57);
-          var div_59 = sibling(div_57);
-          var text_84 = only_child(div_59);
-          var div_60 = sibling(div_59);
-          each(div_60, 4, () => ["Overview", "Map", "Graph"], index, ($$anchor4, projection) => {
-            var button_51 = root4();
+        var consequent_51 = ($$anchor3) => {
+          var section_11 = root_76();
+          var div_62 = child(section_11);
+          var div_63 = child(div_62);
+          var button_53 = child(div_63);
+          var h2_4 = sibling(button_53);
+          var text_87 = only_child(h2_4, true);
+          var span_23 = sibling(h2_4);
+          var text_88 = only_child(span_23, true);
+          reset(div_63);
+          var button_54 = sibling(div_63);
+          reset(div_62);
+          var div_64 = sibling(div_62);
+          var text_89 = only_child(div_64);
+          var div_65 = sibling(div_64);
+          each(div_65, 4, () => ["Overview", "Map", "Graph"], index, ($$anchor4, projection) => {
+            var button_55 = root5();
             let classes_9;
-            var text_85 = only_child(button_51, true);
+            var text_90 = only_child(button_55, true);
             template_effect(() => {
-              classes_9 = set_class(button_51, 1, "", null, classes_9, { active: get(entityProjection) === projection });
-              set_text(text_85, projection);
+              classes_9 = set_class(button_55, 1, "", null, classes_9, { active: get(entityProjection) === projection });
+              set_text(text_90, projection);
             });
-            event("click", button_51, () => set(entityProjection, projection));
-            append($$anchor4, button_51);
+            event("click", button_55, () => set(entityProjection, projection));
+            append($$anchor4, button_55);
           });
-          reset(div_60);
-          var node_64 = sibling(div_60);
+          reset(div_65);
+          var node_79 = sibling(div_65);
           {
-            var consequent_40 = ($$anchor4) => {
-              var fragment_8 = root_64();
-              var section_12 = first_child(fragment_8);
-              var node_65 = sibling(child(section_12));
+            var consequent_49 = ($$anchor4) => {
+              var fragment_13 = root_732();
+              var section_12 = first_child(fragment_13);
+              var node_80 = sibling(child(section_12));
               each(
-                node_65,
+                node_80,
                 1,
                 () => (get(currentEntity), untrack(() => get(currentEntity).current_thread_ids || [])),
                 index,
                 ($$anchor5, id) => {
-                  var button_52 = root_31();
-                  var text_86 = only_child(button_52, true);
-                  template_effect(($0) => set_text(text_86, $0), [() => (get(id), untrack(() => threadName(get(id))))]);
-                  event("click", button_52, () => navigate("thread", get(id)));
-                  append($$anchor5, button_52);
+                  var button_56 = root_322();
+                  var text_91 = only_child(button_56, true);
+                  template_effect(($0) => set_text(text_91, $0), [() => (get(id), untrack(() => threadName(get(id))))]);
+                  event("click", button_56, () => navigate("thread", get(id)));
+                  append($$anchor5, button_56);
                 },
                 ($$anchor5) => {
-                  var p_12 = root_60();
+                  var p_12 = root_69();
                   append($$anchor5, p_12);
                 }
               );
               reset(section_12);
               var section_13 = sibling(section_12);
-              var node_66 = sibling(child(section_13));
+              var node_81 = sibling(child(section_13));
               each(
-                node_66,
+                node_81,
                 1,
                 () => (get(currentEntity), untrack(() => get(currentEntity).thread_ids)),
                 index,
                 ($$anchor5, id) => {
-                  var button_53 = root_31();
-                  var text_87 = only_child(button_53, true);
-                  template_effect(($0) => set_text(text_87, $0), [() => (get(id), untrack(() => threadName(get(id))))]);
-                  event("click", button_53, () => navigate("thread", get(id)));
-                  append($$anchor5, button_53);
+                  var button_57 = root_322();
+                  var text_92 = only_child(button_57, true);
+                  template_effect(($0) => set_text(text_92, $0), [() => (get(id), untrack(() => threadName(get(id))))]);
+                  event("click", button_57, () => navigate("thread", get(id)));
+                  append($$anchor5, button_57);
                 },
                 ($$anchor5) => {
-                  var p_13 = root_61();
+                  var p_13 = root_70();
                   append($$anchor5, p_13);
                 }
               );
               reset(section_13);
               var section_14 = sibling(section_13);
-              var node_67 = sibling(child(section_14));
-              ActivitySparkline(node_67, {
+              var node_82 = sibling(child(section_14));
+              ActivitySparkline(node_82, {
                 get series() {
                   return get(currentEntity), untrack(() => get(currentEntity).activity_series);
                 },
                 width: 300,
                 height: 64
               });
-              var node_68 = sibling(node_67, 2);
+              var node_83 = sibling(node_82, 2);
               each(
-                node_68,
+                node_83,
                 1,
                 () => (get(currentEntity), deep_read_state(repository()), untrack(() => get(currentEntity).event_ids.map((id) => repository().eventById.get(id)).filter(Boolean).slice(-50).reverse())),
                 index,
                 ($$anchor5, e) => {
-                  var button_54 = root_31();
-                  var text_88 = only_child(button_54);
-                  template_effect(($0) => set_text(text_88, `${$0 ?? ""} \xB7 ${(get(e), untrack(() => get(e).title)) ?? ""}`), [() => (get(e), untrack(() => dateLabel(get(e))))]);
-                  event("click", button_54, () => openEvent(get(e)));
-                  append($$anchor5, button_54);
+                  var button_58 = root_322();
+                  var text_93 = only_child(button_58);
+                  template_effect(($0) => set_text(text_93, `${$0 ?? ""} \xB7 ${(get(e), untrack(() => get(e).title)) ?? ""}`), [() => (get(e), untrack(() => dateLabel(get(e))))]);
+                  event("click", button_58, () => openEvent(get(e)));
+                  append($$anchor5, button_58);
                 }
               );
               reset(section_14);
               var section_15 = sibling(section_14);
-              var div_61 = sibling(child(section_15));
+              var div_66 = sibling(child(section_15));
               each(
-                div_61,
+                div_66,
                 5,
                 () => (get(currentEntity), untrack(() => get(currentEntity).related_entity_ids || [])),
                 index,
                 ($$anchor5, id) => {
-                  var button_55 = root4();
-                  var text_89 = only_child(button_55, true);
-                  template_effect(($0) => set_text(text_89, $0), [() => (get(id), untrack(() => entityName(get(id))))]);
-                  event("click", button_55, () => navigate("entity", get(id)));
-                  append($$anchor5, button_55);
+                  var button_59 = root5();
+                  var text_94 = only_child(button_59, true);
+                  template_effect(($0) => set_text(text_94, $0), [() => (get(id), untrack(() => entityName(get(id))))]);
+                  event("click", button_59, () => navigate("entity", get(id)));
+                  append($$anchor5, button_59);
                 },
                 ($$anchor5) => {
-                  var p_14 = root_622();
+                  var p_14 = root_71();
                   append($$anchor5, p_14);
                 }
               );
-              reset(div_61);
+              reset(div_66);
               reset(section_15);
               var section_16 = sibling(section_15);
-              var node_69 = sibling(child(section_16), 2);
+              var node_84 = sibling(child(section_16), 2);
               each(
-                node_69,
+                node_84,
                 1,
                 () => (get(currentEntity), untrack(() => get(currentEntity).contextual_questions?.filter((q) => q.state === "open") || [])),
                 index,
                 ($$anchor5, q) => {
-                  var div_62 = root_632();
-                  var strong_11 = child(div_62);
-                  var text_90 = only_child(strong_11, true);
-                  var button_56 = sibling(strong_11);
-                  var text_91 = only_child(button_56, true);
-                  reset(div_62);
+                  var div_67 = root_722();
+                  var strong_11 = child(div_67);
+                  var text_95 = only_child(strong_11, true);
+                  var button_60 = sibling(strong_11);
+                  var text_96 = only_child(button_60, true);
+                  reset(div_67);
                   template_effect(
                     ($0) => {
-                      set_text(text_90, (get(q), untrack(() => get(q).question)));
-                      set_text(text_91, $0);
+                      set_text(text_95, (get(q), untrack(() => get(q).question)));
+                      set_text(text_96, $0);
                     },
                     [
                       () => (get(q), untrack(() => threadName(get(q).owner_thread_id)))
                     ]
                   );
-                  event("click", button_56, () => navigate("thread", get(q).owner_thread_id));
-                  append($$anchor5, div_62);
+                  event("click", button_60, () => navigate("thread", get(q).owner_thread_id));
+                  append($$anchor5, div_67);
                 },
                 ($$anchor5) => {
-                  var p_15 = root_26();
+                  var p_15 = root_27();
                   append($$anchor5, p_15);
                 }
               );
               reset(section_16);
-              append($$anchor4, fragment_8);
+              append($$anchor4, fragment_13);
             };
-            var consequent_41 = ($$anchor4) => {
-              var section_17 = root_66();
-              var node_70 = sibling(child(section_17));
-              EntityProjection(node_70, {
+            var consequent_50 = ($$anchor4) => {
+              var section_17 = root_74();
+              var node_85 = sibling(child(section_17));
+              EntityProjection(node_85, {
                 get entity() {
                   return get(currentEntity);
                 },
                 get repository() {
                   return repository();
                 },
-                projection: "Map",
-                openLocation: (id) => {
-                  setScope("locationId", id);
-                  navigate("map");
-                }
-              });
-              var node_71 = sibling(node_70);
-              each(
-                node_71,
-                1,
-                () => (get(currentEntity), untrack(() => get(currentEntity).location_ids || [])),
-                index,
-                ($$anchor5, id) => {
-                  var button_57 = root_31();
-                  var text_92 = only_child(button_57, true);
-                  template_effect(($0) => set_text(text_92, $0), [
-                    () => (deep_read_state(repository()), get(id), untrack(() => repository().locationById.get(get(id))?.name || get(id)))
-                  ]);
-                  event("click", button_57, () => filterLocation(get(id)));
-                  append($$anchor5, button_57);
+                get scope() {
+                  return get(scope);
                 },
-                ($$anchor5) => {
-                  var p_16 = root_65();
-                  append($$anchor5, p_16);
-                }
-              );
+                projection: "Map",
+                openLocation: showLocation
+              });
               reset(section_17);
               append($$anchor4, section_17);
             };
-            var alternate_3 = ($$anchor4) => {
-              var section_18 = root_67();
-              var node_72 = sibling(child(section_18));
-              EntityProjection(node_72, {
+            var alternate_4 = ($$anchor4) => {
+              var section_18 = root_75();
+              var node_86 = sibling(child(section_18));
+              EntityProjection(node_86, {
                 get entity() {
                   return get(currentEntity);
                 },
                 get repository() {
                   return repository();
+                },
+                get scope() {
+                  return get(scope);
                 },
                 projection: "Graph",
                 openThread: (id) => navigate("thread", id),
                 openEntity: (id) => navigate("entity", id)
               });
-              var button_58 = sibling(node_72);
+              var button_61 = sibling(node_86);
               reset(section_18);
-              event("click", button_58, () => {
+              event("click", button_61, () => {
                 navigate("graph", "", {
                   localContext: { type: "entity", id: get(currentEntity).entity_id }
                 });
               });
               append($$anchor4, section_18);
             };
-            if_block(node_64, ($$render) => {
-              if (get(entityProjection) === "Overview") $$render(consequent_40);
-              else if (get(entityProjection) === "Map") $$render(consequent_41, 1);
-              else $$render(alternate_3, -1);
+            if_block(node_79, ($$render) => {
+              if (get(entityProjection) === "Overview") $$render(consequent_49);
+              else if (get(entityProjection) === "Map") $$render(consequent_50, 1);
+              else $$render(alternate_4, -1);
             });
           }
           reset(section_11);
           template_effect(
             ($0, $1) => {
-              set_text(text_82, (get(currentEntity), untrack(() => get(currentEntity).name)));
-              set_text(text_83, (get(currentEntity), untrack(() => get(currentEntity).kind)));
-              set_text(text_84, `\u522B\u540D ${$0 ?? ""} \xB7 \u6700\u8FD1\u51FA\u73B0 ${$1 ?? ""} \xB7 Chronicle ID ${(get(currentEntity), untrack(() => get(currentEntity).entity_id)) ?? ""}`);
+              set_text(text_87, (get(currentEntity), untrack(() => get(currentEntity).name)));
+              set_text(text_88, (get(currentEntity), untrack(() => get(currentEntity).kind)));
+              set_text(text_89, `\u522B\u540D ${$0 ?? ""} \xB7 \u6700\u8FD1\u51FA\u73B0 ${$1 ?? ""} \xB7 Chronicle ID ${(get(currentEntity), untrack(() => get(currentEntity).entity_id)) ?? ""}`);
             },
             [
               () => (get(currentEntity), untrack(() => get(currentEntity).aliases.join("\u3001") || "\u2014")),
               () => (get(currentEntity), untrack(() => formatDate(get(currentEntity).last_seen_at)))
             ]
           );
-          event("click", button_49, back);
-          event("click", button_50, () => openCanonical()(get(currentEntity).canonical_ref));
+          event("click", button_53, back);
+          event("click", button_54, () => openCanonical()(get(currentEntity).canonical_ref));
           append($$anchor3, section_11);
         };
-        var consequent_44 = ($$anchor3) => {
-          var section_19 = root_74();
-          var div_63 = child(section_19);
-          var h2_5 = child(div_63);
+        var consequent_53 = ($$anchor3) => {
+          var section_19 = root_822();
+          var div_68 = child(section_19);
+          var h2_5 = child(div_68);
           var small_19 = sibling(child(h2_5));
-          var text_93 = only_child(small_19);
+          var text_97 = only_child(small_19);
           reset(h2_5);
-          var div_64 = sibling(h2_5);
-          var label_13 = child(div_64);
+          var div_69 = sibling(h2_5);
+          var label_13 = child(div_69);
           var select_10 = sibling(child(label_13));
           var option_24 = child(select_10);
           option_24.value = option_24.__value = "events";
@@ -9538,57 +10114,60 @@ function Dashboard($$anchor, $$props) {
           reset(select_10);
           init_select(select_10);
           reset(label_13);
-          var button_59 = sibling(label_13);
-          var button_60 = sibling(button_59);
-          var button_61 = sibling(button_60);
-          reset(div_64);
-          reset(div_63);
-          var node_73 = sibling(div_63);
+          var button_62 = sibling(label_13);
+          var button_63 = sibling(button_62);
+          var button_64 = sibling(button_63);
+          reset(div_69);
+          reset(div_68);
+          var node_87 = sibling(div_68);
           {
-            var consequent_43 = ($$anchor4) => {
-              var div_65 = root_69();
-              var button_62 = sibling(child(div_65));
-              reset(div_65);
-              event("click", button_62, clearScope);
-              append($$anchor4, div_65);
+            var consequent_52 = ($$anchor4) => {
+              var div_70 = root_77();
+              var button_65 = sibling(child(div_70));
+              reset(div_70);
+              event("click", button_65, clearScope);
+              append($$anchor4, div_70);
             };
-            var alternate_4 = ($$anchor4) => {
-              var div_66 = root_732();
-              var svg = child(div_66);
+            var alternate_5 = ($$anchor4) => {
+              var div_71 = root_81();
+              var svg = child(div_71);
               var g = sibling(child(svg));
               var path = child(g);
-              var node_74 = sibling(path);
-              each(node_74, 0, () => [-180, -120, -60, 0, 60, 120, 180], index, ($$anchor5, lon) => {
-                var line = root_70();
+              var node_88 = sibling(path);
+              each(node_88, 0, () => [-180, -120, -60, 0, 60, 120, 180], index, ($$anchor5, lon) => {
+                var line = root_78();
                 template_effect(() => {
                   set_attribute2(line, "x1", (lon + 180) * 2.5);
                   set_attribute2(line, "x2", (lon + 180) * 2.5);
                 });
                 append($$anchor5, line);
               });
-              var node_75 = sibling(node_74);
-              each(node_75, 0, () => [-60, -30, 0, 30, 60], index, ($$anchor5, lat) => {
-                var line_1 = root_71();
+              var node_89 = sibling(node_88);
+              each(node_89, 0, () => [-60, -30, 0, 30, 60], index, ($$anchor5, lat) => {
+                var line_1 = root_79();
                 template_effect(() => {
                   set_attribute2(line_1, "y1", (90 - lat) * 2.5);
                   set_attribute2(line_1, "y2", (90 - lat) * 2.5);
                 });
                 append($$anchor5, line_1);
               });
-              var node_76 = sibling(node_75);
-              each(node_76, 1, () => get(markerClusters), index, ($$anchor5, marker) => {
-                var g_1 = root_722();
+              var node_90 = sibling(node_89);
+              each(node_90, 1, () => get(markerClusters), index, ($$anchor5, marker) => {
+                var g_1 = root_80();
                 let classes_10;
-                var circle = child(g_1);
-                var text_94 = sibling(circle);
-                var text_95 = only_child(text_94, true);
+                var title = child(g_1);
+                var text_98 = only_child(title, true);
+                var circle = sibling(title);
+                var text_99 = sibling(circle);
+                var text_100 = only_child(text_99, true);
                 reset(g_1);
                 template_effect(
                   ($0, $1, $2) => {
                     classes_10 = set_class(g_1, 0, "wh-map-marker", null, classes_10, { focused: $0, approximate: $1 });
                     set_attribute2(g_1, "transform", (get(marker), get(zoom), untrack(() => `translate(${(get(marker).lon + 180) * 2.5},${(90 - get(marker).lat) * 2.5}) scale(${1 / get(zoom)})`)));
+                    set_text(text_98, (get(marker), get(mapMode), untrack(() => get(marker).locations.length > 1 ? `${get(marker).locations.length} \u4E2A\u5730\u70B9 \xB7 ${get(marker).count} ${get(mapMode)}` : `${get(marker).locations[0].name} \xB7 ${get(marker).count} ${get(mapMode)} \xB7 ${get(marker).locations[0].geo_precision}`)));
                     set_attribute2(circle, "r", $2);
-                    set_text(text_95, (get(marker), untrack(() => get(marker).count)));
+                    set_text(text_100, (get(marker), untrack(() => get(marker).count)));
                   },
                   [
                     () => get(marker).locations.some((l) => l.location_id === get(selectedLocation)),
@@ -9603,37 +10182,38 @@ function Dashboard($$anchor, $$props) {
               reset(g);
               reset(svg);
               next();
-              reset(div_66);
+              reset(div_71);
               template_effect(() => {
-                set_attribute2(g, "transform", `translate(450,225) scale(${get(zoom)}) translate(-450,-225)`);
+                set_attribute2(g, "transform", (get(zoom), get(mapCenter), untrack(() => `translate(450,225) scale(${get(zoom)}) translate(${get(zoom) === 1 ? -450 : -(get(mapCenter).lon + 180) * 2.5},${get(zoom) === 1 ? -225 : -(90 - get(mapCenter).lat) * 2.5})`)));
                 set_attribute2(path, "d", world_path_default);
               });
-              append($$anchor4, div_66);
+              append($$anchor4, div_71);
             };
-            if_block(node_73, ($$render) => {
-              if (get(locationPoints), untrack(() => !get(locationPoints).length)) $$render(consequent_43);
-              else $$render(alternate_4, -1);
+            if_block(node_87, ($$render) => {
+              if (get(locationPoints), untrack(() => !get(locationPoints).length)) $$render(consequent_52);
+              else $$render(alternate_5, -1);
             });
           }
           reset(section_19);
-          template_effect(() => set_text(text_93, `${(get(locationPoints), untrack(() => get(locationPoints).length)) ?? ""} Locations`));
+          template_effect(() => set_text(text_97, `${(get(locationPoints), untrack(() => get(locationPoints).length)) ?? ""} Locations`));
           bind_select_value(select_10, () => get(mapMode), ($$value) => set(mapMode, $$value));
-          event("click", button_59, () => set(zoom, Math.min(8, get(zoom) * 2)));
-          event("click", button_60, () => set(zoom, Math.max(1, get(zoom) / 2)));
-          event("click", button_61, () => {
+          event("click", button_62, () => set(zoom, Math.min(8, get(zoom) * 2)));
+          event("click", button_63, () => set(zoom, Math.max(1, get(zoom) / 2)));
+          event("click", button_64, () => {
             set(zoom, 1);
+            set(mapCenter, { lat: 0, lon: 0 });
           });
           append($$anchor3, section_19);
         };
-        var consequent_53 = ($$anchor3) => {
-          var section_20 = root_89();
-          var div_67 = child(section_20);
-          var h2_6 = child(div_67);
+        var consequent_62 = ($$anchor3) => {
+          var section_20 = root_97();
+          var div_72 = child(section_20);
+          var h2_6 = child(div_72);
           var small_20 = sibling(child(h2_6));
-          var text_96 = only_child(small_20);
+          var text_101 = only_child(small_20);
           reset(h2_6);
-          var div_68 = sibling(h2_6);
-          var label_14 = child(div_68);
+          var div_73 = sibling(h2_6);
+          var label_14 = child(div_73);
           var select_11 = sibling(child(label_14));
           var select_11_value;
           init_select(select_11);
@@ -9664,13 +10244,13 @@ function Dashboard($$anchor, $$props) {
           var input_4 = sibling(child(label_17));
           remove_input_defaults(input_4);
           reset(label_17);
-          var button_63 = sibling(label_17);
-          reset(div_68);
-          reset(div_67);
-          var div_69 = sibling(div_67);
-          var node_77 = sibling(child(div_69));
+          var button_66 = sibling(label_17);
+          reset(div_73);
+          reset(div_72);
+          var div_74 = sibling(div_72);
+          var node_91 = sibling(child(div_74));
           each(
-            node_77,
+            node_91,
             0,
             () => [
               "thread",
@@ -9683,15 +10263,15 @@ function Dashboard($$anchor, $$props) {
             ],
             index,
             ($$anchor4, type) => {
-              var label_18 = root_75();
+              var label_18 = root_832();
               var input_5 = child(label_18);
               remove_input_defaults(input_5);
-              var text_97 = sibling(input_5, 1, true);
+              var text_102 = sibling(input_5, 1, true);
               reset(label_18);
               template_effect(
                 ($0) => {
                   set_checked(input_5, $0);
-                  set_text(text_97, type);
+                  set_text(text_102, type);
                 },
                 [
                   () => (get(graphNodeTypes), type, untrack(() => get(graphNodeTypes).has(type)))
@@ -9701,22 +10281,22 @@ function Dashboard($$anchor, $$props) {
               append($$anchor4, label_18);
             }
           );
-          var select_14 = sibling(node_77, 2);
+          var select_14 = sibling(node_91, 2);
           var option_33 = child(select_14);
           option_33.value = option_33.__value = "";
-          var node_78 = sibling(option_33);
+          var node_92 = sibling(option_33);
           each(
-            node_78,
+            node_92,
             1,
             () => (deep_read_state(repository()), untrack(() => repository().graphEdgeTypes())),
             index,
             ($$anchor4, type) => {
-              var option_34 = root_33();
-              var text_98 = only_child(option_34);
+              var option_34 = root_43();
+              var text_103 = only_child(option_34);
               var option_34_value = {};
               template_effect(
                 ($0) => {
-                  set_text(text_98, `${$0 ?? ""}${get(type) ?? ""}`);
+                  set_text(text_103, `${$0 ?? ""}${get(type) ?? ""}`);
                   if (option_34_value !== (option_34_value = get(type))) {
                     option_34.value = (option_34.__value = option_34_value) ?? "";
                   }
@@ -9729,59 +10309,60 @@ function Dashboard($$anchor, $$props) {
             }
           );
           reset(select_14);
-          var node_79 = sibling(select_14);
+          var node_93 = sibling(select_14);
           {
-            var consequent_45 = ($$anchor4) => {
-              var button_64 = root_76();
-              event("click", button_64, () => set(graphEdgeTypes, /* @__PURE__ */ new Set()));
-              append($$anchor4, button_64);
+            var consequent_54 = ($$anchor4) => {
+              var button_67 = root_84();
+              event("click", button_67, () => set(graphEdgeTypes, /* @__PURE__ */ new Set()));
+              append($$anchor4, button_67);
             };
-            if_block(node_79, ($$render) => {
-              if (get(graphEdgeTypes), untrack(() => get(graphEdgeTypes).size)) $$render(consequent_45);
+            if_block(node_93, ($$render) => {
+              if (get(graphEdgeTypes), untrack(() => get(graphEdgeTypes).size)) $$render(consequent_54);
             });
           }
-          var input_6 = sibling(node_79);
-          reset(div_69);
-          var node_80 = sibling(div_69);
+          var input_6 = sibling(node_93);
+          reset(div_74);
+          var node_94 = sibling(div_74, 2);
           {
-            var consequent_47 = ($$anchor4) => {
-              var div_70 = root_79();
-              var node_81 = child(div_70);
+            var consequent_56 = ($$anchor4) => {
+              var div_75 = root_87();
+              var node_95 = child(div_75);
               {
-                var consequent_46 = ($$anchor5) => {
-                  var fragment_9 = root_77();
-                  var text_99 = first_child(fragment_9);
-                  var button_65 = sibling(text_99);
-                  template_effect(() => set_text(text_99, `\u56FE\u7D22\u5F15\u65E0\u6548\uFF1A${(deep_read_state(repository()), untrack(() => repository().graphFault)) ?? ""} `));
-                  event("click", button_65, function(...$$args) {
+                var consequent_55 = ($$anchor5) => {
+                  var fragment_14 = root_85();
+                  var text_104 = first_child(fragment_14);
+                  var button_68 = sibling(text_104);
+                  template_effect(() => set_text(text_104, `\u56FE\u7D22\u5F15\u65E0\u6548\uFF1A${(deep_read_state(repository()), untrack(() => repository().graphFault)) ?? ""} `));
+                  event("click", button_68, function(...$$args) {
                     refresh()?.apply(this, $$args);
                   });
-                  append($$anchor5, fragment_9);
+                  append($$anchor5, fragment_14);
                 };
-                var alternate_5 = ($$anchor5) => {
-                  var fragment_10 = root_78();
-                  var button_66 = sibling(first_child(fragment_10));
-                  event("click", button_66, clearScope);
-                  append($$anchor5, fragment_10);
+                var alternate_6 = ($$anchor5) => {
+                  var fragment_15 = root_86();
+                  var button_69 = sibling(first_child(fragment_15));
+                  event("click", button_69, clearScope);
+                  append($$anchor5, fragment_15);
                 };
-                if_block(node_81, ($$render) => {
-                  if (deep_read_state(repository()), untrack(() => repository().graphFault)) $$render(consequent_46);
-                  else $$render(alternate_5, -1);
+                if_block(node_95, ($$render) => {
+                  if (deep_read_state(repository()), untrack(() => repository().graphFault)) $$render(consequent_55);
+                  else $$render(alternate_6, -1);
                 });
               }
-              reset(div_70);
-              append($$anchor4, div_70);
+              reset(div_75);
+              append($$anchor4, div_75);
             };
-            var alternate_7 = ($$anchor4) => {
-              var div_71 = root_88();
-              var svg_1 = child(div_71);
-              var node_82 = child(svg_1);
-              each(node_82, 1, () => (get(graphSlice), untrack(() => get(graphSlice).edges)), index, ($$anchor5, edge) => {
+            var alternate_8 = ($$anchor4) => {
+              var div_76 = root_96();
+              var svg_1 = child(div_76);
+              var node_96 = child(svg_1);
+              each(node_96, 1, () => (get(graphSlice), untrack(() => get(graphSlice).edges)), index, ($$anchor5, edge) => {
                 const a = derived_safe_equal(() => (get(graphSlice), get(edge), untrack(() => get(graphSlice).nodes.findIndex((n) => n.id === get(edge).source))));
                 const b = derived_safe_equal(() => (get(graphSlice), get(edge), untrack(() => get(graphSlice).nodes.findIndex((n) => n.id === get(edge).target))));
-                var line_2 = root_80();
-                var title = child(line_2);
-                var text_100 = only_child(title, true);
+                var line_2 = root_88();
+                let classes_11;
+                var title_1 = child(line_2);
+                var text_105 = only_child(title_1, true);
                 reset(line_2);
                 template_effect(
                   ($0, $1, $2, $3) => {
@@ -9789,7 +10370,8 @@ function Dashboard($$anchor, $$props) {
                     set_attribute2(line_2, "y1", $1);
                     set_attribute2(line_2, "x2", $2);
                     set_attribute2(line_2, "y2", $3);
-                    set_text(text_100, (get(edge), untrack(() => get(edge).type)));
+                    classes_11 = set_class(line_2, 0, "wh-graph-edge", null, classes_11, { explicit: !!get(edge).canonical_ref });
+                    set_text(text_105, (get(edge), untrack(() => get(edge).type)));
                   },
                   [
                     () => (deep_read_state(get(a)), get(graphSlice), get(edge), untrack(() => graphPosition(get(a), get(graphSlice).nodes.length, get(edge).source).x)),
@@ -9802,78 +10384,78 @@ function Dashboard($$anchor, $$props) {
                 event("click", line_2, () => graphChooseEdge(get(edge)));
                 append($$anchor5, line_2);
               });
-              var node_83 = sibling(node_82);
-              each(node_83, 1, () => (get(graphSlice), untrack(() => get(graphSlice).nodes)), index, ($$anchor5, node, i) => {
-                var g_2 = root_87();
-                let classes_11;
-                var node_84 = child(g_2);
+              var node_97 = sibling(node_96);
+              each(node_97, 1, () => (get(graphSlice), untrack(() => get(graphSlice).nodes)), index, ($$anchor5, node, i) => {
+                var g_2 = root_95();
+                let classes_12;
+                var node_98 = child(g_2);
                 {
-                  var consequent_48 = ($$anchor6) => {
-                    var rect = root_81();
+                  var consequent_57 = ($$anchor6) => {
+                    var rect = root_89();
                     append($$anchor6, rect);
                   };
-                  var consequent_49 = ($$anchor6) => {
-                    var polygon = root_822();
-                    let classes_12;
+                  var consequent_58 = ($$anchor6) => {
+                    var polygon = root_90();
+                    let classes_13;
                     template_effect(() => {
                       set_attribute2(polygon, "points", (get(node), untrack(() => get(node).type === "claim" ? "0,-11 11,0 0,11 -11,0" : "0,-12 10,0 0,12 -10,0")));
-                      classes_12 = set_class(polygon, 0, "", null, classes_12, {
+                      classes_13 = set_class(polygon, 0, "", null, classes_13, {
                         "wh-node-claim": get(node).type === "claim",
                         "wh-node-location": get(node).type === "location"
                       });
                     });
                     append($$anchor6, polygon);
                   };
-                  var consequent_50 = ($$anchor6) => {
-                    var rect_1 = root_832();
+                  var consequent_59 = ($$anchor6) => {
+                    var rect_1 = root_91();
                     append($$anchor6, rect_1);
                   };
-                  var consequent_51 = ($$anchor6) => {
-                    var circle_1 = root_84();
+                  var consequent_60 = ($$anchor6) => {
+                    var circle_1 = root_922();
                     append($$anchor6, circle_1);
                   };
-                  var alternate_6 = ($$anchor6) => {
-                    var circle_2 = root_85();
-                    let classes_13;
+                  var alternate_7 = ($$anchor6) => {
+                    var circle_2 = root_93();
+                    let classes_14;
                     template_effect(() => {
                       set_attribute2(circle_2, "r", (get(node), untrack(() => get(node).type === "entity" ? 10 : 7)));
-                      classes_13 = set_class(circle_2, 0, "", null, classes_13, {
+                      classes_14 = set_class(circle_2, 0, "", null, classes_14, {
                         entity: get(node).type === "entity",
                         event: get(node).type === "event"
                       });
                     });
                     append($$anchor6, circle_2);
                   };
-                  if_block(node_84, ($$render) => {
-                    if (get(node), untrack(() => get(node).type === "thread")) $$render(consequent_48);
-                    else if (get(node), untrack(() => get(node).type === "claim" || get(node).type === "location")) $$render(consequent_49, 1);
-                    else if (get(node), untrack(() => get(node).type === "source")) $$render(consequent_50, 2);
-                    else if (get(node), untrack(() => get(node).type === "question")) $$render(consequent_51, 3);
-                    else $$render(alternate_6, -1);
+                  if_block(node_98, ($$render) => {
+                    if (get(node), untrack(() => get(node).type === "thread")) $$render(consequent_57);
+                    else if (get(node), untrack(() => get(node).type === "claim" || get(node).type === "location")) $$render(consequent_58, 1);
+                    else if (get(node), untrack(() => get(node).type === "source")) $$render(consequent_59, 2);
+                    else if (get(node), untrack(() => get(node).type === "question")) $$render(consequent_60, 3);
+                    else $$render(alternate_7, -1);
                   });
                 }
-                var node_85 = sibling(node_84);
+                var node_99 = sibling(node_98);
                 {
-                  var consequent_52 = ($$anchor6) => {
-                    var text_101 = root_86();
-                    var text_102 = only_child(text_101, true);
-                    template_effect(($0) => set_text(text_102, $0), [
+                  var consequent_61 = ($$anchor6) => {
+                    var text_106 = root_94();
+                    var text_107 = only_child(text_106, true);
+                    template_effect(($0) => set_text(text_107, $0), [
                       () => (get(node), untrack(() => get(node).label.slice(0, 18)))
                     ]);
-                    append($$anchor6, text_101);
+                    append($$anchor6, text_106);
                   };
-                  if_block(node_85, ($$render) => {
-                    if (get(graphSlice), get(node), get(selectedNode), untrack(() => get(graphSlice).nodes.length <= 25 || get(node).type === "thread" || get(node).id === get(selectedNode))) $$render(consequent_52);
+                  if_block(node_99, ($$render) => {
+                    if (get(graphSlice), get(node), get(selectedNode), untrack(() => get(graphSlice).nodes.length <= 25 || get(node).type === "thread" || get(node).id === get(selectedNode))) $$render(consequent_61);
                   });
                 }
-                var title_1 = sibling(node_85);
-                var text_103 = only_child(title_1);
+                var title_2 = sibling(node_99);
+                var text_108 = only_child(title_2);
                 reset(g_2);
                 template_effect(
                   ($0) => {
                     set_attribute2(g_2, "transform", $0);
-                    classes_11 = set_class(g_2, 0, "wh-graph-node", null, classes_11, { focused: get(selectedNode) === get(node).id });
-                    set_text(text_103, `${(get(node), untrack(() => get(node).type)) ?? ""}: ${(get(node), untrack(() => get(node).label)) ?? ""}`);
+                    classes_12 = set_class(g_2, 0, "wh-graph-node", null, classes_12, { focused: get(selectedNode) === get(node).id });
+                    set_text(text_108, `${(get(node), untrack(() => get(node).type)) ?? ""}: ${(get(node), untrack(() => get(node).label)) ?? ""}`);
                   },
                   [
                     () => (i, get(graphSlice), get(node), untrack(() => `translate(${graphPosition(i, get(graphSlice).nodes.length, get(node).id).x},${graphPosition(i, get(graphSlice).nodes.length, get(node).id).y})`))
@@ -9884,17 +10466,17 @@ function Dashboard($$anchor, $$props) {
                 append($$anchor5, g_2);
               });
               reset(svg_1);
-              reset(div_71);
-              append($$anchor4, div_71);
+              reset(div_76);
+              append($$anchor4, div_76);
             };
-            if_block(node_80, ($$render) => {
-              if (get(graphSlice), untrack(() => !get(graphSlice).nodes.length)) $$render(consequent_47);
-              else $$render(alternate_7, -1);
+            if_block(node_94, ($$render) => {
+              if (get(graphSlice), untrack(() => !get(graphSlice).nodes.length)) $$render(consequent_56);
+              else $$render(alternate_8, -1);
             });
           }
           reset(section_20);
           template_effect(() => {
-            set_text(text_96, `${(get(graphSlice), untrack(() => get(graphSlice).nodes.length)) ?? ""} Nodes \xB7 ${(get(graphSlice), untrack(() => get(graphSlice).edges.length)) ?? ""} Edges`);
+            set_text(text_101, `${(get(graphSlice), untrack(() => get(graphSlice).nodes.length)) ?? ""} Nodes \xB7 ${(get(graphSlice), untrack(() => get(graphSlice).edges.length)) ?? ""} Edges`);
             if (select_11_value !== (select_11_value = get(graphPreset))) {
               select_11.value = (select_11.__value = select_11_value) ?? "", select_option(select_11, select_11_value);
             }
@@ -9903,7 +10485,7 @@ function Dashboard($$anchor, $$props) {
           bind_select_value(select_12, () => get(graphLayout), ($$value) => set(graphLayout, $$value));
           bind_select_value(select_13, () => get(depth), ($$value) => set(depth, $$value));
           bind_value(input_4, () => get(maxNodes), ($$value) => set(maxNodes, $$value));
-          event("click", button_63, () => {
+          event("click", button_66, () => {
             set(selectedNode, "");
             set(hidden, /* @__PURE__ */ new Set());
             set(expanded, /* @__PURE__ */ new Set());
@@ -9919,268 +10501,346 @@ function Dashboard($$anchor, $$props) {
           });
           append($$anchor3, section_20);
         };
-        if_block(node_12, ($$render) => {
-          if (get(page) === "threads") $$render(consequent_12);
-          else if (get(page) === "thread" && get(currentThread)) $$render(consequent_29, 1);
-          else if (get(page) === "timeline") $$render(consequent_36, 2);
-          else if (get(page) === "entities") $$render(consequent_39, 3);
-          else if (get(page) === "entity" && get(currentEntity)) $$render(consequent_42, 4);
-          else if (get(page) === "map") $$render(consequent_44, 5);
-          else if (get(page) === "graph") $$render(consequent_53, 6);
+        if_block(node_14, ($$render) => {
+          if (get(page) === "threads") $$render(consequent_13);
+          else if (get(page) === "thread" && get(currentThread)) $$render(consequent_33, 1);
+          else if (get(page) === "timeline") $$render(consequent_45, 2);
+          else if (get(page) === "entities") $$render(consequent_48, 3);
+          else if (get(page) === "entity" && get(currentEntity)) $$render(consequent_51, 4);
+          else if (get(page) === "map") $$render(consequent_53, 5);
+          else if (get(page) === "graph") $$render(consequent_62, 6);
         });
       }
-      var node_86 = sibling(node_12, 2);
+      var node_100 = sibling(node_14, 2);
       {
-        var consequent_66 = ($$anchor3) => {
-          var aside_1 = root_1022();
-          let classes_14;
-          var button_67 = child(aside_1);
-          var node_87 = sibling(button_67);
+        var consequent_79 = ($$anchor3) => {
+          var aside_1 = root_1122();
+          let classes_15;
+          var button_70 = child(aside_1);
+          var node_101 = sibling(button_70);
           {
-            var consequent_54 = ($$anchor4) => {
-              var fragment_11 = root_90();
-              var h3_2 = first_child(fragment_11);
-              var text_104 = only_child(h3_2, true);
-              var p_17 = sibling(h3_2);
-              var text_105 = only_child(p_17);
+            var consequent_64 = ($$anchor4) => {
+              var fragment_16 = root_99();
+              var h3_2 = first_child(fragment_16);
+              var text_109 = only_child(h3_2, true);
+              var p_16 = sibling(h3_2);
+              var text_110 = only_child(p_16);
+              var p_17 = sibling(p_16);
+              var text_111 = only_child(p_17);
               var p_18 = sibling(p_17);
-              var text_106 = only_child(p_18);
+              var text_112 = only_child(p_18);
               var p_19 = sibling(p_18);
-              var text_107 = only_child(p_19);
-              template_effect(
-                ($0) => {
-                  set_text(text_104, (get(selectedEdge), untrack(() => get(selectedEdge).type)));
-                  set_text(text_105, `\u65B9\u5411\uFF1A${(get(selectedEdge), untrack(() => get(selectedEdge).source)) ?? ""} \u2192 ${(get(selectedEdge), untrack(() => get(selectedEdge).target)) ?? ""}`);
-                  set_text(text_106, `\u7F6E\u4FE1\u5EA6\uFF1A${(get(selectedEdge), untrack(() => get(selectedEdge).confidence ?? "\u672A\u63D0\u4F9B")) ?? ""}`);
-                  set_text(text_107, `\u8BC1\u636E\u5F15\u7528\uFF1A${$0 ?? ""}`);
-                },
-                [
-                  () => (get(selectedEdge), untrack(() => JSON.stringify(get(selectedEdge).evidence_refs || [])))
-                ]
-              );
-              append($$anchor4, fragment_11);
-            };
-            var consequent_58 = ($$anchor4) => {
-              const node = derived_safe_equal(() => (deep_read_state(repository()), get(selectedNode), untrack(() => repository().graphNode(get(selectedNode)))));
-              var fragment_12 = root_93();
-              var h3_3 = first_child(fragment_12);
-              var text_108 = only_child(h3_3, true);
-              var p_20 = sibling(h3_3);
-              var text_109 = only_child(p_20);
-              var node_88 = sibling(p_20);
+              var text_113 = only_child(p_19);
+              var node_102 = sibling(p_19, 2);
               {
-                var consequent_55 = ($$anchor5) => {
-                  var p_21 = root_47();
-                  var text_110 = only_child(p_21);
-                  template_effect(() => set_text(text_110, `\u7F6E\u4FE1\u5EA6\uFF1A${(deep_read_state(get(node)), untrack(() => get(node).confidence)) ?? ""}`));
-                  append($$anchor5, p_21);
+                var consequent_63 = ($$anchor5) => {
+                  var button_71 = root_98();
+                  event("click", button_71, () => openCanonical()(get(selectedEdge).canonical_ref));
+                  append($$anchor5, button_71);
                 };
-                if_block(node_88, ($$render) => {
-                  if (deep_read_state(get(node)), untrack(() => get(node)?.confidence != null)) $$render(consequent_55);
+                if_block(node_102, ($$render) => {
+                  if (get(selectedEdge), untrack(() => get(selectedEdge).canonical_ref?.kind === "chronicle")) $$render(consequent_63);
                 });
               }
-              var p_22 = sibling(node_88);
-              var text_111 = only_child(p_22);
-              var button_68 = sibling(p_22);
-              var button_69 = sibling(button_68);
-              var button_70 = sibling(button_69);
-              var text_112 = only_child(button_70, true);
-              var button_71 = sibling(button_70);
-              var node_89 = sibling(button_71);
+              template_effect(
+                ($0) => {
+                  set_text(text_109, (get(selectedEdge), untrack(() => get(selectedEdge).type)));
+                  set_text(text_110, `\u65B9\u5411\uFF1A${(get(selectedEdge), untrack(() => get(selectedEdge).source)) ?? ""} \u2192 ${(get(selectedEdge), untrack(() => get(selectedEdge).target)) ?? ""}`);
+                  set_text(text_111, `\u7F6E\u4FE1\u5EA6\uFF1A${(get(selectedEdge), untrack(() => get(selectedEdge).confidence ?? "\u672A\u63D0\u4F9B")) ?? ""}`);
+                  set_text(text_112, `\u8BC1\u636E\u5F15\u7528\uFF1A${$0 ?? ""}`);
+                  set_text(text_113, `\u6765\u6E90\uFF1A${(get(selectedEdge), untrack(() => get(selectedEdge).canonical_ref ? "Chronicle Relation" : "\u6295\u5F71\u7ED3\u6784\u5173\u7CFB")) ?? ""}`);
+                },
+                [
+                  () => (get(selectedEdge), untrack(() => JSON.stringify(get(selectedEdge).evidence_refs || []).slice(0, 300)))
+                ]
+              );
+              append($$anchor4, fragment_16);
+            };
+            var consequent_71 = ($$anchor4) => {
+              const node = derived_safe_equal(() => (deep_read_state(repository()), get(selectedNode), untrack(() => repository().graphNode(get(selectedNode)))));
+              var fragment_17 = root_103();
+              var h3_3 = first_child(fragment_17);
+              var text_114 = only_child(h3_3, true);
+              var p_20 = sibling(h3_3);
+              var text_115 = only_child(p_20);
+              var node_103 = sibling(p_20);
               {
-                var consequent_56 = ($$anchor5) => {
-                  var fragment_13 = root_91();
-                  var button_72 = first_child(fragment_13);
-                  var button_73 = sibling(button_72);
-                  event("click", button_72, () => {
+                var consequent_65 = ($$anchor5) => {
+                  var p_21 = root_55();
+                  var text_116 = only_child(p_21);
+                  template_effect(() => set_text(text_116, `\u7F6E\u4FE1\u5EA6\uFF1A${(deep_read_state(get(node)), untrack(() => get(node).confidence)) ?? ""}`));
+                  append($$anchor5, p_21);
+                };
+                if_block(node_103, ($$render) => {
+                  if (deep_read_state(get(node)), untrack(() => get(node)?.confidence != null)) $$render(consequent_65);
+                });
+              }
+              var node_104 = sibling(node_103);
+              {
+                var consequent_66 = ($$anchor5) => {
+                  var p_22 = root_100();
+                  var text_117 = only_child(p_22, true);
+                  template_effect(() => set_text(text_117, (deep_read_state(get(node)), untrack(() => get(node).summary))));
+                  append($$anchor5, p_22);
+                };
+                if_block(node_104, ($$render) => {
+                  if (deep_read_state(get(node)), untrack(() => get(node)?.summary)) $$render(consequent_66);
+                });
+              }
+              var node_105 = sibling(node_104);
+              {
+                var consequent_67 = ($$anchor5) => {
+                  var p_23 = root_55();
+                  var text_118 = only_child(p_23);
+                  template_effect(() => set_text(text_118, `\u6D3B\u52A8\uFF1A${(deep_read_state(get(node)), untrack(() => get(node).activity_events_12w)) ?? ""} Events / \u622A\u81F3\u6700\u65B0 Event \u7684 12 \u5468`));
+                  append($$anchor5, p_23);
+                };
+                if_block(node_105, ($$render) => {
+                  if (deep_read_state(get(node)), untrack(() => get(node)?.activity_events_12w != null)) $$render(consequent_67);
+                });
+              }
+              var node_106 = sibling(node_105);
+              {
+                var consequent_68 = ($$anchor5) => {
+                  var p_24 = root_55();
+                  var text_119 = only_child(p_24);
+                  template_effect(() => set_text(text_119, `\u5730\u70B9\u7CBE\u5EA6\uFF1A${(deep_read_state(get(node)), untrack(() => get(node).geo_precision)) ?? ""}`));
+                  append($$anchor5, p_24);
+                };
+                if_block(node_106, ($$render) => {
+                  if (deep_read_state(get(node)), untrack(() => get(node)?.geo_precision)) $$render(consequent_68);
+                });
+              }
+              var p_25 = sibling(node_106);
+              var text_120 = only_child(p_25);
+              var node_107 = sibling(p_25, 2);
+              each(
+                node_107,
+                1,
+                () => (get(graphSlice), get(selectedNode), untrack(() => get(graphSlice).edges.filter((e) => e.source === get(selectedNode) || e.target === get(selectedNode)).slice(0, 8))),
+                index,
+                ($$anchor5, relation) => {
+                  var button_72 = root_322();
+                  var text_121 = only_child(button_72);
+                  template_effect(($0) => set_text(text_121, `${(get(relation), untrack(() => get(relation).type)) ?? ""} \u2192 ${$0 ?? ""}`), [
+                    () => (deep_read_state(repository()), get(relation), get(selectedNode), untrack(() => repository().graphNode(get(relation).source === get(selectedNode) ? get(relation).target : get(relation).source)?.label || "\u672A\u77E5\u5BF9\u8C61"))
+                  ]);
+                  event("click", button_72, () => graphChooseEdge(get(relation)));
+                  append($$anchor5, button_72);
+                }
+              );
+              var button_73 = sibling(node_107);
+              var text_122 = only_child(button_73, true);
+              var button_74 = sibling(button_73);
+              var button_75 = sibling(button_74);
+              var text_123 = only_child(button_75, true);
+              var button_76 = sibling(button_75);
+              var node_108 = sibling(button_76);
+              {
+                var consequent_69 = ($$anchor5) => {
+                  var fragment_18 = root_101();
+                  var button_77 = first_child(fragment_18);
+                  var button_78 = sibling(button_77);
+                  event("click", button_77, () => {
                     setScope("entityId", get(selectedNode).slice(7));
                     navigate("timeline");
                   });
-                  event("click", button_73, () => {
+                  event("click", button_78, () => {
                     setScope("entityId", get(selectedNode).slice(7));
                     navigate("threads");
                   });
-                  append($$anchor5, fragment_13);
+                  append($$anchor5, fragment_18);
                 };
-                if_block(node_89, ($$render) => {
-                  if (deep_read_state(get(node)), untrack(() => get(node)?.type === "entity")) $$render(consequent_56);
+                if_block(node_108, ($$render) => {
+                  if (deep_read_state(get(node)), untrack(() => get(node)?.type === "entity")) $$render(consequent_69);
                 });
               }
-              var node_90 = sibling(node_89);
+              var node_109 = sibling(node_108);
               {
-                var consequent_57 = ($$anchor5) => {
-                  var button_74 = root_922();
-                  event("click", button_74, () => openCanonical()(get(node).canonical_ref));
-                  append($$anchor5, button_74);
+                var consequent_70 = ($$anchor5) => {
+                  var button_79 = root_1022();
+                  event("click", button_79, () => openCanonical()(get(node).canonical_ref));
+                  append($$anchor5, button_79);
                 };
-                if_block(node_90, ($$render) => {
-                  if (deep_read_state(get(node)), untrack(() => get(node)?.canonical_ref?.kind === "chronicle")) $$render(consequent_57);
+                if_block(node_109, ($$render) => {
+                  if (deep_read_state(get(node)), untrack(() => get(node)?.canonical_ref?.kind === "chronicle")) $$render(consequent_70);
                 });
               }
               template_effect(
-                ($0, $1) => {
-                  set_text(text_108, (deep_read_state(get(node)), get(selectedNode), untrack(() => get(node)?.label || get(selectedNode))));
-                  set_text(text_109, `${(deep_read_state(get(node)), untrack(() => get(node)?.type)) ?? ""}${(deep_read_state(get(node)), untrack(() => get(node)?.state ? ` \xB7 ${get(node).state}` : "")) ?? ""}${(deep_read_state(get(node)), untrack(() => get(node)?.publisher ? ` \xB7 ${get(node).publisher}` : "")) ?? ""}`);
-                  set_text(text_111, `\u5F53\u524D\u56FE\u5185\u5EA6\u6570\uFF1A${$0 ?? ""}`);
-                  set_text(text_112, $1);
+                ($0, $1, $2) => {
+                  set_text(text_114, (deep_read_state(get(node)), get(selectedNode), untrack(() => get(node)?.label || get(selectedNode))));
+                  set_text(text_115, `${(deep_read_state(get(node)), untrack(() => get(node)?.type)) ?? ""}${(deep_read_state(get(node)), untrack(() => get(node)?.state ? ` \xB7 ${get(node).state}` : "")) ?? ""}${(deep_read_state(get(node)), untrack(() => get(node)?.publisher ? ` \xB7 ${get(node).publisher}` : "")) ?? ""}`);
+                  set_text(text_120, `\u5173\u7CFB\uFF1A\u5168\u5C40 ${(deep_read_state(get(node)), untrack(() => get(node)?.relation_count ?? "\u2014")) ?? ""} \xB7 \u5F53\u524D\u56FE ${$0 ?? ""}`);
+                  set_text(text_122, $1);
+                  set_text(text_123, $2);
                 },
                 [
                   () => (get(graphSlice), get(selectedNode), untrack(() => get(graphSlice).edges.filter((e) => e.source === get(selectedNode) || e.target === get(selectedNode)).length)),
+                  () => (get(expanded), get(selectedNode), untrack(() => get(expanded).has(get(selectedNode)) ? "\u6536\u8D77\u90BB\u5C45" : "\u5C55\u5F00\u90BB\u5C45")),
                   () => (get(pinned), get(selectedNode), untrack(() => get(pinned).has(get(selectedNode)) ? "\u53D6\u6D88\u56FA\u5B9A" : "\u56FA\u5B9A"))
                 ]
               );
-              event("click", button_68, () => toggleSet((v) => set(expanded, v), get(selectedNode), get(expanded)));
-              event("click", button_69, () => hideNode(get(selectedNode)));
-              event("click", button_70, () => togglePin(get(selectedNode)));
-              event("click", button_71, () => openGraphNode(get(selectedNode)));
-              append($$anchor4, fragment_12);
+              event("click", button_73, () => toggleSet((v) => set(expanded, v), get(selectedNode), get(expanded)));
+              event("click", button_74, () => hideNode(get(selectedNode)));
+              event("click", button_75, () => togglePin(get(selectedNode)));
+              event("click", button_76, () => openGraphNode(get(selectedNode)));
+              append($$anchor4, fragment_17);
             };
-            var consequent_61 = ($$anchor4) => {
+            var consequent_74 = ($$anchor4) => {
               const l = derived_safe_equal(() => (deep_read_state(repository()), get(selectedLocation), untrack(() => repository().locationById.get(get(selectedLocation)))));
-              var fragment_14 = root_96();
-              var h3_4 = first_child(fragment_14);
-              var text_113 = only_child(h3_4, true);
-              var node_91 = sibling(h3_4);
+              var fragment_19 = root_106();
+              var h3_4 = first_child(fragment_19);
+              var text_124 = only_child(h3_4, true);
+              var node_110 = sibling(h3_4);
               {
-                var consequent_59 = ($$anchor5) => {
-                  var div_72 = root_422();
-                  each(div_72, 5, () => get(selectedCluster), index, ($$anchor6, id) => {
-                    var button_75 = root4();
-                    var text_114 = only_child(button_75, true);
-                    template_effect(($0) => set_text(text_114, $0), [
+                var consequent_72 = ($$anchor5) => {
+                  var div_77 = root_47();
+                  each(div_77, 5, () => get(selectedCluster), index, ($$anchor6, id) => {
+                    var button_80 = root5();
+                    var text_125 = only_child(button_80, true);
+                    template_effect(($0) => set_text(text_125, $0), [
                       () => (deep_read_state(repository()), get(id), untrack(() => repository().locationById.get(get(id))?.name || get(id)))
                     ]);
-                    event("click", button_75, () => {
+                    event("click", button_80, () => {
                       set(selectedLocation, get(id));
                       set(selectedCluster, [get(id)]);
                     });
-                    append($$anchor6, button_75);
+                    append($$anchor6, button_80);
                   });
-                  reset(div_72);
-                  append($$anchor5, div_72);
+                  reset(div_77);
+                  append($$anchor5, div_77);
                 };
-                if_block(node_91, ($$render) => {
-                  if (get(selectedCluster), untrack(() => get(selectedCluster).length > 1)) $$render(consequent_59);
+                if_block(node_110, ($$render) => {
+                  if (get(selectedCluster), untrack(() => get(selectedCluster).length > 1)) $$render(consequent_72);
                 });
               }
-              var p_23 = sibling(node_91);
-              var text_115 = only_child(p_23);
-              var p_24 = sibling(p_23);
-              var text_116 = only_child(p_24);
-              var p_25 = sibling(p_24);
-              var text_117 = only_child(p_25);
-              var div_73 = sibling(p_25, 2);
+              var p_26 = sibling(node_110);
+              var text_126 = only_child(p_26);
+              var p_27 = sibling(p_26);
+              var text_127 = only_child(p_27);
+              var p_28 = sibling(p_27);
+              var text_128 = only_child(p_28);
+              var p_29 = sibling(p_28);
+              var text_129 = only_child(p_29);
+              var div_78 = sibling(p_29, 2);
               each(
-                div_73,
+                div_78,
                 5,
                 () => (get(selectedLocation), untrack(() => [
                   ...new Set(locationEvents(get(selectedLocation)).flatMap((e) => e.entity_ids))
                 ].slice(0, 6))),
                 index,
                 ($$anchor5, id) => {
-                  var button_76 = root4();
-                  var text_118 = only_child(button_76, true);
-                  template_effect(($0) => set_text(text_118, $0), [() => (get(id), untrack(() => entityName(get(id))))]);
-                  event("click", button_76, () => navigate("entity", get(id)));
-                  append($$anchor5, button_76);
+                  var button_81 = root5();
+                  var text_130 = only_child(button_81, true);
+                  template_effect(($0) => set_text(text_130, $0), [() => (get(id), untrack(() => entityName(get(id))))]);
+                  event("click", button_81, () => navigate("entity", get(id)));
+                  append($$anchor5, button_81);
                 },
                 ($$anchor5) => {
-                  var span_19 = root_94();
-                  append($$anchor5, span_19);
+                  var span_24 = root_104();
+                  append($$anchor5, span_24);
                 }
               );
-              reset(div_73);
-              var node_92 = sibling(div_73);
+              reset(div_78);
+              var node_111 = sibling(div_78);
               {
-                var consequent_60 = ($$anchor5) => {
-                  var button_77 = root_95();
-                  event("click", button_77, () => openCanonical()(get(l).canonical_source_ref));
-                  append($$anchor5, button_77);
+                var consequent_73 = ($$anchor5) => {
+                  var button_82 = root_105();
+                  event("click", button_82, () => openCanonical()(get(l).canonical_source_ref));
+                  append($$anchor5, button_82);
                 };
-                if_block(node_92, ($$render) => {
-                  if (deep_read_state(get(l)), untrack(() => get(l)?.canonical_source_ref?.kind === "chronicle")) $$render(consequent_60);
+                if_block(node_111, ($$render) => {
+                  if (deep_read_state(get(l)), untrack(() => get(l)?.canonical_source_ref?.kind === "chronicle")) $$render(consequent_73);
                 });
               }
-              var node_93 = sibling(node_92, 2);
+              var node_112 = sibling(node_111, 2);
               each(
-                node_93,
+                node_112,
                 1,
                 () => (get(selectedLocation), untrack(() => locationEvents(get(selectedLocation)).slice(0, 5))),
                 index,
                 ($$anchor5, e) => {
-                  var button_78 = root_31();
-                  var text_119 = only_child(button_78);
-                  template_effect(($0) => set_text(text_119, `${$0 ?? ""} \xB7 ${(get(e), untrack(() => get(e).title)) ?? ""}`), [() => (get(e), untrack(() => dateLabel(get(e))))]);
-                  event("click", button_78, () => openEvent(get(e)));
-                  append($$anchor5, button_78);
+                  var button_83 = root_322();
+                  var text_131 = only_child(button_83);
+                  template_effect(($0) => set_text(text_131, `${$0 ?? ""} \xB7 ${(get(e), untrack(() => get(e).title)) ?? ""}`), [() => (get(e), untrack(() => dateLabel(get(e))))]);
+                  event("click", button_83, () => openEvent(get(e)));
+                  append($$anchor5, button_83);
                 }
               );
-              var button_79 = sibling(node_93);
-              var button_80 = sibling(button_79);
-              var button_81 = sibling(button_80);
-              var node_94 = sibling(button_81);
+              var button_84 = sibling(node_112);
+              var button_85 = sibling(button_84);
+              var button_86 = sibling(button_85);
+              var node_113 = sibling(button_86);
               each(
-                node_94,
+                node_113,
                 1,
                 () => (deep_read_state(get(l)), untrack(() => get(l)?.thread_ids || [])),
                 index,
                 ($$anchor5, id) => {
-                  var button_82 = root_31();
-                  var text_120 = only_child(button_82, true);
-                  template_effect(($0) => set_text(text_120, $0), [() => (get(id), untrack(() => threadName(get(id))))]);
-                  event("click", button_82, () => navigate("thread", get(id)));
-                  append($$anchor5, button_82);
+                  var button_87 = root_322();
+                  var text_132 = only_child(button_87, true);
+                  template_effect(($0) => set_text(text_132, $0), [() => (get(id), untrack(() => threadName(get(id))))]);
+                  event("click", button_87, () => navigate("thread", get(id)));
+                  append($$anchor5, button_87);
                 }
               );
               template_effect(
                 ($0, $1) => {
-                  set_text(text_113, (get(selectedCluster), deep_read_state(get(l)), get(selectedLocation), untrack(() => get(selectedCluster).length > 1 ? `${get(selectedCluster).length} \u4E2A\u5730\u70B9` : get(l)?.name || get(selectedLocation))));
-                  set_text(text_115, `\u7CBE\u5EA6\uFF1A${(deep_read_state(get(l)), untrack(() => get(l)?.geo_precision)) ?? ""} \xB7 \u5750\u6807\uFF1A${(deep_read_state(get(l)), untrack(() => get(l)?.lat)) ?? ""}, ${(deep_read_state(get(l)), untrack(() => get(l)?.lon)) ?? ""}`);
-                  set_text(text_116, `${$0 ?? ""} Events \xB7 ${(deep_read_state(get(l)), untrack(() => get(l)?.thread_ids.length)) ?? ""} Threads`);
-                  set_text(text_117, `\u65E5\u671F\uFF1A${$1 ?? ""}`);
+                  set_text(text_124, (get(selectedCluster), deep_read_state(get(l)), get(selectedLocation), untrack(() => get(selectedCluster).length > 1 ? `${get(selectedCluster).length} \u4E2A\u5730\u70B9` : get(l)?.name || get(selectedLocation))));
+                  set_text(text_126, `\u7CBE\u5EA6\uFF1A${(deep_read_state(get(l)), untrack(() => get(l)?.geo_precision)) ?? ""} \xB7 \u5750\u6807\uFF1A${(deep_read_state(get(l)), untrack(() => get(l)?.lat)) ?? ""}, ${(deep_read_state(get(l)), untrack(() => get(l)?.lon)) ?? ""}`);
+                  set_text(text_127, `\u5730\u7406\u6765\u6E90\uFF1A${(deep_read_state(get(l)), untrack(() => get(l)?.canonical_source_ref?.kind || "\u672A\u77E5")) ?? ""}${(deep_read_state(get(l)), untrack(() => get(l)?.canonical_source_ref?.id ? ` \xB7 ${get(l).canonical_source_ref.id}` : "")) ?? ""}`);
+                  set_text(text_128, `${$0 ?? ""} Events \xB7 ${(deep_read_state(get(l)), untrack(() => get(l)?.thread_ids.length)) ?? ""} Threads`);
+                  set_text(text_129, `\u65E5\u671F\uFF1A${$1 ?? ""}`);
                 },
                 [
                   () => (get(selectedLocation), untrack(() => locationEvents(get(selectedLocation)).length)),
                   () => (get(selectedLocation), untrack(() => locationEvents(get(selectedLocation)).length ? `${dateOf(locationEvents(get(selectedLocation)).at(-1))} \u2192 ${dateOf(locationEvents(get(selectedLocation))[0])}` : "\u2014"))
                 ]
               );
-              event("click", button_79, () => filterLocation(get(selectedLocation)));
-              event("click", button_80, () => {
+              event("click", button_84, () => filterLocation(get(selectedLocation)));
+              event("click", button_85, () => {
                 setScope("locationId", get(selectedLocation));
                 navigate("threads");
               });
-              event("click", button_81, () => {
+              event("click", button_86, () => {
                 setScope("locationId", get(selectedLocation));
+                set(selectedNode, "location:" + get(selectedLocation));
+                update(graphRefresh);
                 navigate("graph");
+                set(showInspector, true);
               });
-              append($$anchor4, fragment_14);
+              append($$anchor4, fragment_19);
             };
-            var consequent_62 = ($$anchor4) => {
-              var div_74 = root_98();
-              var h3_5 = sibling(child(div_74));
-              var text_121 = only_child(h3_5, true);
-              var p_26 = sibling(h3_5);
-              var text_122 = only_child(p_26, true);
-              var div_75 = sibling(p_26);
-              each(div_75, 4, () => ["Time", "Graph", "Map"], index, ($$anchor5, projection) => {
-                var button_83 = root4();
-                let classes_15;
-                var text_123 = only_child(button_83, true);
+            var consequent_75 = ($$anchor4) => {
+              var div_79 = root_108();
+              var h3_5 = sibling(child(div_79));
+              var text_133 = only_child(h3_5, true);
+              var p_30 = sibling(h3_5);
+              var text_134 = only_child(p_30, true);
+              var div_80 = sibling(p_30);
+              each(div_80, 4, () => ["Time", "Graph", "Map"], index, ($$anchor5, projection) => {
+                var button_88 = root5();
+                let classes_16;
+                var text_135 = only_child(button_88, true);
                 template_effect(() => {
-                  classes_15 = set_class(button_83, 1, "", null, classes_15, { active: get(inspectorProjection) === projection });
-                  set_text(text_123, projection);
+                  classes_16 = set_class(button_88, 1, "", null, classes_16, { active: get(inspectorProjection) === projection });
+                  set_text(text_135, projection);
                 });
-                event("click", button_83, () => set(inspectorProjection, projection));
-                append($$anchor5, button_83);
+                event("click", button_88, () => set(inspectorProjection, projection));
+                append($$anchor5, button_88);
               });
-              reset(div_75);
-              var node_95 = sibling(div_75);
-              ThreadProjection(node_95, {
+              reset(div_80);
+              var node_114 = sibling(div_80);
+              ThreadProjection(node_114, {
                 get thread() {
                   return get(homeThread);
                 },
                 get repository() {
                   return repository();
+                },
+                get scope() {
+                  return get(scope);
                 },
                 get projection() {
                   return get(inspectorProjection);
@@ -10190,133 +10850,135 @@ function Dashboard($$anchor, $$props) {
                   set(threadProjection, "Timeline");
                 },
                 openEntity: (id) => navigate("entity", id),
-                openLocation: (id) => {
-                  setScope("locationId", id);
-                  navigate("map");
-                }
+                openLocation: showLocation
               });
-              var h4 = sibling(node_95);
-              var text_124 = only_child(h4);
-              var node_96 = sibling(h4);
+              var h4 = sibling(node_114);
+              var text_136 = only_child(h4);
+              var node_115 = sibling(h4);
               each(
-                node_96,
+                node_115,
                 1,
                 () => (get(homeThread), untrack(() => get(homeThread).open_questions?.filter((q) => q.state === "open").slice(0, 3) || [])),
                 index,
                 ($$anchor5, question) => {
-                  var div_76 = root_97();
-                  var text_125 = only_child(div_76);
-                  template_effect(() => set_text(text_125, `\u25CB ${(get(question), untrack(() => get(question).question)) ?? ""}`));
-                  append($$anchor5, div_76);
+                  var button_89 = root_107();
+                  var text_137 = only_child(button_89);
+                  template_effect(() => {
+                    set_attribute2(button_89, "title", (get(question), untrack(() => get(question).question)));
+                    set_text(text_137, `\u25CB ${(get(question), untrack(() => get(question).question)) ?? ""}`);
+                  });
+                  event("click", button_89, () => openCanonical()(get(question).canonical_ref));
+                  append($$anchor5, button_89);
                 },
                 ($$anchor5) => {
-                  var p_27 = root_26();
-                  append($$anchor5, p_27);
+                  var p_31 = root_27();
+                  append($$anchor5, p_31);
                 }
               );
-              var p_28 = sibling(node_96, 2);
-              var text_126 = only_child(p_28);
-              var button_84 = sibling(p_28);
-              var button_85 = sibling(button_84);
-              reset(div_74);
+              var p_32 = sibling(node_115, 2);
+              var text_138 = only_child(p_32);
+              var button_90 = sibling(p_32);
+              var button_91 = sibling(button_90);
+              reset(div_79);
               template_effect(
-                ($0) => {
-                  set_text(text_121, (get(homeThread), untrack(() => get(homeThread).title)));
-                  set_text(text_122, (get(homeThread), untrack(() => get(homeThread).current_state?.text || get(homeThread).current_state_excerpt || "Chronicle \u6682\u65E0 Current State \u8BB0\u5F55\u3002")));
-                  set_text(text_124, `Open Questions \xB7 ${(get(homeThread), untrack(() => get(homeThread).open_question_count)) ?? ""}`);
-                  set_text(text_126, `${$0 ?? ""} \xB7 ${(get(homeThread), untrack(() => get(homeThread).latest_event_summary || "\u6682\u65E0 Event")) ?? ""}`);
-                  button_85.disabled = (get(homeThread), untrack(() => !get(homeThread).canonical_ref.obsidian_path));
+                ($0, $1) => {
+                  set_text(text_133, (get(homeThread), untrack(() => get(homeThread).title)));
+                  set_text(text_134, (get(homeThread), untrack(() => get(homeThread).current_state?.text || get(homeThread).current_state_excerpt || "Chronicle \u6682\u65E0 Current State \u8BB0\u5F55\u3002")));
+                  set_text(text_136, `Open Questions \xB7 ${(get(homeThread), untrack(() => get(homeThread).open_question_count)) ?? ""}`);
+                  set_text(text_138, `${$0 ?? ""} \xB7 ${$1 ?? ""}`);
+                  button_91.disabled = (get(homeThread), untrack(() => !get(homeThread).canonical_ref.obsidian_path));
                 },
                 [
-                  () => (get(homeThread), untrack(() => formatDate(get(homeThread).last_meaningful_change_at)))
+                  () => (get(homeThread), untrack(() => formatDate(get(homeThread).last_meaningful_change_at))),
+                  () => (get(homeThread), untrack(() => get(homeThread).latest_event_title || get(homeThread).latest_event_summary?.slice(0, 100) || "\u6682\u65E0 Event"))
                 ]
               );
-              event("click", button_84, () => navigate("thread", get(homeThread).thread_id));
-              event("click", button_85, () => openRef(get(homeThread).canonical_ref));
-              append($$anchor4, div_74);
+              event("click", button_90, () => navigate("thread", get(homeThread).thread_id));
+              event("click", button_91, () => openRef(get(homeThread).canonical_ref));
+              append($$anchor4, div_79);
             };
-            var consequent_64 = ($$anchor4) => {
-              var fragment_15 = root_100();
-              var h3_6 = first_child(fragment_15);
-              var text_127 = only_child(h3_6, true);
-              var p_29 = sibling(h3_6);
-              var text_128 = only_child(p_29, true);
-              var p_30 = sibling(p_29);
-              var text_129 = only_child(p_30, true);
-              var p_31 = sibling(p_30);
-              var text_130 = only_child(p_31);
-              var button_86 = sibling(p_31);
-              var node_97 = sibling(button_86);
+            var consequent_77 = ($$anchor4) => {
+              var fragment_20 = root_110();
+              var h3_6 = first_child(fragment_20);
+              var text_139 = only_child(h3_6, true);
+              var p_33 = sibling(h3_6);
+              var text_140 = only_child(p_33, true);
+              var p_34 = sibling(p_33);
+              var text_141 = only_child(p_34, true);
+              var p_35 = sibling(p_34);
+              var text_142 = only_child(p_35);
+              var button_92 = sibling(p_35);
+              var node_116 = sibling(button_92);
               {
-                var consequent_63 = ($$anchor5) => {
-                  var button_87 = root_99();
-                  event("click", button_87, () => showEventMap(get(inspectedEvent)));
-                  append($$anchor5, button_87);
+                var consequent_76 = ($$anchor5) => {
+                  var button_93 = root_109();
+                  event("click", button_93, () => showEventMap(get(inspectedEvent)));
+                  append($$anchor5, button_93);
                 };
-                if_block(node_97, ($$render) => {
-                  if (get(inspectedEvent), untrack(() => get(inspectedEvent).location_ids?.length)) $$render(consequent_63);
+                if_block(node_116, ($$render) => {
+                  if (get(inspectedEvent), untrack(() => get(inspectedEvent).location_ids?.length)) $$render(consequent_76);
                 });
               }
-              var button_88 = sibling(node_97);
+              var button_94 = sibling(node_116);
               template_effect(
                 ($0) => {
-                  set_text(text_127, (get(inspectedEvent), untrack(() => get(inspectedEvent).title)));
-                  set_text(text_128, (get(inspectedEvent), untrack(() => get(inspectedEvent).summary)));
-                  set_text(text_129, $0);
-                  set_text(text_130, `\u7F6E\u4FE1\u5EA6 ${(get(inspectedEvent), untrack(() => get(inspectedEvent).confidence)) ?? ""} \xB7 ${(get(inspectedEvent), untrack(() => get(inspectedEvent).claim_count)) ?? ""} Claims \xB7 ${(get(inspectedEvent), untrack(() => get(inspectedEvent).source_count)) ?? ""} Sources`);
+                  set_text(text_139, (get(inspectedEvent), untrack(() => get(inspectedEvent).title)));
+                  set_text(text_140, (get(inspectedEvent), untrack(() => get(inspectedEvent).summary)));
+                  set_text(text_141, $0);
+                  set_text(text_142, `\u7F6E\u4FE1\u5EA6 ${(get(inspectedEvent), untrack(() => get(inspectedEvent).confidence)) ?? ""} \xB7 ${(get(inspectedEvent), untrack(() => get(inspectedEvent).claim_count)) ?? ""} Claims \xB7 ${(get(inspectedEvent), untrack(() => get(inspectedEvent).source_count)) ?? ""} Sources`);
                 },
                 [
                   () => (get(inspectedEvent), untrack(() => dateLabel(get(inspectedEvent))))
                 ]
               );
-              event("click", button_86, () => openEvent(get(inspectedEvent)));
-              event("click", button_88, () => focusGraph("event:" + get(inspectedEvent).event_id));
-              append($$anchor4, fragment_15);
+              event("click", button_92, () => openEvent(get(inspectedEvent)));
+              event("click", button_94, () => focusGraph("event:" + get(inspectedEvent).event_id));
+              append($$anchor4, fragment_20);
             };
-            var consequent_65 = ($$anchor4) => {
-              var fragment_16 = root_101();
-              var h3_7 = first_child(fragment_16);
-              var text_131 = only_child(h3_7, true);
-              var p_32 = sibling(h3_7);
-              var text_132 = only_child(p_32);
-              var button_89 = sibling(p_32);
+            var consequent_78 = ($$anchor4) => {
+              var fragment_21 = root_111();
+              var h3_7 = first_child(fragment_21);
+              var text_143 = only_child(h3_7, true);
+              var p_36 = sibling(h3_7);
+              var text_144 = only_child(p_36);
+              var button_95 = sibling(p_36);
               template_effect(() => {
-                set_text(text_131, (get(inspectedEntity), untrack(() => get(inspectedEntity).name)));
-                set_text(text_132, `${(get(inspectedEntity), untrack(() => get(inspectedEntity).kind)) ?? ""} \xB7 ${(get(inspectedEntity), untrack(() => get(inspectedEntity).thread_count)) ?? ""} Threads \xB7 ${(get(inspectedEntity), untrack(() => get(inspectedEntity).event_count)) ?? ""} Events`);
+                set_text(text_143, (get(inspectedEntity), untrack(() => get(inspectedEntity).name)));
+                set_text(text_144, `${(get(inspectedEntity), untrack(() => get(inspectedEntity).kind)) ?? ""} \xB7 ${(get(inspectedEntity), untrack(() => get(inspectedEntity).thread_count)) ?? ""} Threads \xB7 ${(get(inspectedEntity), untrack(() => get(inspectedEntity).event_count)) ?? ""} Events`);
               });
-              event("click", button_89, () => navigate("entity", get(inspectedEntity).entity_id));
-              append($$anchor4, fragment_16);
+              event("click", button_95, () => navigate("entity", get(inspectedEntity).entity_id));
+              append($$anchor4, fragment_21);
             };
-            if_block(node_87, ($$render) => {
-              if (get(selectedEdge) && get(page) === "graph") $$render(consequent_54);
-              else if (get(selectedNode) && get(page) === "graph") $$render(consequent_58, 1);
-              else if (get(selectedLocation) && (get(page) === "map" || get(page) === "thread" && get(threadProjection) === "Map" || get(page) === "entity" && get(entityProjection) === "Map")) $$render(consequent_61, 2);
-              else if (get(homeThread) && get(page) === "threads") $$render(consequent_62, 3);
-              else if (get(inspectedEvent)) $$render(consequent_64, 4);
-              else if (get(inspectedEntity)) $$render(consequent_65, 5);
+            if_block(node_101, ($$render) => {
+              if (get(selectedEdge) && get(page) === "graph") $$render(consequent_64);
+              else if (get(selectedNode) && get(page) === "graph") $$render(consequent_71, 1);
+              else if (get(selectedLocation) && (get(page) === "map" || get(page) === "thread" && get(threadProjection) === "Map" || get(page) === "entity" && get(entityProjection) === "Map")) $$render(consequent_74, 2);
+              else if (get(homeThread) && get(page) === "threads") $$render(consequent_75, 3);
+              else if (get(inspectedEvent)) $$render(consequent_77, 4);
+              else if (get(inspectedEntity)) $$render(consequent_78, 5);
             });
           }
           reset(aside_1);
-          template_effect(() => classes_14 = set_class(aside_1, 1, "wh-inspector", null, classes_14, {
+          template_effect(() => classes_15 = set_class(aside_1, 1, "wh-inspector", null, classes_15, {
             "wh-home-inspector": get(page) === "threads",
             "wh-inspector-open": get(showInspector)
           }));
-          event("click", button_67, () => set(showInspector, false));
+          event("click", button_70, () => set(showInspector, false));
           append($$anchor3, aside_1);
         };
-        if_block(node_86, ($$render) => {
-          if (get(showInspector) || get(page) === "threads") $$render(consequent_66);
+        if_block(node_100, ($$render) => {
+          if (get(showInspector) || get(page) === "threads") $$render(consequent_79);
         });
       }
       reset(main);
       var footer = sibling(main, 2);
-      var text_133 = only_child(footer);
-      template_effect(() => set_text(text_133, `Schema ${(deep_read_state(repository()), untrack(() => repository().manifest.schema_version)) ?? ""} \xB7 Generator ${(deep_read_state(repository()), untrack(() => repository().manifest.generator_version)) ?? ""} \xB7 Source ${(deep_read_state(repository()), untrack(() => repository().manifest.source_revision)) ?? ""}`));
+      var text_145 = only_child(footer);
+      template_effect(() => set_text(text_145, `Schema ${(deep_read_state(repository()), untrack(() => repository().manifest.schema_version)) ?? ""} \xB7 Generator ${(deep_read_state(repository()), untrack(() => repository().manifest.generator_version)) ?? ""} \xB7 Source ${(deep_read_state(repository()), untrack(() => repository().manifest.source_revision)) ?? ""}`));
       append($$anchor2, fragment);
     };
-    if_block(node_9, ($$render) => {
-      if (error()) $$render(consequent_2);
-      else if (repository()) $$render(consequent_67, 1);
+    if_block(node_11, ($$render) => {
+      if (error()) $$render(consequent_3);
+      else if (repository()) $$render(consequent_80, 1);
     });
   }
   reset(div);
@@ -10326,10 +10988,10 @@ function Dashboard($$anchor, $$props) {
       button_1.disabled = get(historyIndex) <= 0;
       button_2.disabled = (get(historyIndex), get(history), untrack(() => get(historyIndex) >= get(history).length - 1));
       set_value(input, (get(scope), untrack(() => get(scope).search)));
-      set_text(text_4, `\u7B5B\u9009 ${get(scopeCount) ? `(${get(scopeCount)})` : ""}`);
-      set_text(text_5, `${$0 ?? ""}${$1 ?? ""}${$2 ?? ""}${(get(scope), untrack(() => get(scope).from ? ` \xB7 ${get(scope).from}\u2192${get(scope).to || "\u73B0\u5728"}` : "")) ?? ""}${(get(scope), untrack(() => get(scope).status ? ` \xB7 ${get(scope).status}` : "")) ?? ""}${(get(scope), untrack(() => get(scope).priority ? ` \xB7 ${get(scope).priority}` : "")) ?? ""}`);
+      set_text(text_5, `\u7B5B\u9009 ${get(scopeCount) ? `(${get(scopeCount)})` : ""}`);
+      set_text(text_6, `${$0 ?? ""}${$1 ?? ""}${$2 ?? ""}${(get(scope), untrack(() => get(scope).from ? ` \xB7 ${get(scope).from}\u2192${get(scope).to || "\u73B0\u5728"}` : "")) ?? ""}${(get(scope), untrack(() => get(scope).status ? ` \xB7 ${get(scope).status}` : "")) ?? ""}${(get(scope), untrack(() => get(scope).priority ? ` \xB7 ${get(scope).priority}` : "")) ?? ""}`);
       button_7.disabled = !get(scopeCount);
-      set_text(text_6, $3);
+      set_text(text_7, $3);
     },
     [
       () => (get(scope), untrack(() => get(scope).threadId ? threadName(get(scope).threadId) : "\u5168\u5C40\u8BED\u6599")),
@@ -10348,7 +11010,7 @@ function Dashboard($$anchor, $$props) {
   });
   event("focus", input, () => set(searchFocused, true));
   event("blur", input, () => set(searchFocused, false));
-  event("input", input, (e) => setScope("search", e.currentTarget.value));
+  event("input", input, (e) => updateSearch(e.currentTarget.value));
   event("click", button_6, () => set(showFilters, !get(showFilters)));
   event("click", button_7, clearScope);
   append($$anchor, div);
@@ -10431,6 +11093,14 @@ var Repository = class _Repository {
       this.loadedPartitions.set(key2, items);
     }
     return items;
+  }
+  recentEvents(limit) {
+    const results = [];
+    for (const partition of this.timelinePartitions) {
+      results.push(...this.partition(partition.key).slice(0, Math.max(0, limit - results.length)));
+      if (results.length >= limit) break;
+    }
+    return results;
   }
   get timeline() {
     if (!this._timeline) {
@@ -10602,9 +11272,9 @@ var DashboardView = class extends import_obsidian.ItemView {
       await unmount(this.component);
       this.component = null;
     }
-    const root5 = this.contentEl;
-    root5.empty();
-    root5.addClass("wh-dashboard-host");
+    const root6 = this.contentEl;
+    root6.empty();
+    root6.addClass("wh-dashboard-host");
     let repository = null;
     let error = "";
     let stale = false;
@@ -10619,18 +11289,19 @@ var DashboardView = class extends import_obsidian.ItemView {
       error = String(e);
     }
     try {
-      this.component = mount(Dashboard, { target: root5, props: {
+      this.component = mount(Dashboard, { target: root6, props: {
         repository,
         error,
         stale,
         refresh: () => this.plugin.refreshAndRender(),
         openNote: (path) => this.plugin.openNote(path),
         openCanonical: (ref) => this.plugin.openCanonical(ref),
+        searchAll: this.plugin.settings.projector ? (query) => this.plugin.search(query) : void 0,
         settings: () => this.plugin.openSettings()
       } });
     } catch (cause) {
-      root5.textContent = `World Historian Dashboard failed to open: ${String(cause)}`;
-      root5.addClass("wh-alert");
+      root6.textContent = `World Historian Dashboard failed to open: ${String(cause)}`;
+      root6.addClass("wh-alert");
       console.error("World Historian Dashboard failed to mount", cause);
     }
   }
@@ -10669,6 +11340,12 @@ var HistorianPlugin = class extends import_obsidian.Plugin {
     } catch (e) {
       new import_obsidian.Notice(`Refresh failed: ${String(e)}`, 1e4);
     }
+  }
+  async search(query) {
+    if (!this.settings.projector || !this.settings.output) return [];
+    const args = [this.settings.projector, "--output", this.settings.output, "--search-query", query];
+    const raw = await new Promise((resolve, reject) => (0, import_node_child_process.execFile)(this.settings.pythonExecutable, args, { timeout: 15e3, maxBuffer: 256 * 1024 }, (error, stdout, stderr) => error ? reject(new Error(stderr || error.message)) : resolve(stdout)));
+    return JSON.parse(raw);
   }
   async openNote(path) {
     const file = this.app.vault.getFileByPath(path);

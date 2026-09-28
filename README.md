@@ -253,8 +253,7 @@ python (Join-Path $PapRoot 'agents/world-historian/runtime/dashboard_projector.p
 
 4. 在 Obsidian 中打开目标 Vault，进入「设置 → 社区插件」启用
    **World Historian Dashboard**。若安装时 Obsidian 已经打开，先完全退出再启动，
-   以重新加载 `main.js`。按 `Ctrl+P`（macOS 为 `Cmd+P`），运行
-   `World Historian Dashboard: Open dashboard`；也可点左侧网络图标。
+   以重新加载 `main.js`。
 5. 在「设置 → 社区插件 → World Historian Dashboard」填入本机绝对路径：
 
    | 设置项 | 填写内容 |
@@ -267,6 +266,8 @@ python (Join-Path $PapRoot 'agents/world-historian/runtime/dashboard_projector.p
 
 `<PAP_ROOT>` 只是路径示意，设置中不要保留尖括号。插件的 **Refresh read model**
 命令会按这些设置重新生成读模型；换入新的 `chronicle.sqlite` 快照后也需要运行一次。
+设置完成后按 `Ctrl+P`（macOS 为 `Cmd+P`），运行
+`World Historian Dashboard: Open dashboard`；也可点左侧网络图标。
 刷新只使用本机文件，不会从另一台电脑自动同步数据库。发布新 generation 时以 `CURRENT`
 指针原子切换；刷新失败时旧 generation 仍可用。读模型可删除后重建。
 
@@ -281,14 +282,24 @@ python3 scripts/benchmark_world_dashboard.py --scale 1
 
 此基准会在临时目录生成规格所列 1,000 Threads、100,000 Events、500,000 Claims、
 50,000 Entities 与 1,000,000 原始 Relations；不会触及真实 Chronicle。
+2026-09-28 在本机运行 v0.7.1 投影器时，完整重建耗时 481.46 秒，峰值内存约
+8.1 GB；生成 701,000 条本地搜索记录。
 
 可视化中的活动折线统计 **Event 发生日期**，按周聚合；窗口为最新有日期的 Event
 所在周及此前 11 周。空白基线表示此对象没有可定位到日期的 Event。首页
 `Events · 7d` 按当前日期回看 7 天，`Changed Threads · 7d` 按最近有意义变更时间统计。
 Thread、Timeline、Map、Graph 共用顶部范围；在 Timeline 选中 Event 后，可跳到
 Map 高亮其地点或在 Graph 聚焦其节点。地图只绘制有规范坐标和来源的发生地。
+Timeline 的长时间范围按月汇总，点月份可展开；每页最多渲染 300 个 Event，
+翻页仍保留已选 Event。Thread 详情的 Source coverage 以每周“至少有一个 Source 的
+Event / 全部 Event”计数；Claim states 按 Event 发生周统计各状态的
+Event–Claim 关联数。点击柱形可进入该周的 Thread Timeline。
 Thread 行内的 ↺、⇄、⊘ 和 ○ 分别表示关联 Claim 存在修正/取代、争议、撤回，
 以及当前仍有未解问题；这些标记反映现存记录状态，不表示变化发生在最近 12 周。
+顶部搜索覆盖 Thread、Event、Entity、Question、Claim、Source、Location；结果按对象类型
+进入 Thread、Timeline、Entity 或 Map 等对应视图。搜索使用读模型内可重建的本地
+`search.sqlite`，优先使用 Python SQLite 的 FTS5 trigram，缺少该模块时退回 SQLite
+`LIKE`；不会修改 Chronicle。
 
 当前 Chronicle 快照没有规范化事件地点坐标，也没有独立的 Current State 综合记录。
 仪表盘会明确显示空状态；不会由 Entity 名称或 Source 出版者位置猜测发生地，
