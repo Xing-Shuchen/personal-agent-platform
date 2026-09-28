@@ -41,6 +41,15 @@ spec:
           - agents/world-historian/runtime/cli.py
           - feeds
           - update
+      - name: world-chronicle-snapshot
+        schedule: "23 9 * * *"
+        skill: chronicle-snapshot
+        args: {}
+        attach_to_session: false
+        delivery: local
+        runner: command
+        command:
+          - /home/xingzeng/personal-agent-platform/scripts/sync_chronicle_snapshot.sh
       - name: world-follow-normal
         schedule: "43 3,13,21 * * *"
         skill: news-follow
