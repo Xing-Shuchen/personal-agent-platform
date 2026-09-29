@@ -13,7 +13,7 @@ from typing import Any, Callable
 from PIL import Image, ImageOps, UnidentifiedImageError
 
 from .knowledge import create_candidate, supersede_pending_for_trace
-from .observation_validation import validate_observation
+from .observation_validation import spatial_zone as _spatial, validate_observation
 from .store import Library, LibrarianError, _json, _new, _now, _unknown_time, validate
 
 
@@ -43,15 +43,6 @@ def _inside(inner: list[float], outer: list[float]) -> bool:
 def _bbox(boxes: list[list[float]]) -> list[float]:
     return [min(box[0] for box in boxes), min(box[1] for box in boxes),
             max(box[2] for box in boxes), max(box[3] for box in boxes)]
-
-
-def _spatial(page_box: list[float], trace_box: list[float]) -> tuple[str, str]:
-    cx = (trace_box[0] + trace_box[2]) / 2
-    cy = (trace_box[1] + trace_box[3]) / 2
-    x = (cx - page_box[0]) / (page_box[2] - page_box[0])
-    y = (cy - page_box[1]) / (page_box[3] - page_box[1])
-    return (["upper", "upper_middle", "middle", "lower_middle", "lower"][min(4, int(y * 5))],
-            ["left", "center", "right"][min(2, int(x * 3))])
 
 
 def _conflicting_visible_title(lib: Library, owner_id: str,

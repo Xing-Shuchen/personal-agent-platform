@@ -9,6 +9,16 @@ def _inside(inner: list[float], outer: list[float]) -> bool:
             and outer[1] <= inner[1] < inner[3] <= outer[3])
 
 
+def spatial_zone(page_box: list[float], trace_box: list[float]) -> tuple[str, str]:
+    """Derive the five-by-three location labels from normalized page geometry."""
+    cx = (trace_box[0] + trace_box[2]) / 2
+    cy = (trace_box[1] + trace_box[3]) / 2
+    x = (cx - page_box[0]) / (page_box[2] - page_box[0])
+    y = (cy - page_box[1]) / (page_box[3] - page_box[1])
+    return (["upper", "upper_middle", "middle", "lower_middle", "lower"][min(4, int(y * 5))],
+            ["left", "center", "right"][min(2, int(x * 3))])
+
+
 def validate_observation(observation: dict[str, Any]) -> None:
     """Raise ValueError for links or geometry a single-object Schema cannot prove."""
     regions = {page["id"]: page for page in observation["pages"]}

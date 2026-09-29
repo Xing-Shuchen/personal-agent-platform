@@ -19,7 +19,7 @@ from typing import Any
 
 from jsonschema import Draft202012Validator, FormatChecker
 
-from agents.librarian.runtime.observation_validation import validate_observation
+from agents.librarian.runtime.observation_validation import spatial_zone, validate_observation
 
 
 class LibrarianError(ValueError):
@@ -308,13 +308,26 @@ class Library:
             if (page is None or record["location"]["page"] != page["page"]["value"] or
                     record["location"]["page_bbox"] != page["bbox"]):
                 raise LibrarianError("VALIDATION_FAILED", "trace page disagrees with resolution")
+            location = record["location"]
+            box = location["bbox"]
+            page_box = page["bbox"]
+            ids = source["detection_ids"]
+            if location["side"] != page["side"]:
+                raise LibrarianError("VALIDATION_FAILED", "trace spatial labels disagree with page geometry")
+            if box is None:
+                if ids or location["vertical"] is not None or location["horizontal"] is not None:
+                    raise LibrarianError("VALIDATION_FAILED", "trace without bbox cannot locate detections")
+            else:
+                if not (page_box[0] <= box[0] < box[2] <= page_box[2]
+                        and page_box[1] <= box[1] < box[3] <= page_box[3]):
+                    raise LibrarianError("VALIDATION_FAILED", "trace bbox is outside its page region")
+                if (location["vertical"], location["horizontal"]) != spatial_zone(page_box, box):
+                    raise LibrarianError("VALIDATION_FAILED", "trace spatial labels disagree with page geometry")
             detections = {item["id"]: item for section in
                           ("printed_regions", "marks", "annotations", "symbols")
                           for item in observation[section]}
-            ids = source["detection_ids"]
             if len(ids) != len(set(ids)):
                 raise LibrarianError("VALIDATION_FAILED", "trace detection IDs must be unique")
-            box = record["location"]["bbox"]
             for identifier in ids:
                 item = detections.get(identifier)
                 if item is None or item["page_region_id"] != page_id:

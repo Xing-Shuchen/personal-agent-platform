@@ -494,6 +494,20 @@ def test_storage_rejects_forged_physical_detection_and_capture_links(tmp_path: P
             assert lib.db.execute("SELECT 1 FROM records WHERE id=?",
                                   (forged["id"],)).fetchone() is None
 
+        for suffix, changes in (
+                ("outside_page", {"bbox": [.1, .1, 1.0, 1.1]}),
+                ("wrong_side", {"side": "left"}),
+                ("wrong_zone", {"vertical": "lower"})):
+            forged = json.loads(json.dumps(trace))
+            forged["id"] = f"rt_forged_{suffix}"
+            forged["location"].update(changes)
+            with pytest.raises(LibrarianError) as rejected:
+                with lib.transaction():
+                    lib._put(forged)
+            assert rejected.value.code == "VALIDATION_FAILED"
+            assert lib.db.execute("SELECT 1 FROM records WHERE id=?",
+                                  (forged["id"],)).fetchone() is None
+
 
 def test_storage_checks_owner_and_historical_trace_versions_in_relations(tmp_path: Path) -> None:
     with Library(tmp_path) as lib:
