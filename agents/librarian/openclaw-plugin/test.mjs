@@ -255,6 +255,35 @@ test("evidence tool labels pending scan crop without calling it a stored trace",
   }
 });
 
+test("evidence tool sends a run-bound OCR gap crop for review", async () => {
+  const stateRoot = await mkdtemp(join(tmpdir(), "librarian-ocr-gap-"));
+  try {
+    const evidenceDir = join(stateRoot, "delivery-evidence");
+    const deliveryMediaRoot = join(stateRoot, "allowed-media");
+    await import("node:fs/promises").then(({ mkdir }) => mkdir(evidenceDir));
+    const mediaPath = join(evidenceDir, "gap.jpg");
+    await writeFile(mediaPath, Buffer.from("gap crop"));
+    const sent = [];
+    const context = { agentId: "librarian", requesterSenderId: "person",
+      messageChannel: "telegram", agentAccountId: "bot",
+      deliveryContext: { channel: "telegram", accountId: "bot" },
+      delivery: { send: async (payload) => sent.push(payload) } };
+    const bridge = async (_config, message) => {
+      assert.deepEqual(message, { owner_id: "owner_fixture", capture_id: "capture_scan",
+        pending_run_id: "run_current", gap_index: 0 });
+      return { capture_id: "capture_scan", pending_run_id: "run_current",
+        gap_index: 0, source_status: "pending_ocr_gap", media_path: mediaPath };
+    };
+    const tool = librarianEvidenceTool({ ...config, stateRoot, deliveryMediaRoot }, context, bridge);
+    const result = await tool.execute("call", { capture_id: "capture_scan",
+      pending_run_id: "run_current", gap_index: 0 });
+    assert.match(sent[0].text, /OCR 缺口/);
+    assert.equal(JSON.parse(result.content[0].text).source_status, "pending_ocr_gap");
+  } finally {
+    await rm(stateRoot, { recursive: true, force: true });
+  }
+});
+
 test("review tool is read-only and owner-bound", async () => {
   const trusted = { agentId: "librarian", requesterSenderId: "person",
     messageChannel: "telegram", agentAccountId: "bot",

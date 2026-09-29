@@ -723,7 +723,7 @@ def _process_batch(lib: Library, root: Path, vault: Path | None, owner: str,
         extractor = ocr_extractor(epub=epub, note_refiner=openclaw_note_refiner)
         pending_review_ids = _latest_pending_review_ids(
             _current(lib, owner, "ProcessingRun"))
-        review_version = f"rapidocr-epub-notes-v11-vision:{isbn}:{epub_hash}"
+        review_version = f"rapidocr-epub-notes-v12-vision:{isbn}:{epub_hash}"
         review_extractor = (ocr_extractor(epub=epub, note_refiner=openclaw_note_refiner,
                                           underline_refiner=openclaw_underline_refiner)
                             if pending_review_ids else None)

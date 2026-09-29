@@ -153,21 +153,26 @@ export function librarianEvidenceTool(config, ctx, bridge = runEvidenceBridge) {
   return {
     name: "librarian_evidence",
     label: "Librarian photo evidence",
-    description: "Queue an owner-scoped crop to this conversation. Use trace_id for a stored trace, or capture_id plus candidate_id from current search pending_evidence for a newer unreviewed scan. Candidate indexes can shift after reprocessing; prefer candidate_id. A queue receipt does not prove platform delivery or approve a pending candidate.",
+    description: "Queue an owner-scoped crop to this conversation. Use trace_id for a stored trace; capture_id plus candidate_id for a pending candidate; or capture_id, pending_run_id and gap_index from the current review for an OCR gap. Candidate indexes can shift after reprocessing; prefer candidate_id. A queue receipt does not prove platform delivery or approve a pending candidate.",
     parameters: { type: "object", properties: {
       trace_id: { type: "string", pattern: "^rt_[A-Za-z0-9_-]+$" },
       capture_id: { type: "string", pattern: "^capture_[A-Za-z0-9_-]+$" },
       candidate_id: { type: "string", pattern: "^candidate_[A-Za-z0-9_-]+$" },
       candidate_index: { type: "integer", minimum: 0 },
+      pending_run_id: { type: "string", pattern: "^run_[A-Za-z0-9_-]+$" },
+      gap_index: { type: "integer", minimum: 0 },
     }, oneOf: [{ required: ["trace_id"] },
       { required: ["capture_id", "candidate_id"] },
-      { required: ["capture_id", "candidate_index"] }], additionalProperties: false },
+      { required: ["capture_id", "candidate_index"] },
+      { required: ["capture_id", "pending_run_id", "gap_index"] }], additionalProperties: false },
     async execute(_id, params) {
       const result = await bridge(config, { owner_id: ownerId,
         ...(params.trace_id ? { trace_id: params.trace_id } :
           { capture_id: params.capture_id,
             ...(params.candidate_id ? { candidate_id: params.candidate_id } :
-              { candidate_index: params.candidate_index }) }) });
+              params.gap_index !== undefined ?
+                { pending_run_id: params.pending_run_id, gap_index: params.gap_index } :
+                { candidate_index: params.candidate_index }) }) });
       const path = resolve(result.media_path);
       if (dirname(path) !== resolve(config.stateRoot, "delivery-evidence")) {
         throw new Error("invalid evidence path");
@@ -185,7 +190,9 @@ export function librarianEvidenceTool(config, ctx, bridge = runEvidenceBridge) {
         await chmod(outbound, 0o600);
         await ctx.delivery.send({ text: result.source_status === "pending_review" ?
           `扫描件待审核候选原图局部：${result.capture_id} ${result.candidate_id ?? result.candidate_index}` :
-          `原图局部证据：${result.trace_id}`,
+          result.source_status === "pending_ocr_gap" ?
+            `扫描件 OCR 缺口原图局部：${result.capture_id} 缺口 ${result.gap_index}` :
+            `原图局部证据：${result.trace_id}`,
           mediaUrl: outbound });
       } finally {
         await unlink(path).catch(() => {});
@@ -195,6 +202,7 @@ export function librarianEvidenceTool(config, ctx, bridge = runEvidenceBridge) {
         trace_id: result.trace_id ?? null, capture_id: result.capture_id,
         candidate_id: result.candidate_id ?? null,
         candidate_index: result.candidate_index ?? null,
+        gap_index: result.gap_index ?? null,
         source_status: result.source_status ?? "stored_trace",
         delivery_status: "queued" }) }] };
     },

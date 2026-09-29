@@ -1,6 +1,7 @@
 import io
 import json
 from types import SimpleNamespace
+from pathlib import Path
 
 from PIL import Image
 import pytest
@@ -134,3 +135,43 @@ def test_visual_review_removes_weak_false_underline_but_retains_raw_evidence(mon
     raw = json.loads(output.raw)
     assert raw["lines"][1]["underline_score"] == .08
     assert raw["underline_refinements"][0]["answer"]["has_underline"] is False
+
+
+def test_visual_refiner_checks_an_ocr_gap_outside_printed_text(monkeypatch) -> None:
+    import rapidocr
+
+    boxes = [[[100, top], [800, top], [800, top + 35], [100, top + 35]]
+             for top in (200, 280, 360, 440, 520, 600)]
+    texts = [f"正文第{i}行，包含足够长度的印刷句子。" for i in range(5)] + [
+        "行动者—目的/目标/意图—情境—规范—价值"]
+    result = SimpleNamespace(boxes=boxes, txts=texts, scores=[.95] * 6)
+    monkeypatch.setattr(rapidocr, "RapidOCR", lambda: lambda _pixels: result)
+
+    class GroundTruth:
+        sha256 = "fixture"
+
+        def __init__(self, _path):
+            pass
+
+        def match(self, value):
+            return (value, 1.0) if value.startswith("正文") else (None, 0.0)
+
+    monkeypatch.setattr(ocr, "EpubGroundTruth", GroundTruth)
+    monkeypatch.setattr(ocr, "_retry_ink_line_ocr", lambda *_args: None)
+    calls = []
+
+    def underline(_gray, _points):
+        calls.append(1)
+        return (.08, [.1, .9]) if len(calls) == 6 else (0.0, [0, 0])
+
+    monkeypatch.setattr(ocr, "_underline_evidence", underline)
+    image = io.BytesIO()
+    Image.new("RGB", (1000, 1400), "white").save(image, "PNG")
+    output = ocr.ocr_extractor(epub=Path("fixture.epub"),
+                               underline_refiner=lambda _crop: (
+                                   {"has_underline": False,
+                                    "underlined_text": "", "uncertain": False},
+                                   {"model": "fixture"}))(image.getvalue())
+    raw = json.loads(output.raw)
+    assert raw["gap_refinements"][0]["line_id"] == 5
+    assert raw["gap_refinements"][0]["answer"]["has_underline"] is False

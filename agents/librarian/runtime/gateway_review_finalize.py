@@ -65,7 +65,7 @@ def auto_reconcile_fully_reviewed(lib: Library, owner: str, capture_id: str) -> 
         raise
     candidates = {item["candidate_id"] for item in detail["proposed"]}
     decisions = {item["candidate_id"]: item for item in detail["review_decisions"]}
-    if candidates != decisions.keys():
+    if candidates != decisions.keys() or detail["ocr_gaps"]:
         return None
     if not candidates and (detail["current"] or detail["ocr_gaps"] or
                            not detail["visual_checks"] or any(
@@ -145,6 +145,8 @@ def finalize_review(lib: Library, message: dict) -> dict:
         decisions = {item["candidate_id"]: item for item in detail["review_decisions"]}
         if candidates != decisions.keys():
             raise LibrarianError("RECONCILIATION_REQUIRED", "every proposed candidate needs review")
+        if detail["ocr_gaps"]:
+            raise LibrarianError("RECONCILIATION_REQUIRED", "unreviewed OCR gaps remain")
         accepted = {key: item["corrected_text"] for key, item in decisions.items()
                     if item["decision"] == "accept"}
         run = lib.get(owner, "ProcessingRun", run_id)

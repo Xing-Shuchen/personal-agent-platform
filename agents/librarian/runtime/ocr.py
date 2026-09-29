@@ -672,6 +672,30 @@ def ocr_extractor(*, epub: Path | None = None, max_edge: int = 2000,
                     "Handwriting transcription is OCR-derived and may need correction")
         else:
             observation["warnings"].append("No marked book page detected")
+        gap_refinements = []
+        if underline_refiner and groundtruth and observation["pages"]:
+            printed_boxes = [item["bbox"] for item in observation["printed_regions"]]
+            for line in lines:
+                box = line["bbox"]
+                if (len(gap_refinements) >= 4 or line["underline_score"] < .065 or
+                        line["epub_match"] >= .85 or box[2] - box[0] < .28 or
+                        not any(page["bbox"][1] <= (box[1] + box[3]) / 2 <= page["bbox"][3]
+                                for page in observation["pages"]) or
+                        any(abs(box[1] - printed[1]) < .012 for printed in printed_boxes)):
+                    continue
+                crop = image.crop((max(0, int((box[0] - .04) * width)),
+                                   max(0, int((box[1] - .04) * height)),
+                                   min(width, int((box[2] + .04) * width)),
+                                   min(height, int((box[3] + .04) * height))))
+                crop.thumbnail((2200, 2200))
+                output = io.BytesIO()
+                crop.save(output, "JPEG", quality=88)
+                try:
+                    answer, response = underline_refiner(output.getvalue())
+                    gap_refinements.append({"line_id": line["id"], "answer": answer,
+                                            "model": response})
+                except (RuntimeError, OSError, ValueError, subprocess.TimeoutExpired):
+                    observation["warnings"].append("OCR gap visual review unavailable")
         if rotated:
             for section in ("pages", "printed_regions", "marks", "annotations", "symbols"):
                 for item in observation[section]:
@@ -686,7 +710,8 @@ def ocr_extractor(*, epub: Path | None = None, max_edge: int = 2000,
                "page_markers": locals().get("markers", []),
                "page_marker_probe": locals().get("marker_probe", []),
                "note_refinements": locals().get("note_refinements", []),
-               "underline_refinements": locals().get("underline_refinements", [])}
+               "underline_refinements": locals().get("underline_refinements", []),
+               "gap_refinements": gap_refinements}
         return ExtractionOutput(raw=json.dumps(raw, ensure_ascii=False).encode(),
                                 observation=json.dumps(observation, ensure_ascii=False).encode(),
                                 derivative=derivative, derivative_width=dw,

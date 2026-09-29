@@ -73,8 +73,10 @@ tool again with its capture ID and explain the current and proposed groups.
 Present candidate text as uncertain; the tool is read-only, so never claim
 that review or replacement has been applied.
 If `librarian_review` returns `ocr_gaps`, state that the candidate quote omits
-visible marked text. Do not present that quote as complete or claim it is ready
-to replace the current trace.
+visible marked text. Use `librarian_evidence` with that capture ID, the current
+`pending_run_id`, and the gap's zero-based `gap_index` to show its original
+crop when the user asks to review the gap. Do not present the quote as
+complete or claim it is ready to replace the current trace.
 If it returns `visual_checks`, explain which weak OCR candidates were rejected
 by the cropped multimodal review and where the multimodal wording still
 disagrees with the candidate. These checks are review evidence, not an

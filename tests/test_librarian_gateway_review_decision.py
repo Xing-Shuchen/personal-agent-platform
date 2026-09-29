@@ -5,12 +5,26 @@ import pytest
 from agents.librarian.runtime.gateway_review_decision import record_review_decision
 from agents.librarian.runtime.gateway_review_finalize import (
     auto_reconcile_fully_reviewed, finalize_review)
-from agents.librarian.runtime.gateway_review import pending_extractions
+from agents.librarian.runtime.gateway_review import _reviewable_ocr_gaps, pending_extractions
 from agents.librarian.runtime.pipeline import process_capture
 from agents.librarian.runtime.store import Library, LibrarianError
 import io
 import json
 from PIL import Image
+
+
+def test_ocr_gap_review_respects_visual_negative_and_rotated_coordinates() -> None:
+    observation = {"printed_regions": [], "pages": [{"bbox": [0, 0, 1, 1]}]}
+    raw = {"analysis_rotation_degrees": 180,
+           "lines": [{"id": 7, "bbox": [.2, .3, .7, .35],
+                      "underline_score": .08, "epub_match": 0.0}],
+           "gap_refinements": [{"line_id": 7, "answer": {
+               "has_underline": False, "underlined_text": "", "uncertain": False}}]}
+    assert _reviewable_ocr_gaps(raw, observation) == []
+    raw["gap_refinements"][0]["answer"]["has_underline"] = True
+    gaps = _reviewable_ocr_gaps(raw, observation)
+    assert len(gaps) == 1
+    assert gaps[0]["bbox"] == [.3, .65, .8, .7]
 
 
 def test_review_decision_is_source_linked_idempotent_and_does_not_promote(

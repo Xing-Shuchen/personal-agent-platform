@@ -113,3 +113,67 @@ def test_pending_scan_crop_uses_review_candidate_without_promotion(tmp_path: Pat
     by_id = prepare_evidence(FakeLibrary(), "owner", None, directory,
                              capture_id="capture_scan", candidate_id="candidate_one")
     assert by_id["candidate_index"] == 0
+
+
+def test_pending_handwritten_note_crop_shows_undetected_top_line(
+        tmp_path: Path, monkeypatch) -> None:
+    image = Image.new("RGB", (1000, 800), "white")
+    from PIL import ImageDraw
+    ImageDraw.Draw(image).rectangle((830, 295, 890, 315), fill="red")
+    source = BytesIO()
+    image.save(source, "PNG")
+
+    monkeypatch.setattr(
+        "agents.librarian.runtime.gateway_evidence.pending_extractions",
+        lambda *_args: {"proposed": [{"candidate_id": "candidate_note",
+                                      "bbox": [.8, .45, .92, .52],
+                                      "annotation": "detected lower line",
+                                      "page": None}]})
+
+    class FakeLibrary:
+        def get(self, _owner, _model, capture_id):
+            return {"id": capture_id}
+
+        def read_original(self, *_args):
+            return source.getvalue()
+
+    result = prepare_evidence(FakeLibrary(), "owner", None, tmp_path,
+                              capture_id="capture_scan", candidate_index=0)
+    with Image.open(result["media_path"]) as crop:
+        assert crop.width >= 280 and crop.height >= 200
+        red_pixels = sum(1 for pixel in crop.getdata()
+                         if pixel[0] > 180 and pixel[1] < 90 and pixel[2] < 90)
+        assert red_pixels > 100
+
+
+def test_ocr_gap_crop_is_bound_to_current_pending_run(tmp_path: Path, monkeypatch) -> None:
+    image = Image.new("RGB", (1000, 800), "white")
+    from PIL import ImageDraw
+    ImageDraw.Draw(image).rectangle((350, 350, 650, 380), fill="black")
+    source = BytesIO()
+    image.save(source, "PNG")
+    monkeypatch.setattr(
+        "agents.librarian.runtime.gateway_evidence.pending_extractions",
+        lambda *_args: {"pending_run_id": "run_current", "ocr_gaps": [
+            {"bbox": [.35, .43, .65, .49],
+             "reason": "visible_ink_without_reliable_print_text"}]})
+
+    class FakeLibrary:
+        def get(self, _owner, _model, capture_id):
+            return {"id": capture_id}
+
+        def read_original(self, *_args):
+            return source.getvalue()
+
+    with pytest.raises(LibrarianError) as error:
+        prepare_evidence(FakeLibrary(), "owner", None, tmp_path,
+                         capture_id="capture_scan", pending_run_id="run_stale",
+                         gap_index=0)
+    assert error.value.code == "REVISION_CONFLICT"
+    result = prepare_evidence(FakeLibrary(), "owner", None, tmp_path,
+                              capture_id="capture_scan", pending_run_id="run_current",
+                              gap_index=0)
+    assert result["source_status"] == "pending_ocr_gap"
+    assert result["gap_index"] == 0
+    with Image.open(result["media_path"]) as crop:
+        assert crop.getpixel((crop.width // 2, crop.height // 2))[0] < 100

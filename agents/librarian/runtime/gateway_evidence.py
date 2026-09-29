@@ -39,46 +39,69 @@ def _analysis_rotation(lib: Library, owner: str, *, observation_id: str | None =
 
 
 def _pending_crop(lib: Library, owner: str, capture_id: str, candidate_index: int | None,
-                  candidate_id: str | None) -> tuple[bytes, dict, int]:
+                  candidate_id: str | None, gap_index: int | None,
+                  pending_run_id: str | None) -> tuple[bytes, dict, int]:
     detail = pending_extractions(lib, owner, capture_id)
-    if candidate_id is not None:
-        matches = [index for index, item in enumerate(detail["proposed"])
-                   if item["candidate_id"] == candidate_id]
-        if len(matches) != 1:
-            raise LibrarianError("OBJECT_NOT_FOUND", "pending candidate not found")
-        candidate_index = matches[0]
-    if isinstance(candidate_index, bool) or not isinstance(candidate_index, int) or not 0 <= candidate_index < len(detail["proposed"]):
-        raise LibrarianError("VALIDATION_FAILED", "candidate index out of range")
-    candidate = detail["proposed"][candidate_index]
-    box = candidate["bbox"]
+    if gap_index is not None:
+        if pending_run_id != detail["pending_run_id"]:
+            raise LibrarianError("REVISION_CONFLICT", "pending gap run changed")
+        gaps = detail["ocr_gaps"]
+        if isinstance(gap_index, bool) or not isinstance(gap_index, int) or not 0 <= gap_index < len(gaps):
+            raise LibrarianError("VALIDATION_FAILED", "gap index out of range")
+        gap = gaps[gap_index]
+        if not isinstance(gap.get("bbox"), list):
+            raise LibrarianError("RECONCILIATION_REQUIRED", "gap has no image location")
+        box = gap["bbox"]
+        x_context, y_context = .04, .04
+        source_info = {"capture_id": capture_id, "pending_run_id": pending_run_id,
+                       "gap_index": gap_index, "source_status": "pending_ocr_gap"}
+    else:
+        if candidate_id is not None:
+            matches = [index for index, item in enumerate(detail["proposed"])
+                       if item["candidate_id"] == candidate_id]
+            if len(matches) != 1:
+                raise LibrarianError("OBJECT_NOT_FOUND", "pending candidate not found")
+            candidate_index = matches[0]
+        if isinstance(candidate_index, bool) or not isinstance(candidate_index, int) or not 0 <= candidate_index < len(detail["proposed"]):
+            raise LibrarianError("VALIDATION_FAILED", "candidate index out of range")
+        candidate = detail["proposed"][candidate_index]
+        box = candidate["bbox"]
+        # Handwriting OCR often detects only the bottom lines of a margin
+        # note. Give the human reviewer enough context to see its beginning.
+        x_context, y_context = ((.08, .10) if candidate.get("annotation") else
+                                (.02, .02))
+        source_info = {"capture_id": capture_id,
+                       "candidate_index": candidate_index,
+                       "candidate_id": candidate["candidate_id"],
+                       "page": candidate["page"],
+                       "source_status": "pending_review"}
     capture = lib.get(owner, "PageCapture", capture_id)
     with Image.open(io.BytesIO(lib.read_original(owner, capture_id))) as source:
         image = ImageOps.exif_transpose(source)
         image.load()
         width, height = image.size
-        padded = [max(0, box[0] - .02), max(0, box[1] - .02),
-                  min(1, box[2] + .02), min(1, box[3] + .02)]
+        padded = [max(0, box[0] - x_context), max(0, box[1] - y_context),
+                  min(1, box[2] + x_context), min(1, box[3] + y_context)]
         bounds = (int(padded[0] * width), int(padded[1] * height),
                   int(padded[2] * width), int(padded[3] * height))
         if bounds[0] >= bounds[2] or bounds[1] >= bounds[3]:
             raise LibrarianError("VALIDATION_FAILED", "candidate crop has no pixels")
         output = io.BytesIO()
         image.crop(bounds).save(output, format="PNG")
-    return output.getvalue(), {"capture_id": capture["id"],
-                                "candidate_index": candidate_index,
-                                "candidate_id": candidate["candidate_id"],
-                                "page": candidate["page"],
-                                "source_status": "pending_review"}, _analysis_rotation(
-                                    lib, owner, run_id=detail.get("pending_run_id"))
+    return output.getvalue(), {**source_info, "capture_id": capture["id"]}, _analysis_rotation(
+        lib, owner, run_id=detail.get("pending_run_id"))
 
 
 def prepare_evidence(lib: Library, owner: str, trace_id: str | None, directory: Path,
                      *, capture_id: str | None = None, candidate_index: int | None = None,
-                     candidate_id: str | None = None) -> dict:
+                     candidate_id: str | None = None, gap_index: int | None = None,
+                     pending_run_id: str | None = None) -> dict:
     if not isinstance(owner, str) or not owner or ((trace_id is None) == (capture_id is None)):
         raise LibrarianError("VALIDATION_FAILED", "choose trace or pending capture")
     if trace_id is not None:
-        if not isinstance(trace_id, str) or not trace_id.startswith("rt_") or candidate_index is not None or candidate_id is not None:
+        if (not isinstance(trace_id, str) or not trace_id.startswith("rt_") or
+                candidate_index is not None or candidate_id is not None or
+                gap_index is not None or pending_run_id is not None):
             raise LibrarianError("VALIDATION_FAILED", "trace ID required")
         trace = lib.get(owner, "ReadingTrace", trace_id)
         if trace.get("medium") != "physical" or trace.get("location", {}).get("kind") != "physical":
@@ -91,13 +114,19 @@ def prepare_evidence(lib: Library, owner: str, trace_id: str | None, directory: 
     else:
         if not isinstance(capture_id, str) or not capture_id.startswith("capture_"):
             raise LibrarianError("VALIDATION_FAILED", "capture ID required")
-        if (candidate_id is None) == (candidate_index is None):
-            raise LibrarianError("VALIDATION_FAILED", "choose candidate ID or index")
+        if sum(value is not None for value in
+               (candidate_id, candidate_index, gap_index)) != 1:
+            raise LibrarianError("VALIDATION_FAILED", "choose candidate or OCR gap")
         if candidate_id is not None and (not isinstance(candidate_id, str) or
                                          not candidate_id.startswith("candidate_")):
             raise LibrarianError("VALIDATION_FAILED", "candidate ID required")
+        if (gap_index is None and pending_run_id is not None or
+                gap_index is not None and (not isinstance(pending_run_id, str) or
+                                           not pending_run_id.startswith("run_"))):
+            raise LibrarianError("VALIDATION_FAILED", "gap needs current run ID")
         crop_bytes, source, rotation = _pending_crop(
-            lib, owner, capture_id, candidate_index, candidate_id)
+            lib, owner, capture_id, candidate_index, candidate_id,
+            gap_index, pending_run_id)
     with Image.open(io.BytesIO(crop_bytes)) as image_source:
         crop = image_source.convert("RGB")
         if rotation:
@@ -136,7 +165,9 @@ def main() -> int:
                                       message.get("trace_id"), args.root / "delivery-evidence",
                                       capture_id=message.get("capture_id"),
                                       candidate_index=message.get("candidate_index"),
-                                      candidate_id=message.get("candidate_id"))
+                                      candidate_id=message.get("candidate_id"),
+                                      gap_index=message.get("gap_index"),
+                                      pending_run_id=message.get("pending_run_id"))
     except (json.JSONDecodeError, LibrarianError) as error:
         code = error.code if isinstance(error, LibrarianError) else "VALIDATION_FAILED"
         print(json.dumps({"error": {"code": code}}))
