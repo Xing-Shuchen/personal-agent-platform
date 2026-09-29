@@ -450,6 +450,15 @@ A/C 旁注审核入口修复：`7eb75fb` 发现正式 `librarian_review_finalize
 
 R1/R2 来源对象续审：正式库 678 个纸书 trace 历史版本各有 3 个 provenance 对象引用，逐项都与所指 PageCapture 原图、PageObservation 派生图和 raw_output_asset 完全相同，错链 0；先前对象完整性审计另证明这批底层文件可读且散列吻合。27 张 PageCapture 的 `captured_at` 均为 unknown，而 `received_at` 保留飞书接收时间；3 个当前 ReadingSession 的 `started_at`、`ended_at` 也均为 unknown。现行 normalizer 从 observation 的检测链接拼接印刷/旁注文字和最小置信度，以 ink 与关联文字区域的并集生成 bbox；因此 trace bbox 是取证范围，不是仅覆盖墨线的精确边界。`marked_at`、作者、书籍置信度保持 unknown/null，页码置信度直接取指定 resolution 页区。此字段来源表述已核对 `pipeline.normalize` 和生产数据；OCR 真值、可见笔迹及用户端图片显示仍需 A/R2 的照片复核。
 
+| R2 纸书字段 | 当前写入来源与已核对证据 | 尚未由此证明 |
+|---|---|---|
+| 页码、页码置信度 | observation 页区进入指定 `CaptureResolution` revision，trace 拷贝同页区；678/678 版本字段一致 | 页眉是否被正确识别；旧邻图推断仅保留为历史 |
+| Work/Edition/Copy/Session | `capture_context` 的 `edition_fingerprint` 或 unknown，经 resolution 版本进入 trace；678/678 版本字段一致 | 指纹是否对应照片实物及自动归属时限的所有反例 |
+| 印刷文字、旁注、置信度 | normalizer 拼接关联 detection 的文字并取最小文本置信度；明确用户更正改为 `user_statement` | OCR 真值、手写辨认、墨线是否覆盖整句 |
+| bbox、方位 | 墨迹和已链接印刷区 bbox 的并集、页区内五乘三方位；结构校验已过 | bbox 不等于精确墨线轮廓 |
+| 时间、作者 | `captured_at`、`marked_at`、`started_at`、`ended_at`、`mark_author` 保持 unknown；接收时间单存 | 实际阅读或拍摄时间与执笔人 |
+| 原始证据 | 每版 trace 关联原图、派生图、raw 对象；678/678 引用精确匹配，290 个独立对象的散列已另验 | 备份恢复、视觉真实性或飞书客户端送达 |
+
 ## 9. 现行实现计划（2026-09-29）
 
 第 1–7 节仍是对 `d111ace` 的初审，不能用其中的旧行号和测试数量描述当前 HEAD。本节把整改转为可执行批次；每批结束时在第 8 节记录实际提交、测试、生产状态和未验项。除明确列出的真实用户审核外，调试与迁移均通过 Librarian 的 worker、领域命令或受信 Gateway 工具执行，不手改生产数据库或 Vault 生成块。
