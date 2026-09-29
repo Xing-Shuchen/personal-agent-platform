@@ -10,7 +10,8 @@ EPUB chapter and ordered by matched text offset, with page numbers shown only
 as source locators. The current book renders under its second chapter, with
 73 hidden trace anchors and no embedded photos or page-group headings. Broad
 regression checks now pass 516 Python tests, 16 plugin tests and the offline
-contracts. See the audit §14 for exact evidence and remaining gates.
+contracts. See the audit §§14–15 for exact evidence, the refreshed AC-01–26
+matrix and remaining gates.
 
 The older first-book counts and RapidOCR path below describe the 2026-09-28
 state, not the current runtime. The user authorized clearing all old physical
