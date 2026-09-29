@@ -150,6 +150,7 @@ test("evidence tool sends only to the bound route and removes temporary media", 
   const stateRoot = await mkdtemp(join(tmpdir(), "librarian-evidence-"));
   try {
     const evidenceDir = join(stateRoot, "delivery-evidence");
+    const deliveryMediaRoot = join(stateRoot, "allowed-media");
     await import("node:fs/promises").then(({ mkdir }) => mkdir(evidenceDir));
     const mediaPath = join(evidenceDir, "evidence-fixture.jpg");
     await writeFile(mediaPath, Buffer.from("synthetic crop"));
@@ -157,19 +158,27 @@ test("evidence tool sends only to the bound route and removes temporary media", 
     const trusted = { agentId: "librarian", requesterSenderId: "person",
       messageChannel: "telegram", agentAccountId: "bot",
       deliveryContext: { channel: "telegram", accountId: "bot" },
-      delivery: { send: async (payload) => sent.push(payload) } };
+      delivery: { send: async (payload) => {
+        const bytes = await import("node:fs/promises").then(({ readFile }) => readFile(payload.mediaUrl));
+        assert.deepEqual(bytes, Buffer.from("synthetic crop"));
+        const info = await import("node:fs/promises").then(({ stat }) => stat(payload.mediaUrl));
+        assert.equal(info.mode & 0o777, 0o600);
+        sent.push(payload);
+      } } };
     const bridge = async (_config, message) => {
       assert.deepEqual(message, { owner_id: "owner_fixture", trace_id: "rt_fixture" });
       return { trace_id: "rt_fixture", capture_id: "capture_fixture", media_path: mediaPath };
     };
-    const tool = librarianEvidenceTool({ ...config, stateRoot }, trusted, bridge);
-    await tool.execute("call", { trace_id: "rt_fixture" });
+    const tool = librarianEvidenceTool({ ...config, stateRoot, deliveryMediaRoot }, trusted, bridge);
+    const receipt = await tool.execute("call", { trace_id: "rt_fixture" });
     assert.equal(sent.length, 1);
-    assert.equal(sent[0].mediaUrl, mediaPath);
+    assert.ok(sent[0].mediaUrl.startsWith(deliveryMediaRoot + "/evidence-"));
+    assert.equal(JSON.parse(receipt.content[0].text).delivery_status, "queued");
     await assert.rejects(() => import("node:fs/promises").then(({ stat }) => stat(mediaPath)));
+    await assert.rejects(() => import("node:fs/promises").then(({ stat }) => stat(sent[0].mediaUrl)));
     assert.equal(librarianEvidenceTool({ ...config, stateRoot },
       { ...trusted, requesterSenderId: "other" }, bridge), null);
-    assert.equal(librarianEvidenceTool({ ...config, stateRoot },
+    assert.equal(librarianEvidenceTool({ ...config, stateRoot, deliveryMediaRoot },
       { ...trusted, delivery: undefined }, bridge), null);
   } finally {
     await rm(stateRoot, { recursive: true, force: true });

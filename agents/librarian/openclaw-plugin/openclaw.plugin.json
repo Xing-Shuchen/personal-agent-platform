@@ -9,6 +9,7 @@
     "properties": {
       "repoRoot": {"type": "string", "minLength": 1},
       "stateRoot": {"type": "string", "minLength": 1},
+      "deliveryMediaRoot": {"type": "string", "minLength": 1},
       "vaultRoot": {"type": "string", "minLength": 1},
       "visionModel": {"type": "string", "minLength": 1},
       "python": {"type": "string", "minLength": 1},

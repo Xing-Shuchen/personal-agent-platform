@@ -302,3 +302,5 @@ v8 本地 OCR 局部重试：强划线而整页 OCR 无法匹配 EPUB 的正文�
 09:17 用户从飞书明确报告「我读到第39页了」。真实轨迹出现 `tool.call librarian_session`，参数 `{"action":"progress","page":39}`，工具返回成功；同一 ReadingSession 升为 revision 2、保持 active，`progress.end_page.number=39`、`basis=user_statement`，`evidence_ref` 与本次飞书入站 message ID 相同。agent 回复引用相同会话及第 39 页。显式进度报告链路通过；照片自身页码不因此自动成为阅读进度。
 
 09:21 用户实际从飞书问「我在《社会理论二十讲》里画了什么」（未限定第 39 页）。真实轨迹出现 `tool.call librarian_search`，参数 `{"book":"社会理论二十讲","limit":20}`；工具成功返回 20 条同书 trace、`next_cursor=20`、`index_state=ready`。agent 飞书回复注明 20 条为本次上限、可能还有更多，并列出 trace ID、已解析页码或页码未知及正文片段。这证明受信入站→按书 owner 范围检索→来源化答复的真实链路；第 39 页条件过滤、结果翻页和授权原图投送仍未通过该问题验证。首书待对账照片不因搜索成功而视为已审核。
+
+09:23 用户从飞书问第 39 页并要求原图局部。真实 agent 先调用 `librarian_search`（book+page=39）命中 1 条 `rt_7fc74a2b140edf941ecea6ef689bc19e`，再调用 `librarian_evidence`。平台日志明确报 `Local media path is not under an allowed directory`，因为裁片仍位于仓库私有 `var/librarian/delivery-evidence`；插件的 `ctx.delivery.send` 却正常 resolve，工具回报 `delivered:true`，agent 因此错误说“原图局部已发送”。按页检索真实链路通过，原图投送失败且成功判断不可信。修正插件为先复制裁片到显式配置的 OpenClaw media allowlist 子目录（0700 目录、0600 文件），等待当前路由投送调用后清除两份临时文件；工具只返回 `delivery_status: queued`，SOUL 不把排队等同平台送达。Node 回归与配置校验通过，真实投送尚待重启和下一条消息复验。

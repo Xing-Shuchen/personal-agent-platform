@@ -1,5 +1,7 @@
 import { spawn } from "node:child_process";
-import { realpath, stat, unlink } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { constants } from "node:fs";
+import { chmod, copyFile, mkdir, realpath, stat, unlink } from "node:fs/promises";
 import { delimiter, dirname, isAbsolute, resolve } from "node:path";
 
 const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
@@ -135,7 +137,8 @@ export function librarianSearchTool(config, ctx, bridge = runSearchBridge) {
 }
 
 export function librarianEvidenceTool(config, ctx, bridge = runEvidenceBridge) {
-  if (ctx?.agentId !== "librarian" || !ctx.requesterSenderId || !ctx.delivery?.send) return null;
+  if (ctx?.agentId !== "librarian" || !ctx.requesterSenderId || !ctx.delivery?.send ||
+      !config.deliveryMediaRoot || !isAbsolute(config.deliveryMediaRoot)) return null;
   const route = ctx.deliveryContext ?? {};
   if ((ctx.messageChannel && route.channel && ctx.messageChannel !== route.channel) ||
       (ctx.agentAccountId && route.accountId && ctx.agentAccountId !== route.accountId)) return null;
@@ -146,7 +149,7 @@ export function librarianEvidenceTool(config, ctx, bridge = runEvidenceBridge) {
   return {
     name: "librarian_evidence",
     label: "Librarian photo evidence",
-    description: "Send a cropped original-photo evidence image for one of this authenticated sender's reading trace IDs to the current conversation.",
+    description: "Queue a cropped original-photo evidence image for one of this authenticated sender's reading trace IDs to the current conversation. A queue receipt does not prove platform delivery.",
     parameters: { type: "object", properties: {
       trace_id: { type: "string", pattern: "^rt_[A-Za-z0-9_-]+$" },
     }, required: ["trace_id"], additionalProperties: false },
@@ -156,14 +159,26 @@ export function librarianEvidenceTool(config, ctx, bridge = runEvidenceBridge) {
       if (dirname(path) !== resolve(config.stateRoot, "delivery-evidence")) {
         throw new Error("invalid evidence path");
       }
+      const deliveryRoot = resolve(config.deliveryMediaRoot);
+      const outbound = resolve(deliveryRoot, `evidence-${randomUUID()}.jpg`);
       try {
+        const info = await stat(path);
+        if (!info.isFile() || info.size < 1 || info.size > MAX_IMAGE_BYTES) {
+          throw new Error("invalid evidence file");
+        }
+        await mkdir(deliveryRoot, { recursive: true, mode: 0o700 });
+        await chmod(deliveryRoot, 0o700);
+        await copyFile(path, outbound, constants.COPYFILE_EXCL);
+        await chmod(outbound, 0o600);
         await ctx.delivery.send({ text: `原图局部证据：${result.trace_id}`,
-          mediaUrl: path });
+          mediaUrl: outbound });
       } finally {
         await unlink(path).catch(() => {});
+        await unlink(outbound).catch(() => {});
       }
       return { content: [{ type: "text", text: JSON.stringify({
-        trace_id: result.trace_id, capture_id: result.capture_id, delivered: true }) }] };
+        trace_id: result.trace_id, capture_id: result.capture_id,
+        delivery_status: "queued" }) }] };
     },
   };
 }
