@@ -294,3 +294,5 @@ v8 本地 OCR 局部重试：强划线而整页 OCR 无法匹配 EPUB 的正文�
 归档语义更正：检查 OpenClaw 当前运行版的 `restoreArchivedDispatchSession` 后确认，已归档会话在下一条受信真人消息到来时会恢复原上下文，故上段“下一次入站应以新上下文运行”的判断错误。先通过 `sessions.patch` 对同一 `expectedSessionId` 解除归档，再用 Gateway 原生 `sessions.reset` 定点重置；两次 RPC 均成功。随后 `chat.history` 仅返回 Reset 系统标记，证明当前对话上下文已清空；旧 transcript 由运行时保留，未直接改写 SQLite。真正的下一条飞书入站调用仍待验证。
 
 08:00 周期 worker 只读核验：Gateway 自 07:49 重启后，两个当前可处理纸书批次的状态在 08:00 更新为 `partial`，分别保留 10/76 条活跃 trace；后者明确列出 5 张 `RECONCILIATION_REQUIRED`，重试次数为 0。`digital-sync-status.json` 同时记录 Koodo、WeRead 均成功。状态目录另有 7 个旧 `error` 文件，但对应批次不在当前 `_processing_batches` 集合，文件时间停在 09-28 23:30–23:35，不能误报为这轮 worker 的失败。当前没有滞留的 Librarian worker 进程。此证据证明本次周期调度和两类任务各自完成，尚不能代替慢源、网络中断及多次 timer 进程上界的专门验收。
+
+08:05 再观察一个完整周期：同两张当前批次状态分别在 08:05:12、08:05:20 更新，仍为 `partial` 及 10/76 条 trace，5 个待对账 capture 未变；数字同步在 08:05:09 更新，Koodo 与 WeRead 均成功。08:05:31 无残留 worker 进程。两次正常周期未见进程堆积，但不能推断故障或慢源场景的上界。
