@@ -659,6 +659,29 @@ def _consolidate_generated_note(lib: Library, owner: str, title: str,
     return note
 
 
+def _refresh_generated_notes(lib: Library, owner: str, vault: Path | None) -> list[dict]:
+    """Keep generated notes current even when a batch is waiting for review."""
+    if vault is None:
+        return []
+    titles = {lib.get(owner, "Work", edition["work_id"])["title"]
+              for edition in _current(lib, owner, "Edition")}
+    folder = vault / "2Area" / "40 学习与阅读" / "阅读笔记"
+    issues = []
+    for title in titles:
+        if not (folder / f"{title}.md").is_file():
+            continue
+        try:
+            _consolidate_generated_note(lib, owner, title, vault)
+        except LibrarianError as error:
+            issues.append({"source": "vault_note", "title": title,
+                           "status": "review_required" if error.code == "REVIEW_EDIT_CONFLICT" else "error",
+                           "code": error.code})
+        except Exception:
+            issues.append({"source": "vault_note", "title": title,
+                           "status": "error", "code": "WORKER_FAILED"})
+    return issues
+
+
 def _remove_vault_images(vault: Path, batch: dict) -> bool:
     """Migrate our earlier review export without touching user-written text."""
     folder = vault / "2Area" / "40 学习与阅读" / "阅读笔记"
@@ -965,6 +988,7 @@ def run(root: Path, vault: Path | None, owner: str, *,
                 with Library(root) as lib:
                     _repair_legacy_auto_affinity(lib, owner)
                     _repair_trace_index_best_effort(lib, owner)
+                    results.extend(_refresh_generated_notes(lib, owner, vault))
                     retry_fingerprint = _retry_fingerprint(root, vision_model)
                     for batch in _processing_batches(_current(lib, owner, "CaptureBatch")):
                         if batch["origin"]["transport"] != "feishu":
