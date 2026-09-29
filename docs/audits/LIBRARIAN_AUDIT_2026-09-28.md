@@ -833,3 +833,9 @@ OpenClaw 插件当前注册七个 `librarian_*` 工具、一个 `message_receive
 `test_pre_v4_digital_bindings_backfill_only_unambiguous_sources` 从 `0001`–`0003` SQL 建立无 `digital_source_owners` 的旧表，放入 Koodo 同源双 owner 冲突、Koodo 单 owner 来源及 WeRead 单 owner 来源，再由当前 `Library` 执行 `0004`。升级后两个无歧义来源各绑定原 owner，有歧义的来源没有自动选择 owner；原生来源行仍保留，两个尝试错误归属的 `bind_digital_source` 均返回 `UNAUTHORIZED`，再次打开库也没有新增错误绑定。隔离迁移专项 **1/1** 通过。
 
 此样本覆盖 `0004` 的唯一归属回填和歧义来源拒绝；没有包含旧版完整 `records`/对象目录、未知早期 schema 差异或真实历史双 owner 数据。§17 的完整私有目录恢复和本项旧表迁移样本是两种不同证据，合起来仍不能替代所有旧版本升级与 Gateway 服务切换演练。
+
+## 34. 首书 BookScan 本地耗时与模型路由（2026-09-29）
+
+用 `.venv/bin/python docs/audits/librarian_bookscan_timing.py var/librarian` 对当前 27 个非 duplicate 的正式 ProcessingRun，沿对应 PageObservation 的 raw asset 只读解析 `run.json`，不重跑照片、不输出原文。27/27 份报告均使用 `PP-OCRv5_mobile_det`、`PP-OCRv5_mobile_rec` 与 `device=cpu`，视觉页和 OCR 行缓存命中均为 0；合计 133 行。报告中的 BookScan `elapsed_seconds`：总计 133.17 秒，单张最短 3.82 秒、中位 4.72 秒、nearest-rank P90 6.03 秒、最长 7.20 秒。两条 `failure_count` 对应 raw 报告的 `empty_unverified`，不是进程崩溃；相关 run 保留 partial 与原始证据。
+
+这只是每张图进入 BookScan 进程后的处理计时，不含飞书入站排队、worker 冷启动、Vault 投影或客户端回复；报告没有 LLM token/付费记录，因此不能推算端到端 token 成本。核显只做过隔离尝试，**当前正式首书运行并未启用核显**。后续若切换设备，应保留模型/驱动版本与同图耗时、失败率对照，不能把这组 CPU 数字误用为 GPU 性能或普通新图质量验收。
