@@ -511,6 +511,17 @@ class Library:
                     self._remember_session(scope, chosen_session, received_at,
                                            chosen_basis == "active_session")
         except sqlite3.IntegrityError as error:
+            # Another process may have committed the exact same command after
+            # our first lookup. A matching fingerprint is a replay, even when
+            # the source-item unique constraint was the first one to fail.
+            winner = self.db.execute(
+                "SELECT fingerprint,receipt FROM idempotency WHERE owner_id=? AND key=?",
+                (owner_id, idempotency_key)).fetchone()
+            if winner and winner["fingerprint"] == fingerprint:
+                accepted = json.loads(winner["receipt"])
+                for capture_id in accepted["capture_ids"]:
+                    self.read_original(owner_id, capture_id)
+                return accepted
             raise LibrarianError("IDEMPOTENCY_CONFLICT", "source item or idempotency key already accepted") from error
         return receipt
 

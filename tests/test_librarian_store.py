@@ -5,6 +5,7 @@ import json
 import sqlite3
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from threading import Barrier, Thread
 
 import pytest
 from jsonschema import Draft202012Validator, RefResolver
@@ -167,6 +168,51 @@ def test_capture_durability_retry_conflict_and_same_bytes_new_message(tmp_path: 
         (tmp_path / a["asset"]["object_key"]).write_bytes(photo)
     with Library(tmp_path) as reopened:
         assert reopened.read_original("owner_a", first["capture_ids"][0]) == photo
+
+
+def test_concurrent_identical_capture_command_returns_one_receipt(
+        tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    with Library(tmp_path):
+        pass
+    barrier = Barrier(2)
+    original = Library._save_object
+
+    def synchronize_after_first_lookup(self, *args, **kwargs):
+        asset = original(self, *args, **kwargs)
+        barrier.wait(timeout=5)
+        return asset
+
+    monkeypatch.setattr(Library, "_save_object", synchronize_after_first_lookup)
+    receipts = []
+    errors = []
+    args = dict(transport="gateway", account_id="account", conversation_id="chat",
+                source_event_id="message", idempotency_key="one-command",
+                attachments=[{"source_item_id": "image", "mime_type": "image/jpeg",
+                              "data": b"same photo"}])
+
+    def ingest():
+        try:
+            with Library(tmp_path) as lib:
+                receipts.append(lib.ingest("owner_a", **args))
+        except Exception as error:
+            errors.append(error)
+
+    threads = [Thread(target=ingest) for _ in range(2)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=8)
+    assert not any(thread.is_alive() for thread in threads)
+    assert errors == []
+    assert len(receipts) == 2 and receipts[0] == receipts[1]
+    monkeypatch.setattr(Library, "_save_object", original)
+    with Library(tmp_path) as lib:
+        assert lib.db.execute("SELECT COUNT(*) FROM records WHERE model='PageCapture'").fetchone()[0] == 1
+        assert lib.db.execute("SELECT COUNT(*) FROM idempotency").fetchone()[0] == 1
+        assert len(lib.pending_events("owner_a")) == 1
+        with pytest.raises(LibrarianError) as conflict:
+            lib.ingest("owner_a", **(args | {"idempotency_key": "different-command"}))
+        assert conflict.value.code == "IDEMPOTENCY_CONFLICT"
 
 
 def test_capture_all_or_retry_on_invalid_attachment(tmp_path: Path):
