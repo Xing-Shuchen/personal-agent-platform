@@ -84,6 +84,29 @@ export async function writeIntakeStatus(config, event, ctx, state, error = null,
   }
 }
 
+export async function writeWorkerLaunchStatus(config, ownerId, mode, state) {
+  if (!ownerId || !["physical", "digital"].includes(mode) ||
+      !["spawned", "failed"].includes(state) || !config.stateRoot) return;
+  const directory = resolve(config.stateRoot, "worker-launch-status");
+  await mkdir(directory, { recursive: true, mode: 0o700 });
+  const directoryInfo = await lstat(directory);
+  if (!directoryInfo.isDirectory() || directoryInfo.isSymbolicLink())
+    throw new Error("worker launch status directory is unsafe");
+  await chmod(directory, 0o700);
+  const key = createHash("sha256").update(JSON.stringify([ownerId, mode])).digest("hex");
+  const target = resolve(directory, `${key}.json`);
+  const temporary = resolve(directory, `${key}.${randomUUID()}.tmp`);
+  const record = { owner_id: ownerId, mode, state,
+    code: state === "failed" ? "WORKER_SPAWN_FAILED" : null,
+    updated_at: new Date().toISOString() };
+  try {
+    await writeFile(temporary, JSON.stringify(record), { mode: 0o600, flag: "wx" });
+    await rename(temporary, target);
+  } finally {
+    await unlink(temporary).catch(() => {});
+  }
+}
+
 function bridgeFailure(module, error) {
   const valid = error && typeof error === "object" &&
     typeof error.code === "string" && /^[A-Z_]+$/.test(error.code) &&
@@ -193,20 +216,29 @@ export function workerArgs(config, ownerId) {
   return args;
 }
 
-function startWorker(config, ownerId, mode = "physical") {
+export async function startWorker(config, ownerId, mode = "physical", logger = null) {
   if (mode === "physical" && config.physicalWorkerEnabled === false) return;
   const args = workerArgs(config, ownerId);
   if (!args) return;
   args.push(mode === "digital" ? "--digital-only" : "--physical-only");
-  const child = spawn(config.python ?? "python3", args, {
-    cwd: config.repoRoot,
-    env: { ...process.env, PYTHONPATH: [config.repoRoot, process.env.PYTHONPATH ?? ""].join(delimiter),
-      ...(config.bookscanPython ? { LIBRARIAN_BOOKSCAN_PYTHON: config.bookscanPython } : {}) },
-    stdio: "ignore",
-    detached: true,
-  });
-  child.on("error", () => {});
-  child.unref();
+  let launched = false;
+  try {
+    const child = spawn(config.python ?? "python3", args, {
+      cwd: config.repoRoot,
+      env: { ...process.env, PYTHONPATH: [config.repoRoot, process.env.PYTHONPATH ?? ""].join(delimiter),
+        ...(config.bookscanPython ? { LIBRARIAN_BOOKSCAN_PYTHON: config.bookscanPython } : {}) },
+      stdio: "ignore",
+      detached: true,
+    });
+    launched = await new Promise((done) => {
+      child.once("spawn", () => { child.unref(); done(true); });
+      child.once("error", () => done(false));
+    });
+  } catch { launched = false; }
+  await writeWorkerLaunchStatus(config, ownerId, mode, launched ? "spawned" : "failed")
+    .catch(() => logger?.warn("Librarian worker launch status write failed"));
+  if (!launched) logger?.warn("Librarian worker launch failed");
+  return { state: launched ? "spawned" : "failed" };
 }
 
 export function librarianSearchTool(config, ctx, bridge = runSearchBridge) {
@@ -377,7 +409,7 @@ export function librarianReviewTool(config, ctx, bridge = runReviewBridge) {
   return {
     name: "librarian_review",
     label: "Librarian pending extraction review",
-    description: "Read pending extraction conflicts for this authenticated sender. With no capture_id, list pending captures and recent image-intake failures. With a capture_id, compare current traces and proposed groups; this tool never changes stored traces.",
+    description: "Read pending extraction conflicts for this authenticated sender. With no capture_id, list pending captures, recent image-intake failures and latest worker launch outcomes; spawned means only that a process started. With a capture_id, compare current traces and proposed groups; this tool never changes stored traces.",
     parameters: { type: "object", properties: {
       capture_id: { type: "string", pattern: "^capture_[A-Za-z0-9_-]+$" },
     }, additionalProperties: false },
@@ -578,9 +610,9 @@ export default {
     api.registerService({ id: "pap-librarian-worker", start: () => {
       const recover = () => {
         for (const ownerId of configuredOwnerIds(config)) {
-          startWorker(config, ownerId, "physical");
+          void startWorker(config, ownerId, "physical", api.logger);
           if (config.digitalSources?.ownerId === ownerId) {
-            startWorker(config, ownerId, "digital");
+            void startWorker(config, ownerId, "digital", api.logger);
           }
         }
       };
@@ -605,7 +637,8 @@ export default {
             receipt.capture_ids).catch(() => api.logger.warn("Librarian intake status write failed"));
           api.logger.info(`Librarian accepted ${receipt.capture_ids.length} image(s)`);
           clearTimeout(intakeTimer);
-          intakeTimer = setTimeout(() => startWorker(config, ownerFor(config, event, ctx)),
+          intakeTimer = setTimeout(() => { void startWorker(
+            config, ownerFor(config, event, ctx), "physical", api.logger); },
             60_000);
         }
       } catch (error) {

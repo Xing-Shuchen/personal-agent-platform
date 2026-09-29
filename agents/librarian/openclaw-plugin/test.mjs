@@ -5,7 +5,8 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { acceptMessage, librarianEvidenceTool, librarianSourceBookTool, librarianReviewTool, librarianReviewDecisionTool, librarianReviewFinalizeTool, librarianSearchTool, librarianSessionTool,
-  rememberInboundSession, runPythonBridge, workerArgs, writeIntakeStatus } from "./index.js";
+  rememberInboundSession, runPythonBridge, startWorker, workerArgs,
+  writeIntakeStatus, writeWorkerLaunchStatus } from "./index.js";
 import librarianPlugin from "./index.js";
 
 const config = { ownerMappings: [{ channelId: "telegram", accountId: "bot",
@@ -63,6 +64,36 @@ test("message hook persists a bridge failure under its trusted owner", async () 
     assert.equal(saved.message_id, "failed-message");
     assert.equal(saved.state, "failed");
     assert.equal(saved.code, "OBJECT_STORE_UNAVAILABLE");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("worker spawn failure is private and a later launch clears it", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "librarian-worker-launch-"));
+  try {
+    const local = { ...config, stateRoot: dir, repoRoot: dir,
+      python: join(dir, "missing-python") };
+    const failed = await startWorker(local, "owner_fixture", "physical");
+    assert.equal(failed.state, "failed");
+    const folder = join(dir, "worker-launch-status");
+    const files = await readdir(folder);
+    assert.equal(files.length, 1);
+    assert.match(files[0], /^[0-9a-f]{64}\.json$/);
+    assert.equal((await stat(join(folder, files[0]))).mode & 0o777, 0o600);
+    const failure = JSON.parse(await readFile(join(folder, files[0]), "utf8"));
+    assert.deepEqual({ owner_id: failure.owner_id, mode: failure.mode,
+      state: failure.state, code: failure.code },
+    { owner_id: "owner_fixture", mode: "physical", state: "failed",
+      code: "WORKER_SPAWN_FAILED" });
+    const launched = await startWorker({ ...local, python: "/bin/true" },
+      "owner_fixture", "physical");
+    assert.equal(launched.state, "spawned");
+    const recovered = JSON.parse(await readFile(join(folder, files[0]), "utf8"));
+    assert.equal(recovered.state, "spawned");
+    assert.equal(recovered.code, null);
+    await writeWorkerLaunchStatus(local, "owner_other", "digital", "failed");
+    assert.equal((await readdir(folder)).length, 2);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

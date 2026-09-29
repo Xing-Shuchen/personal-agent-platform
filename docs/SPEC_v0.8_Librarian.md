@@ -578,6 +578,10 @@ Gateway 图片入站 hook 在受信的 channel/account/sender→owner 映射和�
 `librarian_review` 的无 capture 查询按受信 owner 返回最近失败记录，供 agent
 排查和重试。缺少可信映射或稳定消息 ID 时不得建立可归属记录。此状态只表示
 图片接收桥接的结果，不表示后台提取、平台消息投送或客户端显示成功。
+Gateway 的纸书/数字 worker 启动结果另按 owner 与模式持久记录为 `spawned` 或
+`failed`，由同一个 owner 受限查询返回。`spawned` 只证明子进程创建成功；批次处理、
+索引和 Vault 的实际结果仍以各自运行状态为准。启动错误不得包含进程参数、密钥或
+私有路径，下一次同模式成功启动应覆盖旧启动失败。
 
 ## 28. Event Model
 

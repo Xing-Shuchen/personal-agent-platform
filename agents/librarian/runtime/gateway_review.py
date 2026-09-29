@@ -49,6 +49,31 @@ def intake_failures(root: Path, owner: str) -> list[dict]:
     return found[:10]
 
 
+def worker_launch_status(root: Path, owner: str) -> list[dict]:
+    """Last launcher outcome per worker mode; never implies batch completion."""
+    directory = root / "worker-launch-status"
+    if not directory.is_dir() or directory.is_symlink():
+        return []
+    found = []
+    for mode in ("physical", "digital"):
+        key = hashlib.sha256(json.dumps([owner, mode], separators=(",", ":")).encode()).hexdigest()
+        path = directory / f"{key}.json"
+        try:
+            if path.is_symlink() or not path.is_file() or path.stat().st_size > 8192:
+                continue
+            item = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, ValueError):
+            continue
+        if (not isinstance(item, dict) or item.get("owner_id") != owner or
+                item.get("mode") != mode or item.get("state") not in {"spawned", "failed"} or
+                not isinstance(item.get("updated_at"), str)):
+            continue
+        found.append({"mode": mode, "state": item["state"],
+                      "code": "WORKER_SPAWN_FAILED" if item["state"] == "failed" else None,
+                      "updated_at": item["updated_at"]})
+    return found
+
+
 def candidate_id(capture_id: str, detection_ids: list[str]) -> str:
     """Stable within a capture while the same detected ink group survives reruns."""
     marks = sorted(identifier for identifier in detection_ids
@@ -107,7 +132,8 @@ def pending_extractions(lib: Library, owner: str, capture_id: str | None = None)
                 item["summary_unavailable"] = True
             summaries.append(item)
         return {"pending": summaries, "more": len(pending) > 10,
-                "intake_failures": intake_failures(lib.root, owner)}
+                "intake_failures": intake_failures(lib.root, owner),
+                "worker_launch_status": worker_launch_status(lib.root, owner)}
     if not pending:
         raise LibrarianError("OBJECT_NOT_FOUND", "no pending extraction for capture")
     run = pending[0]

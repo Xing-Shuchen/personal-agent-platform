@@ -37,6 +37,11 @@ retry can rebuild without a second correction. Approved candidates tied to a
 handwritten source are superseded on its correction; promoted knowledge still
 requires reconciliation. Full Python regression: 525 passed. Audit §23.
 
+Gateway worker spawn failures are now private, owner-scoped status records
+visible in the `librarian_review` summary. A later launch clears the failure;
+`spawned` means process creation only, not successful BookScan or Vault output.
+Plugin 19/19 and full Python regression 526/526 pass. Audit §24.
+
 Latest scope change: printed underline text is accepted with its current EPUB
 punctuation expansion. The private review site now offers a handwriting-only
 page with 15 note crops and versioned confirm/edit/reject actions; actual user
