@@ -527,3 +527,11 @@ B 的后续清单：现有 11 张旧版多页区照片与笔记时间来源已�
 | 领域、Schema 和桥接复审（C/R1–R4） | §9.1、§9.2 剩余的知识依赖、旧迁移与备份恢复、修订入口故障注入、跨 owner/account/chat、幂等附件变更、入站 hook 错误查询及“queued→平台成功→客户端显示”逐层证据尚未齐备；现有单项测试与一次成功运行不能给四类模块整体签发通过。 |
 | 数字来源与运行验收（D/M2） | 当前 `digital-sync-status.json` 仅证明最近一次 Koodo 118 条、WeRead 4 条均为 unchanged/success；仍需真实增改删、断网恢复、慢源隔离、重复 timer/重启进程上界与成本/耗时记录，并验证三来源同一检索契约。 |
 | 规格 AC 与交接（E） | 以当前 HEAD 重跑 AC-01–26，分别标注本地/真实/未验，回填 handoff、修复提交和客户端证据。§38.1 p159/166/171/184 四张标注图及 `source-design.txt` 依用户指示暂缓，保留延期/未验，不用当前 27 图代替。`release-v0.8` 仍未达到审计放行条件。 |
+
+## 11. ISBN 元数据、审核入口与重复 run 修复（2026-09-29）
+
+`f698060` 从 agent 数据目录的 ISBN 来源记录填充 Vault 纸书笔记元数据；`a9134d9` 将同一来源记录显示在 Bookscan `review.html`。书目记录对应 `9787208171411`，包含作者、译者、出版社、出版日期、原作名和来源链接。27 个原始审核页已重新生成；Vault 仍只含文字，不存原图。元数据来源记录保存在 `var/librarian/source-books/9787208171411.metadata.json`，不是 Bookscan 的 OCR 输出。
+
+检查时发现旧 `processor_fingerprint()` 把审核页代码也计入图像处理版本。仅修改 `review.py` 后，后台 worker 对 27 张原图各产生一个待对账 run；调试指纹修复期间又产生 27 个。两批新 observation 与对应已入库 observation 的 `image_space`、页码、印刷区、标记、批注、符号、链接和警告字段逐项相同。`cf0cf76` 将审核展示代码排除于处理器指纹，新增领域操作将这 54 个重复待对账 run 版本化标记为 `duplicate`，保留原始 run/observation 与 73 条活跃纸书 trace，不执行 trace 替换。正式 worker 连续运行后，当前 81 个 run 为 27 原始 `success/partial`、54 `duplicate`、0 `pending`；Vault 仍有 73 个隐藏 trace 锚点。相关 104 项测试通过。
+
+私有审核总览已生成在 `var/librarian/review/index.html`，按当前已入库的 27 张 capture 各列一条，连接原始 Bookscan 审核页。**审核页目前仍只在浏览器 localStorage 保存草稿或导出 JSON；尚未把逐页判断、校正、漏检框接入 Librarian 的版本化写入和 Vault 刷新。** 所以 A/R2 的人工内容审核仍未开始结项，不能把新总览或 `duplicate` 状态当作人工确认。下一步先实现审核提交的身份/快照校验与领域写入，再由用户在网页逐页复核；其余 R1–R4/AC 边界沿用 §10。

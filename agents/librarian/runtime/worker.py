@@ -22,6 +22,7 @@ from zipfile import ZipFile
 from xml.etree import ElementTree as ET
 
 from .bookscan_adapter import bookscan_extractor, processor_fingerprint
+from .review_index import build_index as build_review_index
 from .gateway_review_finalize import auto_reconcile_fully_reviewed
 from .pipeline import (process_capture, reconcile_extraction,
                        dismiss_identical_pending, bind_fingerprint_context,
@@ -999,6 +1000,11 @@ def run(root: Path, vault: Path | None, owner: str, *,
                                 _status_with_retry(outcome, previous_attempts, _now(),
                                                    retry_fingerprint)).encode())
                             results.append(outcome)
+                try:
+                    build_review_index(root, owner)
+                except Exception:
+                    results.append({"source": "review_index", "status": "error",
+                                    "code": "REVIEW_INDEX_FAILED"})
     if not physical_only and (koodo or weread):
         with (root / "digital-worker.lock").open("w") as lock:
             try:

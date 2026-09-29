@@ -259,6 +259,13 @@ directory. There is no scheduled job or public gateway route yet. The caller
 must supply a trusted `owner_id`; passing arbitrary owner strings to these
 Python methods is not an authentication mechanism.
 
+The physical worker refreshes a private Bookscan review index at
+`var/librarian/review/index.html`. It can also be regenerated without OCR:
+`python3 -m agents.librarian.runtime.review_index --root var/librarian --owner <trusted-owner-id>`.
+Each link opens the current capture's original `review.html`. Browser decisions
+remain local drafts or downloadable JSON until the reviewed correction import
+is connected to the versioned Librarian domain path.
+
 Remaining work includes broader semantic checks; stronger
 batch book/page conflict resolution; actual image extraction with annotated-photo tests;
 Gateway upload identity and authorization; page/edition conflict handling;
