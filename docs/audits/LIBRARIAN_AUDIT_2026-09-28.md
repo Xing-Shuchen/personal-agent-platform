@@ -612,3 +612,9 @@ Vault 渲染新增 EPUB 章节投影：用 `EpubIndex` 将印刷引文映射到 
 | 26 | 本地普通划线不晋升测试；当前正式库 0 个 KnowledgeCandidate | 当前纸书 58 条印刷摘录不构成积压错误 |
 
 此表不关闭 R1–R4 全部专项核验或 `release-v0.8` 放行门槛。§38.1 四图与底稿继续按用户指示延期；用户已允许手写内容真人核验在正式运行阶段完成。其余未验项保持显式状态，后续取得真实入口或故障证据时逐条更新。
+
+## 16. 当前正式库跨记录结构复核（2026-09-29）
+
+在现有正式 Library 上逐条对 498 个 `records` 版本执行当前 `validate` 与 `_validate_record_links` 只读校验，0 失败；覆盖 CaptureBatch 23、PageCapture 27、Work 3、Edition 1、BookInstance 2、ReadingSession 4、ReadingTrace 195、ProcessingRun 135、PageObservation 81、CaptureResolution 27 个版本。442 个 `(owner, model, id)` 逻辑对象的 revision 均从 1 连续到最新，恰有一个 current 且指向最新版本，`supersedes_revision` 与前一版一致，0 异常。195/195 个 ReadingTrace 版本各有 1 条同 owner、trace ID 和 revision 的 `reading.trace.created/corrected` outbox 事件；195 条当前活跃 trace 对 195 条索引投影，revision 一致，0 缺失或滞后。
+
+这补充了 R1/R3 对**当前保留数据**的兼容与一致性证据；开发期清除的旧纸书派生记录不在本次样本内，现有库没有 KnowledgeCandidate/TraceRelation 实例。上述检查不证明图片内容准确、所有未来写入口的原子性或跨账户真实授权，也不能代替 R3 的完整条款→执行层矩阵及负例。
