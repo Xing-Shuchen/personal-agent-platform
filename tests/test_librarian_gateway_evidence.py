@@ -45,3 +45,39 @@ def test_digital_trace_cannot_be_opened_as_a_photo(tmp_path: Path) -> None:
     with pytest.raises(LibrarianError) as error:
         prepare_evidence(DigitalLibrary(), "owner", "rt_digital", tmp_path / "delivery")
     assert error.value.code == "VALIDATION_FAILED"
+
+
+def test_pending_scan_crop_uses_review_candidate_without_promotion(tmp_path: Path, monkeypatch) -> None:
+    source = BytesIO()
+    image = Image.new("RGB", (1000, 800), "white")
+    from PIL import ImageDraw
+    ImageDraw.Draw(image).rectangle((200, 320, 700, 400), fill="black")
+    image.save(source, "PNG")
+
+    def review(_lib, owner, capture_id):
+        assert (owner, capture_id) == ("owner", "capture_scan")
+        return {"proposed": [{"bbox": [.2, .4, .7, .5],
+                              "page": {"number": 39, "label": "39"}}]}
+
+    monkeypatch.setattr("agents.librarian.runtime.gateway_evidence.pending_extractions", review)
+
+    class FakeLibrary:
+        def get(self, owner, model, capture_id):
+            assert (owner, model, capture_id) == ("owner", "PageCapture", "capture_scan")
+            return {"id": capture_id}
+
+        def read_original(self, owner, capture_id):
+            assert (owner, capture_id) == ("owner", "capture_scan")
+            return source.getvalue()
+
+    directory = tmp_path / "delivery-evidence"
+    result = prepare_evidence(FakeLibrary(), "owner", None, directory,
+                              capture_id="capture_scan", candidate_index=0)
+    assert result["source_status"] == "pending_review"
+    assert result["candidate_index"] == 0
+    with Image.open(result["media_path"]) as crop:
+        assert crop.size == (540, 112)
+        assert crop.getpixel((270, 55)) == (0, 0, 0)
+    with pytest.raises(LibrarianError):
+        prepare_evidence(FakeLibrary(), "owner", None, directory,
+                         capture_id="capture_scan", candidate_index=1)

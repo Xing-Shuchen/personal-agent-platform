@@ -118,7 +118,7 @@ export function librarianSearchTool(config, ctx, bridge = runSearchBridge) {
   return {
     name: "librarian_search",
     label: "Librarian search",
-    description: "Search this authenticated sender's reading traces by quoted text, book title, and/or printed page number. For questions like 'what did I underline on page 39 of this book', pass book and page without inventing a text query. Return provenance-backed hits or no supporting hits in this owner scope.",
+    description: "Search this authenticated sender's reading traces by quoted text, book title, and/or printed page number. For page questions pass book and page. Results can also include newer pending_evidence scan candidates; these are unreviewed and must not be described as stored traces.",
     parameters: { type: "object", properties: {
       query: { type: "string", minLength: 1, maxLength: 256 },
       book: { type: "string", minLength: 1, maxLength: 200 },
@@ -149,12 +149,17 @@ export function librarianEvidenceTool(config, ctx, bridge = runEvidenceBridge) {
   return {
     name: "librarian_evidence",
     label: "Librarian photo evidence",
-    description: "Queue a cropped original-photo evidence image for one of this authenticated sender's reading trace IDs to the current conversation. A queue receipt does not prove platform delivery.",
+    description: "Queue an owner-scoped crop to this conversation. Use trace_id for a stored trace, or capture_id plus zero-based candidate_index from search pending_evidence for a newer unreviewed scan. A queue receipt does not prove platform delivery or approve a pending candidate.",
     parameters: { type: "object", properties: {
       trace_id: { type: "string", pattern: "^rt_[A-Za-z0-9_-]+$" },
-    }, required: ["trace_id"], additionalProperties: false },
+      capture_id: { type: "string", pattern: "^capture_[A-Za-z0-9_-]+$" },
+      candidate_index: { type: "integer", minimum: 0 },
+    }, oneOf: [{ required: ["trace_id"] },
+      { required: ["capture_id", "candidate_index"] }], additionalProperties: false },
     async execute(_id, params) {
-      const result = await bridge(config, { owner_id: ownerId, trace_id: params.trace_id });
+      const result = await bridge(config, { owner_id: ownerId,
+        ...(params.trace_id ? { trace_id: params.trace_id } :
+          { capture_id: params.capture_id, candidate_index: params.candidate_index }) });
       const path = resolve(result.media_path);
       if (dirname(path) !== resolve(config.stateRoot, "delivery-evidence")) {
         throw new Error("invalid evidence path");
@@ -170,14 +175,18 @@ export function librarianEvidenceTool(config, ctx, bridge = runEvidenceBridge) {
         await chmod(deliveryRoot, 0o700);
         await copyFile(path, outbound, constants.COPYFILE_EXCL);
         await chmod(outbound, 0o600);
-        await ctx.delivery.send({ text: `原图局部证据：${result.trace_id}`,
+        await ctx.delivery.send({ text: result.source_status === "pending_review" ?
+          `扫描件待审核候选原图局部：${result.capture_id} #${result.candidate_index}` :
+          `原图局部证据：${result.trace_id}`,
           mediaUrl: outbound });
       } finally {
         await unlink(path).catch(() => {});
         await unlink(outbound).catch(() => {});
       }
       return { content: [{ type: "text", text: JSON.stringify({
-        trace_id: result.trace_id, capture_id: result.capture_id,
+        trace_id: result.trace_id ?? null, capture_id: result.capture_id,
+        candidate_index: result.candidate_index ?? null,
+        source_status: result.source_status ?? "stored_trace",
         delivery_status: "queued" }) }] };
     },
   };

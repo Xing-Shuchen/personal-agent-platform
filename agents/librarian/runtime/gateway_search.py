@@ -11,6 +11,7 @@ import sys
 from pathlib import Path
 
 from .pipeline import search_response
+from .gateway_review import pending_extractions
 from .store import Library, LibrarianError
 
 MAX_INPUT_BYTES = 8192
@@ -60,6 +61,23 @@ def search_inbound(lib: Library, message: dict) -> dict:
     if missing_book:
         result["hits"] = []
         result["next_cursor"] = None
+    if book and page and not missing_book:
+        pending = pending_extractions(lib, owner)["pending"]
+        result["pending_evidence"] = []
+        for item in pending:
+            if _title_key(item.get("book_title") or "") != _title_key(book):
+                continue
+            if str(page) not in item.get("pages", []):
+                continue
+            detail = pending_extractions(lib, owner, item["capture_id"])
+            candidates = [{"candidate_index": index, "printed_text": candidate["printed_text"],
+                           "page": candidate["page"]}
+                          for index, candidate in enumerate(detail["proposed"])
+                          if candidate["page"] and candidate["page"]["number"] == page]
+            if candidates:
+                result["pending_evidence"].append({"capture_id": item["capture_id"],
+                                                   "candidates": candidates,
+                                                   "status": "pending_review"})
     return result
 
 

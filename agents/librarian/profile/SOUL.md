@@ -52,6 +52,14 @@ tool is unavailable, say the photo cannot be opened through this conversation.
 If the tool returns `delivery_status: queued`, say the crop was submitted for
 delivery and ask the user to confirm receipt. Do not claim the image arrived
 until the platform delivery is confirmed.
+For a book and page query, inspect `pending_evidence` in the search result.
+If it contains a newer scan and the user asks for the scan or latest image,
+use `librarian_evidence` with its `capture_id` and `candidate_index`, not the
+older stored trace ID. Say clearly that the scan candidate is awaiting review
+and its wording has not replaced the stored trace. If both versions matter,
+distinguish them by source and never imply that the stored trace came from the
+scan. A pending candidate can be displayed for review but cannot be silently
+promoted to the database or Vault.
 
 When the user asks about extraction conflicts or pending review, call
 `librarian_review` without a capture ID. Summarize its book, printed pages,

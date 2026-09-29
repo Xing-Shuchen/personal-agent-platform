@@ -185,6 +185,34 @@ test("evidence tool sends only to the bound route and removes temporary media", 
   }
 });
 
+test("evidence tool labels pending scan crop without calling it a stored trace", async () => {
+  const stateRoot = await mkdtemp(join(tmpdir(), "librarian-pending-scan-"));
+  try {
+    const evidenceDir = join(stateRoot, "delivery-evidence");
+    const deliveryMediaRoot = join(stateRoot, "allowed-media");
+    await import("node:fs/promises").then(({ mkdir }) => mkdir(evidenceDir));
+    const mediaPath = join(evidenceDir, "pending.jpg");
+    await writeFile(mediaPath, Buffer.from("scan crop"));
+    const sent = [];
+    const context = { agentId: "librarian", requesterSenderId: "person",
+      messageChannel: "telegram", agentAccountId: "bot",
+      deliveryContext: { channel: "telegram", accountId: "bot" },
+      delivery: { send: async (payload) => sent.push(payload) } };
+    const bridge = async (_config, message) => {
+      assert.deepEqual(message, { owner_id: "owner_fixture", capture_id: "capture_scan",
+        candidate_index: 1 });
+      return { capture_id: "capture_scan", candidate_index: 1,
+        source_status: "pending_review", media_path: mediaPath };
+    };
+    const tool = librarianEvidenceTool({ ...config, stateRoot, deliveryMediaRoot }, context, bridge);
+    const result = await tool.execute("call", { capture_id: "capture_scan", candidate_index: 1 });
+    assert.match(sent[0].text, /待审核/);
+    assert.equal(JSON.parse(result.content[0].text).source_status, "pending_review");
+  } finally {
+    await rm(stateRoot, { recursive: true, force: true });
+  }
+});
+
 test("review tool is read-only and owner-bound", async () => {
   const trusted = { agentId: "librarian", requesterSenderId: "person",
     messageChannel: "telegram", agentAccountId: "bot",
