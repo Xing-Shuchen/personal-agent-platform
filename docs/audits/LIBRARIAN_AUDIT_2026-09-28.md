@@ -845,3 +845,9 @@ OpenClaw 插件当前注册七个 `librarian_*` 工具、一个 `message_receive
 在当前干净工作树重新执行完整 Python 套件 **533 passed**（4 条 `RefResolver` 弃用警告）、OpenClaw 插件 **21/21**、离线契约 **77 定义/18 入口/42 正例/43 反例**通过。正式 SQLite 只读聚合仍为 27 张已接收纸书照片对应的 73 条活跃纸书 trace，其中 15 条手写 vision 待复核、19 条页码 unknown；Vault 生成笔记的 73 个隐藏 `(trace_id,revision)` 与当前活跃记录集合完全相同，缺失/额外均为 0，图片嵌入 0。Gateway systemd 为 active；本机手写审核入口带 token/cookie 完成登录跳转后返回 HTTP 200、`handwriting.html` 15,869 字节。
 
 以上证明用户本轮要求的 BookScan 首书数据、章节笔记和私有手写复核工具在当前环境可交付；§32 所列通用新图/严格墨线边界/四图样本按用户决定延期，真人手写提交、修复后飞书真实入站、平台送达及数字上游变化归正式运行。它们没有被本轮重跑升级为原始规格或 `release-v0.8` 的验收通过。
+
+## 36. F06 慢数字源与纸书 worker 的跨进程隔离（2026-09-29）
+
+原有 `test_bad_batch_does_not_starve_later_batch` 已验证同一轮内首个纸书批次失败后仍继续下一批；原有模式测试只验证 `physical_only` 不调用数字函数。新增 `test_physical_batch_finishes_while_digital_source_is_blocked` 在隔离库建一条真实接受的照片 batch，启动两个 fork 子进程：数字进程进入 `_sync_digital` 后等待、持有 `digital-worker.lock`；此时纸书进程独立获取 `physical-worker.lock` 并处理该 batch，数字进程仍未释放。两进程正常退出，纸书 worker 专项 **21/21** 通过。
+
+这是锁和调度隔离的确定性故障替身，没有调用真实慢 WeRead/Koodo 网络端，也没有测 SQLite 长事务竞争、系统资源饱和或冷启动上界。F06 的本地“慢数字函数不阻断纸书批次”得到跨进程反例，正式慢源/断网和时延成本仍保留现场门槛。

@@ -3,6 +3,7 @@ from pathlib import Path
 from zipfile import ZipFile
 from io import BytesIO
 import json
+from multiprocessing import get_all_start_methods, get_context
 
 import pytest
 from PIL import Image
@@ -446,6 +447,72 @@ def test_physical_processing_is_independent_of_slow_digital_sync(tmp_path: Path,
     worker.run(state, None, "owner", koodo=("source", tmp_path, tmp_path),
                digital_only=True)
     assert seen == ["digital"]
+
+
+@pytest.mark.skipif("fork" not in get_all_start_methods(), reason="requires forked workers")
+def test_physical_batch_finishes_while_digital_source_is_blocked(tmp_path: Path,
+                                                                 monkeypatch) -> None:
+    from agents.librarian.runtime import worker
+
+    state = tmp_path / "state"
+    stream = BytesIO()
+    Image.new("RGB", (10, 10), "white").save(stream, "PNG")
+    with Library(state) as lib:
+        batch_id = lib.ingest(
+            "owner", transport="feishu", account_id="librarian",
+            conversation_id="chat", source_event_id="message",
+            attachments=[{"source_item_id": "image", "mime_type": "image/png",
+                          "data": stream.getvalue()}],
+            idempotency_key="command")["batch_id"]
+    context = get_context("fork")
+    digital_started = context.Event()
+    release_digital = context.Event()
+    physical_result = context.Queue()
+    digital_result = context.Queue()
+
+    def slow_digital(*_args, **_kwargs):
+        digital_started.set()
+        assert release_digital.wait(10)
+        return []
+
+    monkeypatch.setattr(worker, "_sync_digital", slow_digital)
+    monkeypatch.setattr(worker, "_process_batch", lambda _lib, _root, _vault,
+                        _owner, batch, _model:
+                        {"batch_id": batch["id"], "status": "processed", "traces": 1})
+    monkeypatch.setattr(worker, "_now", lambda: "2099-01-01T00:00:00+00:00")
+
+    def run_digital():
+        digital_result.put(worker.run(state, None, "owner",
+                                      koodo=("source", tmp_path, tmp_path),
+                                      digital_only=True))
+
+    def run_physical():
+        physical_result.put(worker.run(state, None, "owner", physical_only=True))
+
+    digital = context.Process(target=run_digital)
+    physical = context.Process(target=run_physical)
+    digital.start()
+    try:
+        assert digital_started.wait(3)
+        physical.start()
+        result = physical_result.get(timeout=3)
+        assert any(item.get("batch_id") == batch_id and item["status"] == "processed"
+                   for item in result)
+        assert digital.is_alive()
+    finally:
+        release_digital.set()
+        if physical.pid is not None:
+            physical.join(timeout=5)
+        digital.join(timeout=5)
+        if physical.is_alive():
+            physical.terminate()
+            physical.join()
+        if digital.is_alive():
+            digital.terminate()
+            digital.join()
+    assert physical.exitcode == 0
+    assert digital.exitcode == 0
+    assert digital_result.get(timeout=1) == []
 
 
 def test_worker_recovers_lagging_index_without_a_new_photo(tmp_path: Path) -> None:
