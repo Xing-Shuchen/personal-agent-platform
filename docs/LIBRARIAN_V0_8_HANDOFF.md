@@ -1,5 +1,32 @@
 # Librarian v0.8 handoff — 2026-09-28
 
+## Current update — 2026-09-29
+
+The older first-book counts and RapidOCR path below describe the 2026-09-28
+state, not the current runtime. The user authorized clearing all old physical
+image-derived results and replacing that path with Bookscan. The 27 retained
+captures have 27 original Bookscan runs and 73 active physical traces; 54
+identical duplicate runs were marked duplicate after an audit-page fingerprint
+bug. The Vault note was rebuilt in the requested reading-note format, without
+original images or visible internal IDs. ISBN 9787208171411 supplies the book
+metadata.
+
+The private localhost review site lists all 27 pages. Complete reviews can
+now be submitted to versioned Librarian records, and the physical worker then
+refreshes the Vault. Production human review remains **0/27 pages**. A
+production-data copy passed a test review through Vault refresh; no synthetic
+review was written to production. The current audit and scope decisions are in
+`docs/audits/LIBRARIAN_AUDIT_2026-09-28.md` §12–13.
+
+The user explicitly deferred ordinary new-photo side-mark discovery and the
+EPUB sentence-extension boundary decision for this acceptance pass. These are
+waived checks, not claims of implementation or specification compliance. The
+separate pp.159/166/171/184 inputs and `source-design.txt` also remain deferred
+per the user's earlier instruction. Current broad checks: 511 Python tests,
+16 plugin tests and offline contract validation pass; Gateway and plugin are
+running. Live human page decisions, real inbound delivery checks and remaining
+R1–R4/AC evidence are still needed before release.
+
 The requested goal is **not complete**. Development commits are on `main`.
 Create `release-v0.8` only after the acceptance evidence below is complete.
 
