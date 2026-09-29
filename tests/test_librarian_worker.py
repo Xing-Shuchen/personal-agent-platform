@@ -14,6 +14,7 @@ from agents.librarian.runtime.worker import (_catalog, _current, _hide_vault_mar
                                              _render_batch_note, _render_batch_note_legacy,
                                              _refresh_generated_note, _review_digest,
                                              _notify_correction,
+                                             _header_for_legacy_regions,
                                              _repair_legacy_auto_affinity)
 
 
@@ -26,6 +27,28 @@ def test_only_latest_pending_run_reopens_a_capture() -> None:
         {"capture_id": "resolved", "outcome": "success", "issues": []},
     ]
     assert _latest_pending_review_ids(runs) == {"still_pending"}
+
+
+def test_legacy_vertical_regions_need_same_page_geometry_and_distinct_header(monkeypatch) -> None:
+    from agents.librarian.runtime import worker
+
+    pages = [
+        {"id": "page_0", "bbox": [.1, 0, .9, .5], "page": {"value": None}},
+        {"id": "page_1", "bbox": [.1, .44, .9, .9],
+         "page": {"value": {"label": "61", "number": 61, "scheme": "arabic"}}},
+    ]
+    resolution = {"pages": pages}
+    observation = {"pages": pages}
+    raw = {"page_markers": [{"number": 61, "source": "full_ocr"}]}
+    monkeypatch.setattr(worker, "visible_header_page", lambda _raw: (36, 1.0))
+    assert _header_for_legacy_regions(resolution, observation, raw) == (36, 1.0)
+    shifted = json.loads(json.dumps(pages))
+    shifted[1]["bbox"][0] = .35
+    assert _header_for_legacy_regions({"pages": shifted}, {"pages": shifted}, raw) is None
+    assert _header_for_legacy_regions(resolution, {"pages": shifted}, raw) is None
+    assert _header_for_legacy_regions(resolution, observation,
+                                      {"page_markers": [{"number": 36,
+                                                         "source": "full_ocr"}]}) is None
 
 
 def _epub(path: Path) -> None:

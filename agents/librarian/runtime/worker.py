@@ -50,8 +50,39 @@ def _latest_pending_review_ids(runs: list[dict]) -> set[str]:
             "RECONCILIATION_REQUIRED" in run["issues"]}
 
 
+def _header_for_legacy_regions(resolution: dict, observation: dict,
+                               raw: dict) -> tuple[int, float] | None:
+    """Reject margin paragraph numbers misread as vertical page boundaries."""
+    pages = resolution["pages"]
+    observed = observation["pages"]
+    if not pages or len(pages) != len(observed) or not 1 <= len(pages) <= 3:
+        return None
+    if any(page["id"] != seen["id"] or page["bbox"] != seen["bbox"]
+           for page, seen in zip(pages, observed)):
+        return None
+    header = visible_header_page(raw)
+    if not header:
+        return None
+    if len(pages) == 1:
+        return header if pages[0]["page"]["value"] is None else None
+    x0, _, x1, _ = pages[0]["bbox"]
+    if (x1 - x0 < .6 or
+            any(abs(page["bbox"][0] - x0) > .002 or
+                abs(page["bbox"][2] - x1) > .002 for page in pages)):
+        return None
+    markers = raw.get("page_markers", [])
+    if (len(markers) != len(pages) - 1 or
+            pages[0]["page"]["value"] is not None or
+            any(marker.get("source") not in {"full_ocr", "margin_ocr"} or
+                page["page"]["value"] is None or
+                page["page"]["value"]["number"] != marker.get("number")
+                for page, marker in zip(pages[1:], markers))):
+        return None
+    return header if all(marker["number"] != header[0] for marker in markers) else None
+
+
 def _repair_visible_header_pages(lib: Library, owner: str, capture_ids: list[str]) -> int:
-    """Resolve a single unknown page from its own photographed header OCR."""
+    """Resolve old unknown/margin-number regions from their own printed header."""
     runs = {run["capture_id"]: run for run in _current(lib, owner, "ProcessingRun")}
     resolutions = {item["capture_id"]: item for item in
                    _current(lib, owner, "CaptureResolution")}
@@ -62,32 +93,34 @@ def _repair_visible_header_pages(lib: Library, owner: str, capture_ids: list[str
         run, resolution = runs.get(capture_id), resolutions.get(capture_id)
         if (not run or run["outcome"] not in {"success", "partial"} or
                 not run["extractor_version"].startswith("rapidocr-epub-notes-") or
-                not resolution or len(resolution["pages"]) != 1 or
-                resolution["pages"][0]["page"]["value"] is not None):
+                not resolution):
             continue
         observation = observations.get(run["id"])
-        if not observation or len(observation["pages"]) != 1:
+        if not observation:
             continue
+        page_map = {page["id"]: page for page in resolution["pages"]}
         traces = [trace for trace in _current(lib, owner, "ReadingTrace")
                   if trace["status"] == "active" and
                   trace["source"].get("capture_id") == capture_id]
-        if not traces or any(trace["location"]["page"] is not None or
-                             trace["location"]["page_region_id"] !=
-                             resolution["pages"][0]["id"] for trace in traces):
+        if (not traces or not any(trace["location"]["page"] is None for trace in traces) or
+                any((region := page_map.get(trace["location"]["page_region_id"])) is None or
+                    trace["location"]["page"] != region["page"]["value"]
+                    for trace in traces)):
             continue
         try:
             raw = json.loads(lib._read_object(observation["raw_output_asset"]))
-            header = visible_header_page(raw)
+            header = _header_for_legacy_regions(resolution, observation, raw)
         except (LibrarianError, ValueError, TypeError, KeyError):
             continue
         if not header:
             continue
         number, confidence = header
         pages = json.loads(json.dumps(resolution["pages"]))
-        pages[0]["page"] = {"value": {"label": str(number), "number": number,
-                                       "scheme": "arabic"},
-                             "confidence": confidence, "basis": "vision",
-                             "status": "resolved"}
+        for page in pages:
+            page["page"] = {"value": {"label": str(number), "number": number,
+                                      "scheme": "arabic"},
+                            "confidence": confidence, "basis": "vision",
+                            "status": "resolved"}
         try:
             resolve_capture(lib, owner, capture_id, resolution["revision"],
                             pages=pages, _basis="vision")
