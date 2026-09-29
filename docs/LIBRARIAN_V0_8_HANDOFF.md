@@ -9,6 +9,11 @@ owner. This was verified with synthetic hook/bridge failures and two-owner
 isolation; no real Feishu failure or delivery receipt was induced. Current
 regression: 519 Python tests and 18 plugin tests pass. See audit §19.
 
+The next R1 fault injection covers trace correction with a pending knowledge
+candidate and page resolution affecting multiple traces. An outbox failure
+rolls back every related revision, and the same expected revision succeeds
+on retry. The current Python suite passes 521 tests. See audit §20.
+
 Latest scope change: printed underline text is accepted with its current EPUB
 punctuation expansion. The private review site now offers a handwriting-only
 page with 15 note crops and versioned confirm/edit/reject actions; actual user

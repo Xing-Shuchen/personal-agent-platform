@@ -45,6 +45,69 @@ def _photo() -> bytes:
     return stream.getvalue()
 
 
+def test_correction_event_failure_rolls_back_trace_and_candidate(tmp_path: Path, monkeypatch) -> None:
+    with Library(tmp_path) as lib:
+        trace = ingest_export(lib, "owner_a", "weread", "atomic.md", """---
+bookId: atomic
+---
+> [!abstract] Atomic Book
+# Atomic Book
+# 高亮划线
+## Chapter
+> 📌 Original sentence
+> ⏱ 2024-01-01 12:00:00 ^atomic-1
+""".encode())[0]
+        candidate = create_candidate(
+            lib, "owner_a", [{"trace_id": trace["id"], "revision": 1}],
+            candidate_type="concept", correlation_id="atomic-test",
+            content={"text": None, "confidence": None, "basis": "unknown"})
+        original_event = lib._event
+        monkeypatch.setattr(lib, "_event", lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            RuntimeError("outbox unavailable")))
+        with pytest.raises(RuntimeError, match="outbox unavailable"):
+            correct_trace(lib, "owner_a", trace["id"], 1,
+                          printed_text="Corrected sentence", reason="user correction")
+        assert lib.get("owner_a", "ReadingTrace", trace["id"])["revision"] == 1
+        assert lib.get("owner_a", "KnowledgeCandidate", candidate["id"])["status"] == "pending"
+        assert not any(event["event"] == "reading.trace.corrected"
+                       for event in lib.pending_events("owner_a"))
+        monkeypatch.setattr(lib, "_event", original_event)
+        corrected = correct_trace(lib, "owner_a", trace["id"], 1,
+                                  printed_text="Corrected sentence", reason="user correction")
+        assert corrected["revision"] == 2
+        assert lib.get("owner_a", "KnowledgeCandidate", candidate["id"])["status"] == "superseded"
+
+
+def test_resolution_event_failure_rolls_back_all_revisions(tmp_path: Path, monkeypatch) -> None:
+    with Library(tmp_path) as lib:
+        receipt = lib.ingest(
+            "owner_a", transport="gateway", account_id="account", conversation_id="chat",
+            source_event_id="atomic-message", idempotency_key="atomic-command",
+            attachments=[{"source_item_id": "image-1", "mime_type": "image/png", "data": _photo()}])
+        capture_id = receipt["capture_ids"][0]
+        traces = process_capture(lib, "owner_a", capture_id, lambda _: _output())
+        resolution_id = traces[0]["source"]["resolution_id"]
+        prior = lib.get("owner_a", "CaptureResolution", resolution_id)
+        pages = json.loads(json.dumps(prior["pages"]))
+        pages[0]["page"] = {"value": {"label": "172", "number": 172, "scheme": "arabic"},
+                            "confidence": None, "basis": "user_statement", "status": "resolved"}
+        original_event = lib._event
+        monkeypatch.setattr(lib, "_event", lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            RuntimeError("outbox unavailable")))
+        with pytest.raises(RuntimeError, match="outbox unavailable"):
+            resolve_capture(lib, "owner_a", capture_id, prior["revision"], pages=pages)
+        assert lib.get("owner_a", "CaptureResolution", resolution_id)["revision"] == prior["revision"]
+        assert all(lib.get("owner_a", "ReadingTrace", trace["id"])["revision"] == 1
+                   for trace in traces)
+        assert not any(event["event"] == "reading.trace.corrected"
+                       for event in lib.pending_events("owner_a"))
+        monkeypatch.setattr(lib, "_event", original_event)
+        revised = resolve_capture(lib, "owner_a", capture_id, prior["revision"], pages=pages)
+        assert revised["revision"] == prior["revision"] + 1
+        assert all(lib.get("owner_a", "ReadingTrace", trace["id"])["revision"] == 2
+                   for trace in traces)
+
+
 def test_storage_rejects_capture_run_observation_cross_links(tmp_path: Path) -> None:
     with Library(tmp_path) as lib:
         first = lib.ingest(

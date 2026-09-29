@@ -653,3 +653,9 @@ Vault 渲染新增 EPUB 章节投影：用 `EpubIndex` 将印刷引文映射到 
 插件测试分别覆盖私有权限、脱敏、同消息失败后成功覆盖、未映射 sender，以及真实 hook 调用合成桥接错误后留存失败；Python 测试覆盖双 owner 隔离。完整回归 **519 passed**（4 条弃用警告），插件 **18/18**。该状态仅说明 hook 图片接收结果，不把后台 worker 完成或 `queued` 媒体当作送达。测试使用隔离目录和合成故障；真实飞书故障、变更附件重放、平台投送和客户端显示仍留在 R4 现场验收。
 
 Gateway 已重启，`systemctl --user` 返回 active；运行时插件检查为 `loaded`、`enabled`，包含 `message_received` hook 和 `librarian_review` 工具，diagnostics 为空。没有以重启状态替代一条真实飞书故障或客户端送达证据。
+
+## 20. R1 修订入口事件故障注入（2026-09-29）
+
+对 `correct_trace` 和 `resolve_capture` 两个仍缺逐入口故障证据的路径注入 outbox 写失败。前者在已有 pending 知识候选的来源 trace 上修正文句，失败后 trace 保持 revision 1、候选保持 pending、无 `reading.trace.corrected` 事件；恢复事件写入后用同一 expected revision 重试，trace 到 revision 2、候选转为 superseded。后者在同张多 trace 照片上修改用户确认的页码，失败后 CaptureResolution 和所有 trace 均保持旧 revision、无 corrected 事件；恢复事件写入后原 expected revision 可重试，resolution 与所有 trace 一起前进。这两项复核了关联候选、解析和 trace 修订不能部分提交。
+
+证据为隔离库的应用入口故障注入；完整 Python 回归 **521 passed**（4 条弃用警告）。这不代表 SQLite 进程崩溃、实际磁盘故障或所有其余入口。正式库未注入故障，也未替用户更改内容。
