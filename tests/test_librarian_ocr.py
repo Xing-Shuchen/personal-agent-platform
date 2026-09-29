@@ -109,6 +109,26 @@ def test_printed_header_number_outweighs_inline_marginal_number(monkeypatch, off
     assert json.loads(output.raw)["page_markers"][0]["source"] == "header_ocr"
 
 
+@pytest.mark.parametrize("number_box,title_box,title", [
+    ([.83, .18, .85, .20], [.59, .18, .82, .20], "第二讲 帕森斯的理论"),
+    ([.16, .04, .19, .06], [.20, .04, .29, .06], "社会理论二十讲"),
+    ([.15, .04, .188, .06], [.185, .04, .274, .06], "社会理论二十讲"),
+])
+def test_stored_ocr_header_recovers_left_or_right_page_number(
+        number_box, title_box, title) -> None:
+    raw = {"lines": [
+        {"bbox": title_box, "ocr_text": title, "epub_match": 1.0,
+         "ocr_score": .99},
+        {"bbox": number_box, "ocr_text": "31", "epub_match": 0.0,
+         "ocr_score": .99},
+        *[{"bbox": [.2, .22 + i * .06, .85, .24 + i * .06],
+           "ocr_text": "这是一整行印刷正文，提供原图页眉相对位置。",
+           "epub_match": 1.0, "ocr_score": .99} for i in range(5)],
+        {"bbox": [.85, .65, .88, .67], "ocr_text": "65",
+         "epub_match": 0.0, "ocr_score": .99}]}
+    assert ocr.visible_header_page(raw) == (31, .99)
+
+
 def test_visual_review_removes_weak_false_underline_but_retains_raw_evidence(monkeypatch) -> None:
     from agents.librarian.runtime import ocr
     import rapidocr

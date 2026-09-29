@@ -45,6 +45,38 @@ def _photo() -> bytes:
     return stream.getvalue()
 
 
+def test_vision_page_resolution_revises_only_unknown_page(tmp_path: Path) -> None:
+    observation = json.loads(_output())
+    observation["pages"][0]["page"] = {"value": None, "confidence": None,
+                                         "basis": "unknown", "status": "unresolved"}
+    with Library(tmp_path) as lib:
+        receipt = lib.ingest("owner_a", transport="gateway", account_id="account",
+                             conversation_id="chat", source_event_id="message-1",
+                             attachments=[{"source_item_id": "image-1", "mime_type": "image/png",
+                                           "data": _photo()}], idempotency_key="command-1")
+        capture_id = receipt["capture_ids"][0]
+        traces = process_capture(lib, "owner_a", capture_id,
+                                 lambda _: json.dumps(observation).encode())
+        prior = traces[0]
+        resolution = lib.get("owner_a", "CaptureResolution",
+                             prior["source"]["resolution_id"])
+        pages = json.loads(json.dumps(resolution["pages"]))
+        pages[0]["page"] = {"value": {"label": "31", "number": 31,
+                                       "scheme": "arabic"}, "confidence": .99,
+                            "basis": "vision", "status": "resolved"}
+        with pytest.raises(LibrarianError):
+            resolve_capture(lib, "owner_a", capture_id, resolution["revision"],
+                            pages=pages, session_id="session_fake", _basis="vision")
+        revised_resolution = resolve_capture(
+            lib, "owner_a", capture_id, resolution["revision"],
+            pages=pages, _basis="vision")
+        revised = lib.get("owner_a", "ReadingTrace", prior["id"])
+        assert revised_resolution["revision"] == resolution["revision"] + 1
+        assert revised["revision"] == prior["revision"] + 1
+        assert revised["location"]["page"]["number"] == 31
+        assert revised["content"] == prior["content"]
+
+
 def _rotated_photo() -> bytes:
     stream = io.BytesIO()
     exif = Image.Exif()

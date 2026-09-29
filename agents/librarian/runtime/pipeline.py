@@ -884,13 +884,18 @@ def resolve_capture(lib: Library, owner_id: str, capture_id: str,
                     edition_id: object = ..., book_instance_id: object = ...,
                     pages: object = ...,
                     _basis: str = "user_confirmation") -> dict[str, Any]:
-    """Append a user-confirmed resolution and revise affected current traces.
+    """Append a sourced resolution and revise affected current traces.
 
     Omitting a context field keeps its last value; explicit None removes it.
     Original capture bytes, receipt context and observations are never changed.
     """
-    if _basis not in {"user_confirmation", "edition_fingerprint"}:
+    if _basis not in {"user_confirmation", "edition_fingerprint", "vision"}:
         raise LibrarianError("VALIDATION_FAILED", "unsupported resolution basis")
+    if (_basis == "vision" and
+            (pages is ... or expected_resolution_revision is None or
+             any(value is not ... for value in
+                 (session_id, work_id, edition_id, book_instance_id)))):
+        raise LibrarianError("VALIDATION_FAILED", "vision can only resolve known page geometry")
     with lib.transaction():
         lib.get(owner_id, "PageCapture", capture_id)
         row = lib.db.execute("SELECT body FROM records WHERE owner_id=? AND model='CaptureResolution' "
@@ -953,6 +958,21 @@ def resolve_capture(lib: Library, owner_id: str, capture_id: str,
         page_map = {page["id"]: page for page in page_regions}
         state = "resolved" if all(values.values()) else "unresolved"
         current_traces = _traces_for_capture(lib, owner_id, capture_id)
+        if _basis == "vision":
+            if any(trace["revision"] != 1 or
+                   any(trace["content"][field]["basis"] == "user_statement"
+                       for field in ("printed_text", "annotation"))
+                   for trace in current_traces):
+                raise LibrarianError("RECONCILIATION_REQUIRED", "edited trace needs page review")
+            refs = {(trace["id"], trace["revision"]) for trace in current_traces}
+            for candidate_row in lib.db.execute(
+                    "SELECT body FROM records WHERE owner_id=? AND model='KnowledgeCandidate' "
+                    "AND current=1", (owner_id,)):
+                candidate = json.loads(candidate_row["body"])
+                if candidate["status"] in {"pending", "approved", "promoted"} and any(
+                        (ref["trace_id"], ref["revision"]) in refs
+                        for ref in candidate.get("source_trace_refs", [])):
+                    raise LibrarianError("RECONCILIATION_REQUIRED", "knowledge dependency needs page review")
         for trace in current_traces:
             revised = json.loads(_json(trace))
             revised["revision"] += 1

@@ -24,9 +24,11 @@ from xml.etree import ElementTree as ET
 
 from PIL import Image, ImageOps
 
-from .ocr import ocr_extractor, openclaw_note_refiner, openclaw_underline_refiner
+from .ocr import (ocr_extractor, openclaw_note_refiner, openclaw_underline_refiner,
+                  visible_header_page)
 from .gateway_review_finalize import auto_reconcile_fully_reviewed
 from .pipeline import (process_capture, reconcile_extraction, bind_fingerprint_context,
+                       resolve_capture,
                        _repair_trace_index_best_effort)
 from .vision import openclaw_extractor
 from .store import Library, LibrarianError, _new, _now, _unknown_time
@@ -46,6 +48,56 @@ def _latest_pending_review_ids(runs: list[dict]) -> set[str]:
     return {capture_id for capture_id, run in latest.items()
             if run["outcome"] == "pending" and
             "RECONCILIATION_REQUIRED" in run["issues"]}
+
+
+def _repair_visible_header_pages(lib: Library, owner: str, capture_ids: list[str]) -> int:
+    """Resolve a single unknown page from its own photographed header OCR."""
+    runs = {run["capture_id"]: run for run in _current(lib, owner, "ProcessingRun")}
+    resolutions = {item["capture_id"]: item for item in
+                   _current(lib, owner, "CaptureResolution")}
+    observations = {item["processing_run_id"]: item for item in
+                    _current(lib, owner, "PageObservation")}
+    repaired = 0
+    for capture_id in capture_ids:
+        run, resolution = runs.get(capture_id), resolutions.get(capture_id)
+        if (not run or run["outcome"] not in {"success", "partial"} or
+                not run["extractor_version"].startswith("rapidocr-epub-notes-") or
+                not resolution or len(resolution["pages"]) != 1 or
+                resolution["pages"][0]["page"]["value"] is not None):
+            continue
+        observation = observations.get(run["id"])
+        if not observation or len(observation["pages"]) != 1:
+            continue
+        traces = [trace for trace in _current(lib, owner, "ReadingTrace")
+                  if trace["status"] == "active" and
+                  trace["source"].get("capture_id") == capture_id]
+        if not traces or any(trace["location"]["page"] is not None or
+                             trace["location"]["page_region_id"] !=
+                             resolution["pages"][0]["id"] for trace in traces):
+            continue
+        try:
+            raw = json.loads(lib._read_object(observation["raw_output_asset"]))
+            header = visible_header_page(raw)
+        except (LibrarianError, ValueError, TypeError, KeyError):
+            continue
+        if not header:
+            continue
+        number, confidence = header
+        pages = json.loads(json.dumps(resolution["pages"]))
+        pages[0]["page"] = {"value": {"label": str(number), "number": number,
+                                       "scheme": "arabic"},
+                             "confidence": confidence, "basis": "vision",
+                             "status": "resolved"}
+        try:
+            resolve_capture(lib, owner, capture_id, resolution["revision"],
+                            pages=pages, _basis="vision")
+        except LibrarianError as error:
+            if error.code not in {"RECONCILIATION_REQUIRED", "REVISION_CONFLICT",
+                                  "CONTEXT_CONFLICT"}:
+                raise
+            continue
+        repaired += 1
+    return repaired
 
 
 def _epub_metadata(path: Path) -> dict:
@@ -746,6 +798,8 @@ def _process_batch(lib: Library, root: Path, vault: Path | None, owner: str,
         except LibrarianError as error:
             if error.code not in {"RECONCILIATION_REQUIRED", "REVISION_CONFLICT"}:
                 raise
+    if match:
+        _repair_visible_header_pages(lib, owner, batch["capture_ids"])
     latest_runs = {run["capture_id"]: run for run in
                    _current(lib, owner, "ProcessingRun")}
     if match:

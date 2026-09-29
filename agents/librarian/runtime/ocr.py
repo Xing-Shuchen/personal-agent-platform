@@ -81,6 +81,36 @@ def _flip_bbox(box: list[float]) -> list[float]:
             round(1 - box[0], 5), round(1 - box[1], 5)]
 
 
+def visible_header_page(raw: dict) -> tuple[int, float] | None:
+    """Read one unmistakable printed page header from stored OCR evidence."""
+    lines = raw.get("lines", [])
+    body = [line for line in lines if line.get("epub_match", 0) >= .85 and
+            len(_compact(line.get("ocr_text", ""))) >= 15 and
+            line["bbox"][2] - line["bbox"][0] >= .28]
+    if len(body) < 5:
+        return None
+    top = min(line["bbox"][1] for line in body)
+    candidates = []
+    for line in lines:
+        match = re.fullmatch(r"\s*(\d{1,3})\s*", line.get("ocr_text", ""))
+        if (not match or not 1 <= int(match.group(1)) <= 999 or
+                line.get("ocr_score", 0) < .9 or line["bbox"][1] >= top - .005):
+            continue
+        box = line["bbox"]
+        center = (box[1] + box[3]) / 2
+        adjacent = any(
+            other is not line and
+            (re.match(r"^第[一二三四五六七八九十百]+讲", _compact(other.get("ocr_text", "")))
+             or _compact(other.get("ocr_text", "")) == "社会理论二十讲") and
+            abs((other["bbox"][1] + other["bbox"][3]) / 2 - center) <= .022 and
+            (-.01 <= box[0] - other["bbox"][2] <= .08 or
+             -.01 <= other["bbox"][0] - box[2] <= .08)
+            for other in lines)
+        if adjacent:
+            candidates.append((int(match.group(1)), float(line["ocr_score"])))
+    return candidates[0] if len(candidates) == 1 else None
+
+
 class EpubGroundTruth:
     def __init__(self, path: Path) -> None:
         self.sha256 = hashlib.sha256(path.read_bytes()).hexdigest()
