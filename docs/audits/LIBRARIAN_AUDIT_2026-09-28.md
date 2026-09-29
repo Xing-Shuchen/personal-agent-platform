@@ -790,4 +790,4 @@ OpenClaw 插件当前注册七个 `librarian_*` 工具、一个 `message_receive
 
 完整 Python 回归 **530 passed**（4 条弃用警告），插件 **21/21**。同一图片源消息改变会话范围返回 `IDEMPOTENCY_CONFLICT`。这些是代码与隔离库证据；Gateway 加载与真实入站须另行记录。
 
-`7ce5e6d` 后重启 Gateway：systemd 为 active，启动日志列出 `pap-librarian-intake`，飞书 `librarian` WebSocket 已启动。正式库只读再次检查仍只有旧 `agent:` 范围的一个明确选择，23 个图片 batch 的范围为 22 个 `user:`、1 个其他，73 条纸书活跃 trace 未变；修复尚未遇到新的真实入站。随后复核发现，同一消息换会话范围且同时改变 `source_item_id` 时，原检查可能因仅按附件项查重而漏判；桥接已改为按消息级来源查询，隔离反例用改变后的附件项 ID 验证返回 `IDEMPOTENCY_CONFLICT`。该补丁须作为新提交及部署单独记录。
+`7ce5e6d` 后重启 Gateway：systemd 为 active，启动日志列出 `pap-librarian-intake`，飞书 `librarian` WebSocket 已启动。正式库只读再次检查仍只有旧 `agent:` 范围的一个明确选择，23 个图片 batch 的范围为 22 个 `user:`、1 个其他，73 条纸书活跃 trace 未变；修复尚未遇到新的真实入站。随后复核发现，同一消息换会话范围且同时改变 `source_item_id` 时，原检查可能因仅按附件项查重而漏判；`ae662fc` 改为按消息级来源查询，隔离反例用改变后的附件项 ID 验证返回 `IDEMPOTENCY_CONFLICT`（桥接专项 8/8）。该提交后 Gateway 再次重启为 active，`librarian` 飞书 WebSocket 已启动；真实重放仍未发生。
