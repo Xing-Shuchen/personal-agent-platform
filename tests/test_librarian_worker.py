@@ -488,7 +488,7 @@ def test_physical_note_uses_weread_layout_and_upgrades_unchanged_legacy(tmp_path
     assert "## 第 39 页" in new
     assert "> 📌 正是帕森斯，完成整合。" in new
     assert "^rt_fixture" not in new
-    assert "> 📷 原图：可向图书专员索取" in new
+    assert "原图" not in new
     assert "capture_fixture" not in new
     assert "> ⏱ 收图：2026-09-27 20:00:00" in new
     assert "2026-09-28 20:00:00" not in new
@@ -504,12 +504,19 @@ def test_physical_note_uses_weread_layout_and_upgrades_unchanged_legacy(tmp_path
                                  received_at_by_capture=received)
     assert "^rt_fixture" not in note_v7
     assert "> 原图证据：`capture_fixture`" in note_v7
+    note_v8 = _render_batch_note(batch, "社会理论二十讲", [trace], created="2026-09-28",
+                                 presentation_version=8,
+                                 received_at_by_capture=received)
+    assert "> 📷 原图：可向图书专员索取" in note_v8
 
     folder = tmp_path / "2Area" / "40 学习与阅读" / "阅读笔记"
     folder.mkdir(parents=True)
     note = folder / "社会理论二十讲.md"
     note.write_text(_render_batch_note_legacy(batch, "社会理论二十讲", [trace],
                                                created="2026-09-28"), encoding="utf-8")
+    _refresh_generated_note(tmp_path, batch, "社会理论二十讲", [trace], [trace], received)
+    assert note.read_text(encoding="utf-8") == new
+    note.write_text(note_v8, encoding="utf-8")
     _refresh_generated_note(tmp_path, batch, "社会理论二十讲", [trace], [trace], received)
     assert note.read_text(encoding="utf-8") == new
     note.write_text(note_v7, encoding="utf-8")

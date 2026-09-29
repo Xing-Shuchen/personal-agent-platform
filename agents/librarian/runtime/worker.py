@@ -369,7 +369,7 @@ def _render_batch_note_legacy(batch: dict, title: str, traces: list[dict], *,
 
 def _render_batch_note(batch: dict, title: str, traces: list[dict], *,
                        created: str, spatial_order: bool = True,
-                       presentation_version: int = 8,
+                       presentation_version: int = 9,
                        received_at_by_capture: dict[str, str] | None = None) -> str:
     if not traces:
         raise LibrarianError("NO_MARKS", "no reading marks found in batch")
@@ -438,10 +438,12 @@ def _render_batch_note(batch: dict, title: str, traces: list[dict], *,
             except (TypeError, KeyError, ValueError):
                 stamp = "未知" if presentation_version >= 6 else created
             time_label = f"收图：{stamp}" if presentation_version >= 6 else stamp
-            image_label = ("> 📷 原图：可向图书专员索取" if presentation_version >= 8
-                           else f"> 原图证据：`{trace['source']['capture_id']}`")
-            lines.extend([f"> ⏱ {time_label}", image_label,
-                          _trace_marker(trace["id"], trace["revision"]), ""])
+            lines.append(f"> ⏱ {time_label}")
+            if presentation_version == 8:
+                lines.append("> 📷 原图：可向图书专员索取")
+            elif presentation_version < 8:
+                lines.append(f"> 原图证据：`{trace['source']['capture_id']}`")
+            lines.extend([_trace_marker(trace["id"], trace["revision"]), ""])
 
     render_section("高亮划线", highlights)
     render_section("读书笔记", notes)
@@ -496,6 +498,9 @@ def _refresh_generated_note(vault: Path, batch: dict, title: str,
                                received_at_by_capture=received_at_by_capture),
             _render_batch_note(batch, title, old_traces, created=match.group(1),
                                presentation_version=7,
+                               received_at_by_capture=received_at_by_capture),
+            _render_batch_note(batch, title, old_traces, created=match.group(1),
+                               presentation_version=8,
                                received_at_by_capture=received_at_by_capture),
             _render_batch_note(batch, title, old_traces, created=match.group(1),
                                presentation_version=1),
@@ -572,7 +577,7 @@ def _consolidate_generated_note(lib: Library, owner: str, title: str,
         variants = [_render_batch_note(batch, title, traces, created=stamp.group(1),
                                        presentation_version=version,
                                        received_at_by_capture=received).strip()
-                    for version in (1, 2, 3, 4, 5, 6, 7, 8)]
+                    for version in (1, 2, 3, 4, 5, 6, 7, 8, 9)]
         variants.extend([_render_batch_note_legacy(batch, title, traces,
                                                    created=stamp.group(1)).strip(),
                          _render_batch_note_legacy(batch, title, traces,
