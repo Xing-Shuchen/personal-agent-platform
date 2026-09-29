@@ -1,16 +1,50 @@
 import assert from "node:assert/strict";
-import { mkdtemp, writeFile, rm } from "node:fs/promises";
+import { chmod, mkdtemp, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
 import { acceptMessage, librarianEvidenceTool, librarianReviewTool, librarianReviewDecisionTool, librarianReviewFinalizeTool, librarianSearchTool, librarianSessionTool,
-  rememberInboundSession, workerArgs } from "./index.js";
+  rememberInboundSession, runPythonBridge, workerArgs } from "./index.js";
 import librarianPlugin from "./index.js";
 
 const config = { ownerMappings: [{ channelId: "telegram", accountId: "bot",
   senderId: "person", ownerId: "owner_fixture" }] };
 const ctx = { channelId: "telegram", accountId: "bot", conversationId: "chat" };
+
+test("bridge errors preserve redacted code, stage and retryability for tools", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "librarian-bridge-error-"));
+  try {
+    const executable = join(dir, "bridge-fixture");
+    await writeFile(executable, "#!/bin/sh\ncat >/dev/null\nprintf '%s\\n' '{\"error\":{\"code\":\"REVISION_CONFLICT\",\"stage\":\"gateway.review_finalize\",\"retryable\":false,\"message\":\"The referenced version has changed.\",\"details\":{}}}'\nexit 2\n");
+    await chmod(executable, 0o700);
+    const config = { python: executable, repoRoot: dir, stateRoot: dir };
+    await assert.rejects(
+      () => runPythonBridge(config, "agents.librarian.runtime.gateway_review_finalize", {}),
+      (error) => {
+        assert.equal(error.code, "REVISION_CONFLICT");
+        assert.equal(error.stage, "gateway.review_finalize");
+        assert.equal(error.retryable, false);
+        assert.deepEqual(error.errorResult, { code: "REVISION_CONFLICT",
+          stage: "gateway.review_finalize", retryable: false,
+          message: "The referenced version has changed.", details: {} });
+        assert.match(error.message, /REVISION_CONFLICT; stage=gateway\.review_finalize; retryable=false/);
+        return true;
+      });
+    await writeFile(executable, "#!/bin/sh\ncat >/dev/null\nprintf '%s\\n' '/private/token-and-page-text'\nexit 2\n");
+    await assert.rejects(
+      () => runPythonBridge(config, "agents.librarian.runtime.gateway_search", {}),
+      (error) => {
+        assert.equal(error.code, "BRIDGE_FAILED");
+        assert.equal(error.stage, "gateway_search");
+        assert.equal(error.retryable, true);
+        assert.doesNotMatch(error.message, /token-and-page-text/);
+        return true;
+      });
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
 
 test("staged images use trusted sender mapping and source order", async () => {
   const dir = await mkdtemp(join(tmpdir(), "librarian-hook-"));

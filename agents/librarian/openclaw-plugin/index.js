@@ -38,7 +38,28 @@ function ownerFor(config, event, ctx) {
   return matches.length === 1 ? matches[0].ownerId : null;
 }
 
-async function runPythonBridge(config, module, message) {
+function bridgeFailure(module, error) {
+  const valid = error && typeof error === "object" &&
+    typeof error.code === "string" && /^[A-Z_]+$/.test(error.code) &&
+    typeof error.stage === "string" && /^gateway\.[a-z_]+$/.test(error.stage) &&
+    typeof error.retryable === "boolean" &&
+    typeof error.message === "string" && error.message.length > 0 &&
+    error.details && typeof error.details === "object" && !Array.isArray(error.details);
+  const result = valid ? {
+    code: error.code, stage: error.stage, retryable: error.retryable,
+    message: error.message, details: error.details,
+  } : {
+    code: "BRIDGE_FAILED", stage: module.split(".").at(-1), retryable: true,
+    message: "The Librarian bridge failed.", details: {},
+  };
+  const failure = new Error(`${result.message} (${result.code}; stage=${result.stage}; retryable=${result.retryable})`);
+  Object.assign(failure, { code: result.code, stage: result.stage,
+    retryable: result.retryable, publicMessage: result.message,
+    details: result.details, errorResult: result });
+  return failure;
+}
+
+export async function runPythonBridge(config, module, message) {
   const python = config.python ?? "python3";
   const child = spawn(python, ["-m", module, "--root", config.stateRoot], {
     cwd: config.repoRoot,
@@ -47,9 +68,13 @@ async function runPythonBridge(config, module, message) {
   });
   const stdout = [];
   let size = 0;
+  let oversized = false;
   child.stdout.on("data", (chunk) => {
     size += chunk.length;
-    if (size > 1024 * 1024) child.kill();
+    if (size > 1024 * 1024) {
+      oversized = true;
+      child.kill();
+    }
     else stdout.push(chunk);
   });
   child.stderr.resume(); // Never log private paths or model data from the bridge.
@@ -58,15 +83,28 @@ async function runPythonBridge(config, module, message) {
     child.once("close", (code) => resolve(code));
   });
   child.stdin.on("error", () => {}); // An early bridge exit can close stdin.
-  const timer = setTimeout(() => child.kill(), 60_000);
+  let timedOut = false;
+  const timer = setTimeout(() => { timedOut = true; child.kill(); }, 60_000);
   child.stdin.end(JSON.stringify(message));
   try {
-    const code = await completed;
-    const result = JSON.parse(Buffer.concat(stdout).toString("utf8"));
+    let code;
+    try {
+      code = await completed;
+    } catch {
+      throw bridgeFailure(module);
+    }
+    if (timedOut || oversized) throw bridgeFailure(module);
+    let result;
+    try {
+      result = JSON.parse(Buffer.concat(stdout).toString("utf8"));
+    } catch {
+      throw bridgeFailure(module);
+    }
+    if (!result || typeof result !== "object" || Array.isArray(result)) {
+      throw bridgeFailure(module);
+    }
     if (code !== 0 || result.error) {
-      const failure = new Error("bridge failed");
-      failure.code = result.error?.code ?? "BRIDGE_FAILED";
-      throw failure;
+      throw bridgeFailure(module, result.error);
     }
     return result;
   } finally {
