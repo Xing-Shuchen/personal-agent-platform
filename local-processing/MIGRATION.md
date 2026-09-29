@@ -12,11 +12,11 @@ cd personal-agent-platform
 git switch explore/segement-ocr-alignment
 ```
 
-Git 中包含 `bookscan/` 实现、`tests/test_bookscan.py`、配置、依赖版本快照、规范、逐页 `manifest.json` 和 `inputs.sha256`。当前分支是探索交接分支；不要把它当作已达到正式使用准确率的发布版本。
+Git 中包含 `bookscan/` 实现、`tests/test_bookscan.py`、配置、依赖版本快照、规范、逐页 `manifest.json`、`inputs.sha256`，以及这次实验的 22 张扫描照片和一本 EPUB。当前分支是探索交接分支；不要把它当作已达到正式使用准确率的发布版本。
 
-## 2. 单独迁移输入素材
+## 2. 校验输入素材
 
-把本机 `local-processing/` 下的 22 张 `20260929-140150.979-*.jpg` 和 `社会理论二十讲.epub` 原样复制到另一台 PC 的仓库 `local-processing/` 下，保持文件名不变。原始照片和书籍 EPUB 不进入 Git；可通过自有加密存储或局域网传输。`manifest.json` 中的坐标、旋转和手写区域都针对这批**原始字节**，不适用于重压缩或改名后的文件。
+克隆探索分支后，`local-processing/` 下应已有 22 张 `20260929-140150.979-*.jpg` 和 `社会理论二十讲.epub`，无需单独复制。`manifest.json` 中的坐标、旋转和手写区域都针对这批**原始字节**，不适用于重压缩或改名后的文件。
 
 在另一台 PC 验证 23 个文件完整：
 

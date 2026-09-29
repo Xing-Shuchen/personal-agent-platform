@@ -1,6 +1,6 @@
 # 本地图像处理环境
 
-当前 PC 已在 `local-processing/.venv/` 安装 CPU 推理环境。该目录不会进入 Git。样本照片和 EPUB 也被 Git 忽略。
+当前 PC 已在 `local-processing/.venv/` 安装 CPU 推理环境。该目录不会进入 Git。本次实验的 22 张样本照片和 EPUB 已提交到探索分支。
 
 | 用途 | 已安装版本 |
 | --- | --- |
@@ -46,4 +46,4 @@ result = ocr.predict("local-processing/20260929-140150.979-1.jpg")
 
 EPUB 的 XHTML 可直接用 `zipfile.ZipFile` 读取；这一环节无需下载模型。
 
-`requirements.lock` 是这台 Linux x86_64 / Python 3.11 环境的完整已安装版本快照；其他平台需重新验证轮子兼容性。模型文件和原始扫描件需在另一台 PC 上分别准备，不随 Git 同步。
+`requirements.lock` 是这台 Linux x86_64 / Python 3.11 环境的完整已安装版本快照；其他平台需重新验证轮子兼容性。模型文件需在另一台 PC 上准备；本次实验的原始扫描件和 EPUB 随探索分支同步。

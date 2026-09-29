@@ -12,7 +12,7 @@ local-processing/.venv/bin/python -m bookscan prepare --config local-processing/
 local-processing/.venv/bin/python -m bookscan run --config local-processing/config.yaml
 ```
 
-`manifest.json` 明确记录文件顺序、逐页旋转、倾斜角、有效页面 ROI，以及目视圈定的手写批注和角括号区域。当前样本的文件编号并非印刷页码顺序；程序保持 manifest 顺序并报告连续性冲突，不按 OCR 页码重排。`--scan-index 21` 可单页重跑。输出写入新的 `output/<run_id>/`，不覆盖原图和旧实验。机器输出、样本照片、EPUB、模型和缓存都不进 Git。
+`manifest.json` 明确记录文件顺序、逐页旋转、倾斜角、有效页面 ROI，以及目视圈定的手写批注和角括号区域。当前样本的文件编号并非印刷页码顺序；程序保持 manifest 顺序并报告连续性冲突，不按 OCR 页码重排。`--scan-index 21` 可单页重跑。输出写入新的 `output/<run_id>/`，不覆盖原图和旧实验。本次实验的样本照片和 EPUB 已进入探索分支；机器输出、模型和缓存不进 Git。
 
 打开 `output/<run_id>/review.html` 逐页核验。绿色框是已选行，红框是下划线证据，橙框是待核对候选，蓝框是识别出的印刷页码。可点击打开原图和裁图；零结果页也会显示。
 展开每页的“逐页人工核验”，先检查整页，再逐条判定已选下划线行。漏检行可在原始扫描件上拖框补入，或手工输入原图坐标。人工转录框默认留空，只有逐字核对后才填写；留空的行不计入 CER。每个阅读组还可单独判定标记范围和 EPUB 文本。草稿自动保存在当前浏览器；通过页面底部的“下载核验草稿 JSON”备份，在另一台 PC 上可导入同一运行目录的草稿。全部页面及已选行确认后，下载 `ground-truth.jsonl` 并执行下方的 `evaluate`。不同运行 ID 的草稿不能混用。
