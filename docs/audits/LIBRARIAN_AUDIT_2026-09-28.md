@@ -807,3 +807,7 @@ OpenClaw 插件当前注册七个 `librarian_*` 工具、一个 `message_receive
 | 配置与版本 | `process_capture` 存 `extractor_version`、`normalizer_version`；仅启用符号词表时保存不可变 `vocabulary_config_ref` 及版本，重提取/对账按摘要比较 | 正式库当前 81 个 ProcessingRun 无启用词表的配置引用；73 条纸书 trace 的 `vocabulary_version` 均为空。版本链存在不等于可还原外部 OCR 模型权重与服务环境 |
 
 这些计数由 `.venv/bin/python docs/audits/librarian_metadata_scope.py var/librarian/librarian.sqlite` 对正式 SQLite 只读重算；脚本只输出聚合数，不输出阅读文字或个人 ID。它们证明字段分布与写入代码的可追溯关系，不能替代照片局部核对、15 条手写真值、EPUB 与纸本异文判断或真实飞书投送。重建前已清除的旧图像处理结果不在当前库，本节不推断其丢失记录的完整修订史。
+
+## 31. 当前 Vault 笔记与领域记录的只读对账（2026-09-29）
+
+重新读取 `2Area/40 学习与阅读/阅读笔记/社会理论二十讲.md` 与正式 SQLite 的 current/active physical trace：笔记含 73 个唯一的 `<span hidden data-librarian-trace="…" data-revision="…"></span>`，数据库有 73 个对应 `(trace_id, revision)`；缺失 0、额外 0。笔记只有一个第二讲章节标题，页码标题 0，图片嵌入 0，旧的 `^rt_…` 可见尾码 0，“📷 原图：可向图书专员索取”提示 0。此检查验证生成笔记的记录集合和用户要求的基本呈现边界；没有逐句比较正文与 EPUB 顺序，也不能证明手写 OCR 内容正确。复核页仍监听 `127.0.0.1:8765`；15 条手写真值等待用户在正式运行中提交。
