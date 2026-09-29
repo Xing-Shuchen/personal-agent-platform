@@ -410,6 +410,8 @@ D 阶段三来源当前态只读验证：最近一轮数字同步 Koodo 的 118 
 
 R2 历史引文与空间关系首轮只读清点：以正式 Library 的 `records.current=1` 且 trace `status=active, medium=physical` 为范围，共 83 条，关联 25 个 observation。70 条有印刷文字、13 条无印刷文字。按 trace 的 `detection_ids` 取到 146 个印刷文字区，逐个回读各 observation 的不可变 raw OCR 对应行；146 段文字均为各自 OCR 行去空白后的子串，没有发现当前活跃引文直接使用 OCR 范围外的 EPUB 扩文。70 条中有 1 条 trace 文字不等于 observation 的印刷区拼接，字段明确标记 `basis=user_statement`，是人工更正，不能当作 OCR 一致性错误。另检查 83 条 trace 的 305 个关联 detection：ID 均存在、页区一致，detection bbox 位于 trace bbox 与页区 bbox 内，未发现结构性空间越界。本项只证明文字来源和几何包含关系；**不证明墨线确实覆盖该文字、OCR 字词准确或所有历史 superseded 版本正确**。第 23、29、39 页待审扫描仍按 A 逐项核对，尤其第 39 页候选的过宽文字不得因本项计数而自动接受。
 
+F06 当前调度路径复核：Gateway 定时恢复和新图片触发均以 `--physical-only` 启动纸书子进程，定时恢复另以 `--digital-only` 启动数字子进程；两者分别使用非阻塞 `physical-worker.lock`、`digital-worker.lock`。纸书批次循环逐项捕获异常并写 `batch-status`，已有“坏批次在前、好批次在后”隔离测试。另在临时 Library 中让数字同步替身持续占用数字锁，同时运行纸书模式，纸书空队列在约 0.001 秒内完成，数字任务随后释放；这证明现行进程模式和锁互不等待，但**未**验证有真实照片、SQLite 写入竞争或慢真实 WeRead 请求时的端到端延迟。正式 Gateway 服务此时为 active，最近数字同步状态两来源均 success；子进程标准输出仍被忽略，完整故障可观测性和重启恢复继续列在 D/R4。
+
 ## 9. 现行实现计划（2026-09-29）
 
 第 1–7 节仍是对 `d111ace` 的初审，不能用其中的旧行号和测试数量描述当前 HEAD。本节把整改转为可执行批次；每批结束时在第 8 节记录实际提交、测试、生产状态和未验项。除明确列出的真实用户审核外，调试与迁移均通过 Librarian 的 worker、领域命令或受信 Gateway 工具执行，不手改生产数据库或 Vault 生成块。
