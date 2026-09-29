@@ -665,3 +665,5 @@ Gateway 已重启，`systemctl --user` 返回 active；运行时插件检查为 
 审视 `KnowledgeCandidate` 时发现 Schema 已限制状态值与 `promoted`/`knowledge_id` 组合，但 `Library._put` 原可接受结构合法的初版 `promoted` 或 `pending→promoted`，绕过 `decide_candidate` 的批准步骤。最终写入层现只允许初版 `pending`，后续 `pending→approved/rejected/superseded`、`approved→promoted`；来源 trace 引用、候选类型、内容和触发依据在修订中保持不变。非法跳级和改写解释的隔离库反例均拒绝且当前版本不变；现有正常知识流程与回滚测试 52/52 通过。
 
 本约束保证状态链和解释不被普通内部写入绕过；完整 Python 回归 **522 passed**（4 条弃用警告）。`KnowledgeObject` 是否已由外部知识服务持久化，仍由 `promote_candidate` 的 writer 回执和幂等键保证，不能由 SQLite 状态本身证明。当前正式库无 `KnowledgeCandidate`，因此没有可复核的旧候选迁移样本。
+
+兼容性补查发现 `trigger` 在当前 Schema 为可选字段；旧候选可能缺失。状态迁移校验已对比可选值而不索引必有键，隔离库中模拟缺失 `trigger` 的初版 candidate 可正常 `pending→approved`；知识模块 6/6 测试通过。此模拟只覆盖该字段的旧形状，不替代真实旧库迁移样本。

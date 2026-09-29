@@ -6,7 +6,7 @@ import pytest
 
 from agents.librarian.runtime.commands import execute_command
 from agents.librarian.runtime.digital import ingest_export
-from agents.librarian.runtime.knowledge import create_candidate, promote_candidate
+from agents.librarian.runtime.knowledge import create_candidate, decide_candidate, promote_candidate
 from agents.librarian.runtime.pipeline import correct_trace
 from agents.librarian.runtime.store import Library, LibrarianError
 
@@ -121,6 +121,12 @@ def test_storage_enforces_candidate_state_machine_and_immutable_interpretation(t
                 lib._put(changed)
         assert altered.value.code == "VALIDATION_FAILED"
         assert lib.get("owner_a", "KnowledgeCandidate", candidate["id"])["revision"] == 1
+
+        legacy = {**candidate, "id": "candidate_legacy"}
+        legacy.pop("trigger")
+        with lib.transaction():
+            lib._put(legacy)
+        assert decide_candidate(lib, "owner_a", legacy["id"], 1, approve=True)["status"] == "approved"
 
 
 def test_rejection_reason_and_changed_trace_prevent_stale_approval(tmp_path):

@@ -382,7 +382,7 @@ class Library:
                 if record["status"] not in allowed.get(previous["status"], set()):
                     raise LibrarianError("INVALID_STATE_TRANSITION", "invalid candidate transition")
                 if any(record[field] != previous[field] for field in
-                       ("source_trace_refs", "candidate_type", "content", "trigger")):
+                       ("source_trace_refs", "candidate_type", "content")) or record.get("trigger") != previous.get("trigger"):
                     raise LibrarianError("VALIDATION_FAILED", "candidate interpretation is immutable")
             self.db.execute("UPDATE records SET current=0 WHERE owner_id=? AND model=? AND id=? AND current=1",
                             (record["owner_id"], model, record["id"]))
