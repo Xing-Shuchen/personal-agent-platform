@@ -1,0 +1,22 @@
+# Experimental parameters; these are not measured accuracy guarantees.
+root: .
+epub: 社会理论二十讲.epub
+manifest: manifest.json
+output_dir: output
+models:
+  detection_name: PP-OCRv5_mobile_det
+  detection_dir: ~/.paddlex/official_models/PP-OCRv5_mobile_det
+  recognition_name: PP-OCRv5_mobile_rec
+  recognition_dir: ~/.paddlex/official_models/PP-OCRv5_mobile_rec
+  device: cpu
+selection:
+  ink_threshold: 145
+  min_length_in_line_heights: 1.0
+alignment:
+  min_similarity: 0.87
+  min_query_coverage: 0.90
+  min_runner_up_margin: 0.06
+page_numbers:
+  enabled: true
+  corner_width_fraction: 0.30
+  corner_height_fraction: 0.12

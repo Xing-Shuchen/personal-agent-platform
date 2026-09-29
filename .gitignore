@@ -4,6 +4,11 @@ __pycache__/
 *.egg-info/
 .venv/
 .pytest_cache/
+/local-processing/*.jpg
+/local-processing/*.epub
+/local-processing/models/
+/local-processing/output/
+/local-processing/.cache/
 
 # Runtime state (gate db, audit logs, per-agent run state)
 #
