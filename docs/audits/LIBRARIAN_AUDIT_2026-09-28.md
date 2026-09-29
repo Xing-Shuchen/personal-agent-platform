@@ -318,3 +318,11 @@ v8 本地 OCR 局部重试：强划线而整页 OCR 无法匹配 EPUB 的正文�
 10:45–11:00 本地 OCR 与核显实验：依据 PaddleOCR 官方 GitHub/安装说明，在隔离的 `/tmp/librarian-paddle-venv` 安装 PaddleOCR 3.5 与 PaddlePaddle 3.2 CPU 版，未改生产依赖。官方 PP-OCRv5 server 检测/识别模型对原尺寸 2480×3507 扫描件默认阈值漏掉正文；缩至 1414×2000、检测阈值 0.2/框阈值 0.3 后，第 39 页得到 30 行（9.56 秒），正文 27/27 行与 EPUB 匹配度至少 0.85；现有 RapidOCR 同样 27/27，约 3.5 秒。另一张倒置扫描件先旋转再缩放，PaddleOCR 得 75 行、29 个长正文行中 28 个匹配 EPUB（11.59 秒）；RapidOCR 得 74 行、28 个长正文行中 27 个匹配。新增的一行是普通印刷正文，未证明待审核的墨迹/OCR 缺口已解决。两个样本不足以替换生产识别器。
 
 同机硬件为 Intel Meteor Lake-P Arc 核显，用户可访问 `/dev/dri/renderD128`；系统未安装 OpenCL ICD。将 Intel 官方发行包仅解压在 `/tmp/librarian-intel-opencl` 后，隔离的 OpenVINO 2026.2 能列出 GPU 并在 GPU 上编译现有 RapidOCR PP-OCRv6 ONNX 检测/识别模型。临时 GPU 适配器对同一第 39 页扫描件输出 30 行，已有模型编译缓存时初始化 0.83 秒，连续推理 1.91/0.97/0.85 秒；同进程 CPU ONNX 路径为 3.38/2.81/2.80 秒、同为 30 行。首次无缓存的 GPU 推理曾达 22.4 秒，故只将热身后的加速视为有条件的性能结果。RapidOCR 当前 OpenVINO 后端将设备固定为 CPU；实验使用临时适配器，生产 Gateway/worker 未启用核显，也未将临时驱动包视为已部署依赖。
+
+11:00 后新增 `librarian_review_decision` 受信入口，仅接受同一真实入站飞书消息绑定的 owner/actor/source，要求当前 pending run ID 与稳定候选 ID 匹配，并以来源消息幂等记录 accept/reject 及用户明确提供的完整更正文本。`librarian_review` 可读该 run 的最新决定。该入口只写私有审核账本，不修改 ReadingTrace、索引或 Vault；后续还需有明确的整图对账命令和文本边界核实才可完成入库。Python Librarian 套件 100 项、Node 插件 11 项通过；OpenClaw 配置校验通过、插件能力已登记、Gateway 重启且飞书长连接启动。生产第 39 页 scan 的最新 run 有两个稳定候选，目前审核账本为空；新工具尚未有真实飞书调用，不宣称真人审核已被系统记录。
+
+11:10–11:18 修正局部 OCR 边界：第 39 页 scan 的第一条被画线正文行，在前一句句号之后的检测画线起点相差仅约 0.0014 个行宽；旧规则错误地把「社会学家帕森斯……的名字。」并入候选。调小该边界误差后，只读原图重跑从「正是帕森斯」开始。正式 worker 以 v10 版本跑完 5 张冲突图，仍全部保持待对账；第 39 页候选现为「正是帕森斯，在20世纪……著作树立为社会学思想的核心构成部分。」及第 40 页另一组，稳定候选 ID 未变，活跃 trace 仍 208。该行修复并不证明第 40 页候选完整，也不代表第 39 页已入库。
+
+增加 `librarian_review_finalize`：只有当前 run 的每个候选都有来源绑定的接受/拒绝决定，且用户明确要求替换整张扫描件的旧组、旧 trace ID+revision 与最新快照完全一致时才通过正式版本化对账；旧 trace 变 superseded，接受候选按原 observation 建新 trace，更正文本标记 `user_statement`，索引和事件沿用 pipeline，随后触发 worker 导出 Vault。知识依赖和用户已更正旧 trace 继续阻断。合成端到端测试覆盖一条接受、一条拒绝、提前提交拒绝与同源幂等；Python 102 项、Node 12 项通过，Gateway 重启、飞书长连接启动。生产 5 张图尚无审核账本决定，新工具无真实飞书调用，故不能把本地测试视为首书入库完成。
+
+回归时发现审核列表用秒级 `created_at` 加随机 run ID 选“最新”；同一秒内创建旧成功 run 与新 pending run 时可能反选旧版，表现为待审核图消失。改为按 records 插入 rowid 选当前最新 run；同秒合成对账测试稳定通过，生产第 39 页仍指向 v10 pending run。此修复只影响审核定位，不自动提升内容。

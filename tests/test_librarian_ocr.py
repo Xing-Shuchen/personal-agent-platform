@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 from PIL import Image
 
+from agents.librarian.runtime import ocr
 from agents.librarian.runtime.ocr import _visible_marked_text
 
 
@@ -20,8 +21,15 @@ def test_marked_sentence_stays_within_photographed_line() -> None:
     assert last_box[2] < last["bbox"][2]
 
 
+def test_marked_sentence_start_near_prior_punctuation_is_clipped() -> None:
+    line = {"ocr_text": "社会学家帕森斯（TalcottParsons，1902—1979）的名字。正是帕森斯，在20世纪",
+            "bbox": [.2, .5, .86, .53], "underline_span": [.7694, .8873]}
+    text, box = ocr._visible_marked_text(line)
+    assert text.startswith("正是帕森斯")
+    assert box[0] > .69
+
+
 def test_generic_ocr_keeps_mark_without_epub(monkeypatch) -> None:
-    from agents.librarian.runtime import ocr
     import rapidocr
 
     boxes = []

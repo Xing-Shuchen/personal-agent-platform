@@ -25,16 +25,17 @@ def pending_extractions(lib: Library, owner: str, capture_id: str | None = None)
     if not isinstance(owner, str) or not owner or (capture_id is not None and
             (not isinstance(capture_id, str) or not capture_id.startswith("capture_"))):
         raise LibrarianError("VALIDATION_FAILED", "owner and optional capture ID required")
-    runs = [json.loads(row[0]) for row in lib.db.execute(
-        "SELECT body FROM records WHERE owner_id=? AND model='ProcessingRun' AND current=1",
-        (owner,))]
+    runs = [(row[0], json.loads(row[1])) for row in lib.db.execute(
+        "SELECT rowid,body FROM records WHERE owner_id=? AND model='ProcessingRun' "
+        "AND current=1", (owner,))]
     latest: dict[str, dict] = {}
-    for run in runs:
+    latest_rowid: dict[str, int] = {}
+    for rowid, run in runs:
         if capture_id is not None and run["capture_id"] != capture_id:
             continue
-        prior = latest.get(run["capture_id"])
-        if prior is None or (run["created_at"], run["id"]) > (prior["created_at"], prior["id"]):
+        if rowid > latest_rowid.get(run["capture_id"], -1):
             latest[run["capture_id"]] = run
+            latest_rowid[run["capture_id"]] = rowid
     pending = [run for run in latest.values() if run["outcome"] == "pending" and
                "RECONCILIATION_REQUIRED" in run["issues"]]
     if capture_id is None:
@@ -94,6 +95,15 @@ def pending_extractions(lib: Library, owner: str, capture_id: str | None = None)
                 "detection_ids": trace["source"]["detection_ids"]}
 
     old = _traces_for_capture(lib, owner, capture_id)
+    review_decisions = []
+    if lib.db.execute("SELECT 1 FROM sqlite_master WHERE type='table' "
+                      "AND name='gateway_review_decisions'").fetchone():
+        rows = lib.db.execute("SELECT candidate_id,decision,corrected_text,created_at "
+                              "FROM gateway_review_decisions WHERE owner_id=? AND "
+                              "capture_id=? AND pending_run_id=? ORDER BY rowid",
+                              (owner, capture_id, run["id"])).fetchall()
+        latest_decisions = {row["candidate_id"]: dict(row) for row in rows}
+        review_decisions = list(latest_decisions.values())
     ocr_gaps = []
     visual_checks = []
     try:
@@ -133,6 +143,7 @@ def pending_extractions(lib: Library, owner: str, capture_id: str | None = None)
             "proposed": [brief(item) for item in proposed],
             "ocr_gaps": ocr_gaps[:20],
             "visual_checks": visual_checks[:20],
+            "review_decisions": review_decisions,
             "decision": "human_review_required"}
 
 

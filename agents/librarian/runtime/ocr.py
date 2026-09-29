@@ -179,7 +179,9 @@ def _visible_marked_text(line: dict) -> tuple[str, list[float]]:
     if not value or span[1] <= span[0]:
         return value, box
     boundaries = [index + 1 for index, char in enumerate(value) if char in "。！？!?"]
-    before = [index for index in boundaries if index / len(value) < span[0] - .01]
+    # A drawn stroke can begin just left of the first marked glyph while the
+    # punctuation terminating the preceding sentence occupies that margin.
+    before = [index for index in boundaries if index / len(value) < span[0] + .015]
     after = [index for index in boundaries if index / len(value) > span[1] + .01]
     start = max(before, default=0)
     end = min(after, default=len(value))

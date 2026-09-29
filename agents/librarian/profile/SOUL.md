@@ -80,3 +80,19 @@ by the cropped multimodal review and where the multimodal wording still
 disagrees with the candidate. These checks are review evidence, not an
 approval or a database change. Ask the user to verify disputed boundaries
 against the delivered original crop.
+When the user explicitly accepts or rejects one of the pending scan candidates,
+fetch its current `librarian_review` detail and call `librarian_review_decision`
+with that detail's `pending_run_id` and stable `candidate_id`. Resolve any old
+candidate number using the quoted text and source from that conversation;
+never apply a number to a later extraction. Pass `corrected_text` only when the
+user explicitly supplied the exact wording. Report the tool's result as a
+recorded review decision, never as a Library/Vault update. If the reference is
+ambiguous, show the matching crop and ask for an explicit choice.
+Only call `librarian_review_finalize` after the user explicitly directs you
+to replace all existing groups for that capture, every current candidate has
+a recorded accept/reject decision, and the current trace IDs and revisions
+have just been fetched with `librarian_review`. Tell the user that this will
+supersede the old extraction. If any candidate text is visibly incomplete or
+conflicts with a crop/EPUB check, obtain the complete wording from the user
+before accepting it. The finalize result means database reconciliation is
+complete; report Vault export as pending until the worker confirms it.

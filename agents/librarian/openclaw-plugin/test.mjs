@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { acceptMessage, librarianEvidenceTool, librarianReviewTool, librarianSearchTool, librarianSessionTool,
+import { acceptMessage, librarianEvidenceTool, librarianReviewTool, librarianReviewDecisionTool, librarianReviewFinalizeTool, librarianSearchTool, librarianSessionTool,
   rememberInboundSession, workerArgs } from "./index.js";
 import librarianPlugin from "./index.js";
 
@@ -144,6 +144,47 @@ test("inbound binding survives separate hook and tool plugin registrations", asy
     agentId: "librarian", sessionKey, requesterSenderId: "person",
     messageChannel: "telegram", agentAccountId: "bot" });
   assert.equal(tool?.name, "librarian_session");
+});
+
+test("review decisions require a fresh bound inbound message", async () => {
+  const recent = new Map();
+  const sessionKey = "agent:librarian:review-fixture";
+  rememberInboundSession(config, recent,
+    { senderId: "person", messageId: "msg-review" },
+    { channelId: "telegram", accountId: "bot", sessionKey }, 1000);
+  const trusted = { agentId: "librarian", sessionKey, requesterSenderId: "person",
+    messageChannel: "telegram", agentAccountId: "bot" };
+  let sent;
+  const bridge = async (_config, message) => { sent = message; return { status: "recorded" }; };
+  const tool = librarianReviewDecisionTool(config, trusted, recent, bridge, 1001);
+  assert.equal(tool?.name, "librarian_review_decision");
+  await tool.execute("call", { capture_id: "capture_one", pending_run_id: "run_one",
+    candidate_id: "candidate_" + "a".repeat(24), decision: "reject" });
+  assert.equal(sent.source.source_event_id, "msg-review");
+  assert.equal(sent.owner_id, "owner_fixture");
+  assert.equal(librarianReviewDecisionTool(config,
+    { ...trusted, requesterSenderId: "stranger" }, recent, bridge, 1001), null);
+  assert.equal(librarianReviewDecisionTool(config, trusted, recent, bridge, 601001), null);
+});
+
+test("review finalization requires a fresh bound inbound message", async () => {
+  const recent = new Map();
+  const sessionKey = "agent:librarian:finalize-fixture";
+  rememberInboundSession(config, recent,
+    { senderId: "person", messageId: "msg-finalize" },
+    { channelId: "telegram", accountId: "bot", sessionKey }, 1000);
+  const trusted = { agentId: "librarian", sessionKey, requesterSenderId: "person",
+    messageChannel: "telegram", agentAccountId: "bot" };
+  let sent;
+  const bridge = async (_config, message) => { sent = message; return { status: "fixture" }; };
+  const tool = librarianReviewFinalizeTool(config, trusted, recent, bridge, 1001);
+  assert.equal(tool?.name, "librarian_review_finalize");
+  await tool.execute("call", { capture_id: "capture_one", pending_run_id: "run_one",
+    expected_current: [{ trace_id: "rt_old", revision: 2 }], replace_all_current: true });
+  assert.equal(sent.source.source_event_id, "msg-finalize");
+  assert.deepEqual(sent.expected_current, [{ trace_id: "rt_old", revision: 2 }]);
+  assert.equal(librarianReviewFinalizeTool(config,
+    { ...trusted, requesterSenderId: "stranger" }, recent, bridge, 1001), null);
 });
 
 test("evidence tool sends only to the bound route and removes temporary media", async () => {

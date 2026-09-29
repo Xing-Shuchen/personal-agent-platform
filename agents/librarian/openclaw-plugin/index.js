@@ -72,6 +72,10 @@ const runEvidenceBridge = (config, message) => runPythonBridge(
   config, "agents.librarian.runtime.gateway_evidence", message);
 const runReviewBridge = (config, message) => runPythonBridge(
   config, "agents.librarian.runtime.gateway_review", message);
+const runReviewDecisionBridge = (config, message) => runPythonBridge(
+  config, "agents.librarian.runtime.gateway_review_decision", message);
+const runReviewFinalizeBridge = (config, message) => runPythonBridge(
+  config, "agents.librarian.runtime.gateway_review_finalize", message);
 
 export function workerArgs(config, ownerId) {
   if (!ownerId || configuredOwnerIds(config).length !== 1 ||
@@ -222,6 +226,83 @@ export function librarianReviewTool(config, ctx, bridge = runReviewBridge) {
   };
 }
 
+export function librarianReviewDecisionTool(config, ctx, recent,
+                                            bridge = runReviewDecisionBridge,
+                                            now = Date.now()) {
+  if (ctx?.agentId !== "librarian" || !ctx.sessionKey || !ctx.requesterSenderId) return null;
+  const entry = recent.get(ctx.sessionKey);
+  const route = ctx.deliveryContext ?? {};
+  if (!entry || now - entry.at > 10 * 60_000 || now < entry.at ||
+      entry.senderId !== ctx.requesterSenderId ||
+      entry.channelId !== (ctx.messageChannel ?? route.channel) ||
+      entry.accountId !== (ctx.agentAccountId ?? route.accountId) ||
+      (ctx.messageChannel && route.channel && ctx.messageChannel !== route.channel) ||
+      (ctx.agentAccountId && route.accountId && ctx.agentAccountId !== route.accountId) ||
+      ownerFor(config, { senderId: entry.senderId },
+        { channelId: entry.channelId, accountId: entry.accountId }) !== entry.ownerId) return null;
+  return {
+    name: "librarian_review_decision",
+    label: "Record Librarian review decision",
+    description: "Record an explicit user accept/reject decision for one pending scan candidate. Requires the current run and stable candidate ID. This records review evidence only; it does not put text into Library or Vault.",
+    parameters: { type: "object", properties: {
+      capture_id: { type: "string", pattern: "^capture_[A-Za-z0-9_-]+$" },
+      pending_run_id: { type: "string", pattern: "^run_[A-Za-z0-9_-]+$" },
+      candidate_id: { type: "string", pattern: "^candidate_[a-f0-9]{24}$" },
+      decision: { type: "string", enum: ["accept", "reject"] },
+      corrected_text: { type: "string", minLength: 1, maxLength: 2000 },
+    }, required: ["capture_id", "pending_run_id", "candidate_id", "decision"],
+    additionalProperties: false },
+    async execute(_id, params) {
+      const result = await bridge(config, { owner_id: entry.ownerId,
+        actor_id: entry.senderId,
+        source: { transport: entry.channelId, account_id: entry.accountId,
+          conversation_id: entry.conversationId, source_event_id: entry.messageId },
+        ...params });
+      return { content: [{ type: "text", text: JSON.stringify(result) }], details: result };
+    },
+  };
+}
+
+export function librarianReviewFinalizeTool(config, ctx, recent,
+                                            bridge = runReviewFinalizeBridge,
+                                            now = Date.now()) {
+  if (ctx?.agentId !== "librarian" || !ctx.sessionKey || !ctx.requesterSenderId) return null;
+  const entry = recent.get(ctx.sessionKey);
+  const route = ctx.deliveryContext ?? {};
+  if (!entry || now - entry.at > 10 * 60_000 || now < entry.at ||
+      entry.senderId !== ctx.requesterSenderId ||
+      entry.channelId !== (ctx.messageChannel ?? route.channel) ||
+      entry.accountId !== (ctx.agentAccountId ?? route.accountId) ||
+      (ctx.messageChannel && route.channel && ctx.messageChannel !== route.channel) ||
+      (ctx.agentAccountId && route.accountId && ctx.agentAccountId !== route.accountId) ||
+      ownerFor(config, { senderId: entry.senderId },
+        { channelId: entry.channelId, accountId: entry.accountId }) !== entry.ownerId) return null;
+  return {
+    name: "librarian_review_finalize",
+    label: "Finalize Librarian scan review",
+    description: "Apply a user's explicit instruction to replace all current trace groups for one scan with its completely reviewed candidate set. Requires every candidate decision, the current run ID, and exact old trace revisions. Preserves source evidence and triggers a Vault export worker.",
+    parameters: { type: "object", properties: {
+      capture_id: { type: "string", pattern: "^capture_[A-Za-z0-9_-]+$" },
+      pending_run_id: { type: "string", pattern: "^run_[A-Za-z0-9_-]+$" },
+      expected_current: { type: "array", items: { type: "object", properties: {
+        trace_id: { type: "string", pattern: "^rt_[A-Za-z0-9_-]+$" },
+        revision: { type: "integer", minimum: 1 },
+      }, required: ["trace_id", "revision"], additionalProperties: false } },
+      replace_all_current: { type: "boolean", const: true },
+    }, required: ["capture_id", "pending_run_id", "expected_current", "replace_all_current"],
+    additionalProperties: false },
+    async execute(_id, params) {
+      const result = await bridge(config, { owner_id: entry.ownerId,
+        actor_id: entry.senderId,
+        source: { transport: entry.channelId, account_id: entry.accountId,
+          conversation_id: entry.conversationId, source_event_id: entry.messageId },
+        ...params });
+      if (result.status === "reconciled") startWorker(config, entry.ownerId);
+      return { content: [{ type: "text", text: JSON.stringify(result) }], details: result };
+    },
+  };
+}
+
 export function rememberInboundSession(config, recent, event, ctx, now = Date.now()) {
   const ownerId = ownerFor(config, event, ctx);
   if (!ownerId || !ctx.sessionKey || !event.messageId) return;
@@ -324,6 +405,10 @@ export default {
       { name: "librarian_evidence" });
     api.registerTool((ctx) => librarianReviewTool(config, ctx),
       { name: "librarian_review" });
+    api.registerTool((ctx) => librarianReviewDecisionTool(config, ctx, recentInbound),
+      { name: "librarian_review_decision" });
+    api.registerTool((ctx) => librarianReviewFinalizeTool(config, ctx, recentInbound),
+      { name: "librarian_review_finalize" });
     api.registerService({ id: "pap-librarian-worker", start: () => {
       const recover = () => {
         for (const ownerId of configuredOwnerIds(config)) {

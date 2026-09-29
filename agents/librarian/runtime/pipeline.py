@@ -560,7 +560,9 @@ def _traces_for_capture(lib: Library, owner_id: str, capture_id: str) -> list[di
 
 def reconcile_extraction(lib: Library, owner_id: str, capture_id: str,
                          extractor_version: str, *,
-                         allow_rotation_upgrade: bool = False) -> list[dict[str, Any]]:
+                         allow_rotation_upgrade: bool = False,
+                         reviewed_candidates: dict[str, str | None] | None = None,
+                         expected_run_id: str | None = None) -> list[dict[str, Any]]:
     """Accept a pending new extraction when no trace has a user correction.
 
     The former traces remain as superseded revisions. The new observation and
@@ -575,6 +577,8 @@ def reconcile_extraction(lib: Library, owner_id: str, capture_id: str,
     if len(pending) != 1:
         raise LibrarianError("RECONCILIATION_REQUIRED", "exactly one pending extraction required")
     run = pending[0]
+    if expected_run_id is not None and run["id"] != expected_run_id:
+        raise LibrarianError("REVISION_CONFLICT", "pending extraction changed")
     observations = [json.loads(row["body"]) for row in lib.db.execute(
         "SELECT body FROM records WHERE owner_id=? AND model='PageObservation' AND current=1",
         (owner_id,)).fetchall()]
@@ -583,7 +587,8 @@ def reconcile_extraction(lib: Library, owner_id: str, capture_id: str,
         raise LibrarianError("RECONCILIATION_REQUIRED", "pending observation missing")
     observation = candidates[0]
     old_traces = _traces_for_capture(lib, owner_id, capture_id)
-    if any(trace["status"] != "active" or trace["revision"] != 1 or
+    if any(trace["status"] != "active" or
+           (reviewed_candidates is None and trace["revision"] != 1) or
            trace["content"]["printed_text"]["basis"] == "user_statement" or
            trace["content"]["annotation"]["basis"] == "user_statement"
            for trace in old_traces):
@@ -627,6 +632,25 @@ def reconcile_extraction(lib: Library, owner_id: str, capture_id: str,
                               ("session", "work", "edition", "book_instance")) else "unresolved"
     traces = normalize(capture, observation, resolution, state, run["normalizer_version"],
                        vocabulary=vocabulary)
+    if reviewed_candidates is not None:
+        from .gateway_review import candidate_id
+
+        ids = {candidate_id(capture_id, trace["source"]["detection_ids"]): trace
+               for trace in traces}
+        if len(ids) != len(traces) or not isinstance(reviewed_candidates, dict) or any(
+                key not in ids or (value is not None and
+                                   (not isinstance(value, str) or not value.strip()))
+                for key, value in reviewed_candidates.items()):
+            raise LibrarianError("VALIDATION_FAILED", "reviewed candidate set invalid")
+        traces = [trace for key, trace in ids.items() if key in reviewed_candidates]
+        for trace in traces:
+            correction = reviewed_candidates[candidate_id(
+                capture_id, trace["source"]["detection_ids"])]
+            if correction is not None:
+                trace["content"]["printed_text"] = {"text": correction,
+                                                    "confidence": None,
+                                                    "basis": "user_statement"}
+                validate("ReadingTrace", trace)
     def groups(items: list[dict[str, Any]], mark_ids: set[str]) -> list[tuple[str, ...]]:
         return sorted(tuple(sorted(set(item["source"]["detection_ids"]) & mark_ids))
                       for item in items)
@@ -661,7 +685,7 @@ def reconcile_extraction(lib: Library, owner_id: str, capture_id: str,
             rotation_upgrade = False
     # A single group may gain newly detected ink. A split, merge, loss, or
     # replacement cannot be mapped without a person's review.
-    if not rotation_upgrade and (len(old_groups) != len(new_groups) or
+    if reviewed_candidates is None and not rotation_upgrade and (len(old_groups) != len(new_groups) or
             any(len([group for group in new_groups if old <= group]) != 1
                 for old in old_groups) or
             any(len([old for old in old_groups if old <= new]) != 1
@@ -679,9 +703,11 @@ def reconcile_extraction(lib: Library, owner_id: str, capture_id: str,
     revised_run = json.loads(_json(run))
     revised_run.update({"created_at": _now(), "checkpoint": "NORMALIZED",
                         "outcome": "success" if state == "resolved" and
-                        all(page["page"]["status"] == "resolved" for page in resolution["pages"]
-                            if any(item["page_region_id"] == page["id"] for item in
-                                   observation["marks"] + observation["annotations"] + observation["symbols"]))
+                        (all(trace["location"]["page"] is not None for trace in traces)
+                         if reviewed_candidates is not None else
+                         all(page["page"]["status"] == "resolved" for page in resolution["pages"]
+                             if any(item["page_region_id"] == page["id"] for item in
+                                    observation["marks"] + observation["annotations"] + observation["symbols"])))
                         else "partial", "issues": [],
                         "revision": run["revision"] + 1,
                         "supersedes_revision": run["revision"]})
@@ -715,7 +741,8 @@ def reconcile_extraction(lib: Library, owner_id: str, capture_id: str,
                        superseded["revision"], {"trace_id": trace["id"],
                        "previous_revision": trace["revision"],
                        "revision": superseded["revision"],
-                       "reason": "extractor reconciliation"}, run["id"])
+                       "reason": "user review reconciliation" if reviewed_candidates is not None
+                       else "extractor reconciliation"}, run["id"])
         for trace in traces:
             lib._put(trace)
             lib._event(owner_id, "reading.trace.created", "reading_trace", trace["id"], 1,

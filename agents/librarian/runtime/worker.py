@@ -716,7 +716,7 @@ def _process_batch(lib: Library, root: Path, vault: Path | None, owner: str,
                               if run["outcome"] == "pending" and
                               run["extractor_version"] == version and
                               "RECONCILIATION_REQUIRED" in run["issues"]}
-        review_version = f"rapidocr-epub-notes-v9-vision:{isbn}:{epub_hash}"
+        review_version = f"rapidocr-epub-notes-v10-vision:{isbn}:{epub_hash}"
         review_extractor = (ocr_extractor(epub=epub, note_refiner=openclaw_note_refiner,
                                           underline_refiner=openclaw_underline_refiner)
                             if pending_review_ids else None)

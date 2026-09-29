@@ -3,7 +3,7 @@
   "name": "PAP Librarian Image Intake",
   "description": "Accept staged inbound reading photos into the private Librarian store.",
   "activation": {"onStartup": true},
-  "contracts": {"tools": ["librarian_search", "librarian_session", "librarian_evidence", "librarian_review"]},
+  "contracts": {"tools": ["librarian_search", "librarian_session", "librarian_evidence", "librarian_review", "librarian_review_decision", "librarian_review_finalize"]},
   "configSchema": {
     "type": "object",
     "properties": {
