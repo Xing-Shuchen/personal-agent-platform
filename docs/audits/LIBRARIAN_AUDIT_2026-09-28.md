@@ -446,6 +446,8 @@ A 阶段真实飞书取证：13:57 用户发送「查看《社会理论二十讲
 
 R2 元数据字段来源续审：正式库全部 678 个纸书 ReadingTrace 历史版本逐条回查其引用的指定 CaptureResolution revision，页码、页码置信度及 work/edition/instance/session 四项身份均与对应页区和身份值一致（字段不一致 0）；这是版本引用一致性，不是页码真实性。354 个版本页码 `vision/resolved`，324 个 `unknown/unresolved`；身份来源 636 个版本为 `edition_fingerprint`、42 个 unknown。83 条当前活跃纸书 trace 中，79 条页码为 `vision/resolved`，4 条 unknown，身份全部由 `edition_fingerprint` 绑定，`marked_at` 与 `mark_author` 全为 unknown。关联的 146 个印刷区去空白后全部是同一 raw `ocr_text` 行的子串（110 个也恰好匹配 EPUB 对齐行，36 个只匹配 OCR 行），未发现当前活跃印刷区仅凭 EPUB 扩文；这仍不能证明 OCR 字词或画线边界正确。历史中有 3 个逻辑 trace 的 6 个版本引用 confidence 0.7、`basis=vision` 的邻图推断旧页码，现均为 superseded，未作原位改写。`session_scope` 中两条自动会话已 `selected=0`、最后分配时间为 9 月 28 日；9 月 29 日用户明确启动的会话 `selected=1`，其进度依据为 `user_statement`。当前 83 条纸书痕迹关联旧自动会话，记录既有 capture 归属，不表示该会话仍被长期自动选中。
 
+A/C 旁注审核入口修复：`7eb75fb` 发现正式 `librarian_review_finalize` 把所有接受的候选都强制按印刷 OCR/EPUB 句子核边界，导致第 23、39 页的纯 `margin_note` 即便被用户确认也无法提交；`reconcile_extraction` 还会把旁注更正误写到 `printed_text`。现对纯旁注要求非空的审核转录，跳过不适用的印刷句界检查，并将用户明确给出的更正写入 `content.annotation`，标记 `basis=user_statement`；画线继续执行原句界校验。隔离库端到端测试让同一扫描的画线与更正旁注均经决定和 finalize 入库，检查旁注的印刷文字保持空；相关 45 项 Python 测试通过。正式 3 张待审图无新增决议，未执行生产 finalize，Vault 与客户端结果仍待真人审核。
+
 ## 9. 现行实现计划（2026-09-29）
 
 第 1–7 节仍是对 `d111ace` 的初审，不能用其中的旧行号和测试数量描述当前 HEAD。本节把整改转为可执行批次；每批结束时在第 8 节记录实际提交、测试、生产状态和未验项。除明确列出的真实用户审核外，调试与迁移均通过 Librarian 的 worker、领域命令或受信 Gateway 工具执行，不手改生产数据库或 Vault 生成块。
