@@ -292,3 +292,5 @@ v8 本地 OCR 局部重试：强划线而整页 OCR 无法匹配 EPUB 的正文�
 07:53 第二次真实 `/lib read`：Gateway 日志显示 `owner=true saved=true entries=1`、`recent=true available=true`；运行轨迹 `session.started.toolCount=5`，会话存储的工具快照明确包含 `librarian_session`。因此共享映射修复已在真实入站生效。但模型仍沿用上一轮失败答复，错误声称工具不存在，没有任何 `tool.call`，也没有会话回执。用 Gateway 的 `sessions archive --dry-run` 核对目标后，归档了这一个 Librarian 飞书会话；归档保留历史，下一次入站应以新上下文运行。下一次真实调用与状态写入尚待验证，不能把工具注册成功当作会话闭环。
 
 归档语义更正：检查 OpenClaw 当前运行版的 `restoreArchivedDispatchSession` 后确认，已归档会话在下一条受信真人消息到来时会恢复原上下文，故上段“下一次入站应以新上下文运行”的判断错误。先通过 `sessions.patch` 对同一 `expectedSessionId` 解除归档，再用 Gateway 原生 `sessions.reset` 定点重置；两次 RPC 均成功。随后 `chat.history` 仅返回 Reset 系统标记，证明当前对话上下文已清空；旧 transcript 由运行时保留，未直接改写 SQLite。真正的下一条飞书入站调用仍待验证。
+
+08:00 周期 worker 只读核验：Gateway 自 07:49 重启后，两个当前可处理纸书批次的状态在 08:00 更新为 `partial`，分别保留 10/76 条活跃 trace；后者明确列出 5 张 `RECONCILIATION_REQUIRED`，重试次数为 0。`digital-sync-status.json` 同时记录 Koodo、WeRead 均成功。状态目录另有 7 个旧 `error` 文件，但对应批次不在当前 `_processing_batches` 集合，文件时间停在 09-28 23:30–23:35，不能误报为这轮 worker 的失败。当前没有滞留的 Librarian worker 进程。此证据证明本次周期调度和两类任务各自完成，尚不能代替慢源、网络中断及多次 timer 进程上界的专门验收。
