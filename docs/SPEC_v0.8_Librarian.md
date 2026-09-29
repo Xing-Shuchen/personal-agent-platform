@@ -571,6 +571,14 @@ ReadingSourceAdapter.provenance(source_event) → Provenance
 
 书籍或页码未知通常是已接受处理中的 partial 状态，不是必须把整批丢弃的 HTTP 错误。可重试错误仍需要应用重试策略；`retryable=true` 不表示可以无限重试。
 
+Gateway 图片入站 hook 在受信的 channel/account/sender→owner 映射和源消息 ID
+齐备时，持久记录该消息最新的 `accepted` 或 `failed` 状态。同一源消息成功重试
+应覆盖先前失败。失败记录仅保留 owner、通道、账户、消息 ID、脱敏的
+`code/stage/retryable` 与更新时间；不得保存异常原文、附件内容或私有路径。
+`librarian_review` 的无 capture 查询按受信 owner 返回最近失败记录，供 agent
+排查和重试。缺少可信映射或稳定消息 ID 时不得建立可归属记录。此状态只表示
+图片接收桥接的结果，不表示后台提取、平台消息投送或客户端显示成功。
+
 ## 28. Event Model
 
 **[继承：底稿 §28]** ingestion 通过领域事件解耦下游 embedding、索引、entity extraction 和后续整理任务。

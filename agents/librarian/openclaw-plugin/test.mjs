@@ -1,16 +1,72 @@
 import assert from "node:assert/strict";
-import { chmod, mkdtemp, writeFile, rm } from "node:fs/promises";
+import { chmod, mkdtemp, readFile, readdir, stat, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
 import { acceptMessage, librarianEvidenceTool, librarianSourceBookTool, librarianReviewTool, librarianReviewDecisionTool, librarianReviewFinalizeTool, librarianSearchTool, librarianSessionTool,
-  rememberInboundSession, runPythonBridge, workerArgs } from "./index.js";
+  rememberInboundSession, runPythonBridge, workerArgs, writeIntakeStatus } from "./index.js";
 import librarianPlugin from "./index.js";
 
 const config = { ownerMappings: [{ channelId: "telegram", accountId: "bot",
   senderId: "person", ownerId: "owner_fixture" }] };
 const ctx = { channelId: "telegram", accountId: "bot", conversationId: "chat" };
+
+test("hook failures are private, queryable and cleared by accepted retry", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "librarian-intake-status-"));
+  try {
+    const local = { ...config, stateRoot: dir };
+    const event = { senderId: "person", messageId: "message-1" };
+    await writeIntakeStatus(local, event, ctx, "failed", {
+      code: "BRIDGE_FAILED", stage: "gateway.intake", retryable: true,
+      message: "/private/secret/image.png" });
+    const folder = join(dir, "intake-status");
+    const files = await readdir(folder);
+    assert.equal(files.length, 1);
+    assert.match(files[0], /^[0-9a-f]{64}\.json$/);
+    assert.equal((await stat(join(folder, files[0]))).mode & 0o777, 0o600);
+    const failed = await readFile(join(folder, files[0]), "utf8");
+    assert.equal(JSON.parse(failed).code, "BRIDGE_FAILED");
+    assert.doesNotMatch(failed, /secret|image\.png/);
+    await writeIntakeStatus(local, event, ctx, "accepted", null, ["capture_one"]);
+    const recovered = JSON.parse(await readFile(join(folder, files[0]), "utf8"));
+    assert.equal(recovered.state, "accepted");
+    assert.deepEqual(recovered.capture_ids, ["capture_one"]);
+    assert.equal((await readdir(folder)).length, 1);
+    await writeIntakeStatus(local, { ...event, senderId: "stranger" }, ctx,
+      "failed", { code: "HOOK_FAILED" });
+    assert.equal((await readdir(folder)).length, 1);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("message hook persists a bridge failure under its trusted owner", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "librarian-hook-status-"));
+  try {
+    const executable = join(dir, "bridge-fixture");
+    const photo = join(dir, "photo.png");
+    await writeFile(photo, Buffer.from("synthetic image bytes"));
+    await writeFile(executable, "#!/bin/sh\ncat >/dev/null\nprintf '%s\\n' '{\"error\":{\"code\":\"OBJECT_STORE_UNAVAILABLE\",\"stage\":\"gateway.intake\",\"retryable\":true,\"message\":\"Private store unavailable.\",\"details\":{}}}'\nexit 2\n");
+    await chmod(executable, 0o700);
+    const hooks = new Map();
+    const local = { ...config, stateRoot: dir, repoRoot: dir, python: executable };
+    librarianPlugin.register({ pluginConfig: local,
+      logger: { info() {}, warn() {} }, registerTool() {}, registerService() {},
+      on(name, handler) { hooks.set(name, handler); } });
+    await hooks.get("message_received")({ senderId: "person", messageId: "failed-message",
+      media: [{ contentType: "image/png", path: photo }] }, ctx);
+    const files = await readdir(join(dir, "intake-status"));
+    assert.equal(files.length, 1);
+    const saved = JSON.parse(await readFile(join(dir, "intake-status", files[0]), "utf8"));
+    assert.equal(saved.owner_id, "owner_fixture");
+    assert.equal(saved.message_id, "failed-message");
+    assert.equal(saved.state, "failed");
+    assert.equal(saved.code, "OBJECT_STORE_UNAVAILABLE");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
 
 test("bridge errors preserve redacted code, stage and retryability for tools", async () => {
   const dir = await mkdtemp(join(tmpdir(), "librarian-bridge-error-"));

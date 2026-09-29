@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { constants } from "node:fs";
-import { chmod, copyFile, mkdir, readdir, realpath, stat, unlink } from "node:fs/promises";
+import { chmod, copyFile, lstat, mkdir, readdir, realpath, rename, stat, unlink, writeFile } from "node:fs/promises";
 import { delimiter, dirname, isAbsolute, resolve } from "node:path";
 
 const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
@@ -48,6 +48,40 @@ function ownerFor(config, event, ctx) {
     entry.channelId === ctx.channelId && entry.accountId === ctx.accountId &&
     entry.senderId === event.senderId);
   return matches.length === 1 ? matches[0].ownerId : null;
+}
+
+export async function writeIntakeStatus(config, event, ctx, state, error = null,
+                                        captureIds = []) {
+  const ownerId = ownerFor(config, event, ctx);
+  if (!ownerId || !event?.messageId || !config.stateRoot ||
+      !["accepted", "failed"].includes(state)) return;
+  const directory = resolve(config.stateRoot, "intake-status");
+  await mkdir(directory, { recursive: true, mode: 0o700 });
+  const directoryInfo = await lstat(directory);
+  if (!directoryInfo.isDirectory() || directoryInfo.isSymbolicLink())
+    throw new Error("intake status directory is unsafe");
+  await chmod(directory, 0o700);
+  const identity = [ownerId, ctx.channelId, ctx.accountId, event.messageId];
+  const key = createHash("sha256").update(JSON.stringify(identity)).digest("hex");
+  const target = resolve(directory, `${key}.json`);
+  const temporary = resolve(directory, `${key}.${randomUUID()}.tmp`);
+  const code = typeof error?.code === "string" && /^[A-Z_]+$/.test(error.code)
+    ? error.code : "HOOK_FAILED";
+  const stage = typeof error?.stage === "string" && /^gateway\.[a-z_]+$/.test(error.stage)
+    ? error.stage : "gateway.intake";
+  const record = { owner_id: ownerId, channel_id: ctx.channelId,
+    account_id: ctx.accountId, message_id: event.messageId,
+    state, code: state === "failed" ? code : null,
+    stage: state === "failed" ? stage : null,
+    retryable: state === "failed" ? error?.retryable !== false : null,
+    capture_ids: state === "accepted" ? captureIds : [],
+    updated_at: new Date().toISOString() };
+  try {
+    await writeFile(temporary, JSON.stringify(record), { mode: 0o600, flag: "wx" });
+    await rename(temporary, target);
+  } finally {
+    await unlink(temporary).catch(() => {});
+  }
 }
 
 function bridgeFailure(module, error) {
@@ -343,7 +377,7 @@ export function librarianReviewTool(config, ctx, bridge = runReviewBridge) {
   return {
     name: "librarian_review",
     label: "Librarian pending extraction review",
-    description: "Read pending extraction conflicts for this authenticated sender. With no capture_id, list pending captures. With a capture_id, compare current traces and proposed groups; this tool never changes stored traces.",
+    description: "Read pending extraction conflicts for this authenticated sender. With no capture_id, list pending captures and recent image-intake failures. With a capture_id, compare current traces and proposed groups; this tool never changes stored traces.",
     parameters: { type: "object", properties: {
       capture_id: { type: "string", pattern: "^capture_[A-Za-z0-9_-]+$" },
     }, additionalProperties: false },
@@ -567,6 +601,8 @@ export default {
           `saved=${Boolean(recentInbound.get(ctx.sessionKey))} entries=${recentInbound.size}`);
         const receipt = await acceptMessage(config, event, ctx);
         if (receipt) {
+          await writeIntakeStatus(config, event, ctx, "accepted", null,
+            receipt.capture_ids).catch(() => api.logger.warn("Librarian intake status write failed"));
           api.logger.info(`Librarian accepted ${receipt.capture_ids.length} image(s)`);
           clearTimeout(intakeTimer);
           intakeTimer = setTimeout(() => startWorker(config, ownerFor(config, event, ctx)),
@@ -575,6 +611,8 @@ export default {
       } catch (error) {
         const code = typeof error?.code === "string" && /^[A-Z_]+$/.test(error.code)
           ? error.code : "HOOK_FAILED";
+        await writeIntakeStatus(config, event, ctx, "failed", error)
+          .catch(() => api.logger.warn("Librarian intake status write failed"));
         api.logger.warn(`Librarian image intake failed: ${code}`);
       }
     });

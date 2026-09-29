@@ -2,6 +2,13 @@
 
 ## Current update — 2026-09-29
 
+Gateway image-hook failures now write a private, owner-scoped status keyed by
+source message; a successful retry replaces the failure. The existing
+`librarian_review` summary exposes recent sanitized failures to the bound
+owner. This was verified with synthetic hook/bridge failures and two-owner
+isolation; no real Feishu failure or delivery receipt was induced. Current
+regression: 519 Python tests and 18 plugin tests pass. See audit §19.
+
 Latest scope change: printed underline text is accepted with its current EPUB
 punctuation expansion. The private review site now offers a handwriting-only
 page with 15 note crops and versioned confirm/edit/reject actions; actual user

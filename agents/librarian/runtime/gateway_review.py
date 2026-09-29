@@ -15,6 +15,40 @@ from .gateway_errors import write_error
 MAX_INPUT_BYTES = 8192
 
 
+def intake_failures(root: Path, owner: str) -> list[dict]:
+    """Expose only sanitized, owner-scoped hook failures for retry diagnosis."""
+    directory = root / "intake-status"
+    if not directory.is_dir() or directory.is_symlink():
+        return []
+    found = []
+    try:
+        paths = list(directory.iterdir())
+    except OSError:
+        return []
+    for path in paths:
+        if not re.fullmatch(r"[0-9a-f]{64}\.json", path.name):
+            continue
+        try:
+            if path.is_symlink() or not path.is_file() or path.stat().st_size > 8192:
+                continue
+            item = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, ValueError):
+            continue
+        if (not isinstance(item, dict) or item.get("owner_id") != owner or
+                item.get("state") != "failed"):
+            continue
+        if not all(isinstance(item.get(key), str) for key in
+                   ("message_id", "channel_id", "account_id", "code", "stage", "updated_at")):
+            continue
+        if not isinstance(item.get("retryable"), bool):
+            continue
+        found.append({key: item[key] for key in
+                      ("message_id", "channel_id", "account_id", "code", "stage",
+                       "retryable", "updated_at")})
+    found.sort(key=lambda item: item["updated_at"], reverse=True)
+    return found[:10]
+
+
 def candidate_id(capture_id: str, detection_ids: list[str]) -> str:
     """Stable within a capture while the same detected ink group survives reruns."""
     marks = sorted(identifier for identifier in detection_ids
@@ -72,7 +106,8 @@ def pending_extractions(lib: Library, owner: str, capture_id: str | None = None)
             except LibrarianError:
                 item["summary_unavailable"] = True
             summaries.append(item)
-        return {"pending": summaries, "more": len(pending) > 10}
+        return {"pending": summaries, "more": len(pending) > 10,
+                "intake_failures": intake_failures(lib.root, owner)}
     if not pending:
         raise LibrarianError("OBJECT_NOT_FOUND", "no pending extraction for capture")
     run = pending[0]

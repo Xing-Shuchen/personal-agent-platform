@@ -645,3 +645,11 @@ Vault 渲染新增 EPUB 章节投影：用 `EpubIndex` 将印刷引文映射到 
 | trace 修订与 outbox 事件原子性 | 写入口事务、Event 语义校验 | 当前 195/195 版本各有 1 条事件；网页对账及知识晋升事件失败回滚测试 | 外部 publisher/Gateway 崩溃现场未演练 |
 
 完整回归在本次恢复修复后为 **518 passed**（4 条弃用警告），插件 **16/16**。此表将已可程序检查的不变量分配到 Schema、应用事务与证据层；R3 仍保留历史迁移样本与未枚举的每个状态组合逐项反例，R2/R4 的外部真实性不被计入 R3 通过。
+
+## 19. R4 图片入站 hook 失败可查询（2026-09-29）
+
+`message_received` 原先在图片接收桥接失败时只写 Gateway 警告日志，agent 无法按 owner 查询失败消息。现以受信 channel/account/sender 映射和源消息 ID 为键，在私有 `intake-status/` 中原子写入最新 `accepted/failed` 状态；成功重试覆盖同一消息的旧失败。文件权限为 0600、目录为 0700，查询只经现有 owner 受限的 `librarian_review` 无 capture 汇总返回最近十条失败。公开字段只有消息/通道/账户标识、脱敏错误码、阶段、可重试标志和时间；原异常文字、附件内容、私有路径不写入。无可信映射或消息 ID 时不造状态。
+
+插件测试分别覆盖私有权限、脱敏、同消息失败后成功覆盖、未映射 sender，以及真实 hook 调用合成桥接错误后留存失败；Python 测试覆盖双 owner 隔离。完整回归 **519 passed**（4 条弃用警告），插件 **18/18**。该状态仅说明 hook 图片接收结果，不把后台 worker 完成或 `queued` 媒体当作送达。测试使用隔离目录和合成故障；真实飞书故障、变更附件重放、平台投送和客户端显示仍留在 R4 现场验收。
+
+Gateway 已重启，`systemctl --user` 返回 active；运行时插件检查为 `loaded`、`enabled`，包含 `message_received` hook 和 `librarian_review` 工具，diagnostics 为空。没有以重启状态替代一条真实飞书故障或客户端送达证据。
