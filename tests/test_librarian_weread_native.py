@@ -86,6 +86,17 @@ def test_weread_native_rejects_partial_or_duplicate_source_before_writing(tmp_pa
         assert lib.db.execute("SELECT COUNT(*) FROM records").fetchone()[0] == 0
 
 
+def test_weread_source_cannot_be_reassigned_to_another_owner(tmp_path):
+    with Library(tmp_path) as lib:
+        sync_weread_book(lib, "owner_a", "reader_1", BOOK, _items())
+        with pytest.raises(LibrarianError) as denied:
+            sync_weread_book(lib, "owner_b", "reader_1", BOOK, _items())
+        assert denied.value.code == "UNAUTHORIZED"
+        assert search(lib, "owner_b", "First passage") == []
+        assert lib.db.execute("SELECT COUNT(*) FROM weread_native_records "
+                              "WHERE owner_id='owner_b'").fetchone()[0] == 0
+
+
 def test_weread_gateway_paginates_and_rejects_stalled_cursor(monkeypatch):
     from agents.librarian.runtime import weread_native
 

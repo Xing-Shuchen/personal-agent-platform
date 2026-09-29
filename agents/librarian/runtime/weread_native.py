@@ -160,6 +160,7 @@ def sync_weread_book(lib: Library, owner_id: str, source_id: str, book: dict[str
               "deleted": 0, "unchanged": 0, "pending": 0}
     seen = set()
     with lib.transaction():
+        lib.bind_digital_source(owner_id, "weread", source_id)
         for key, item, fields in prepared:
             seen.add(key)
             work_id, trace_id = _ids(owner_id, source_id, book_id, key)

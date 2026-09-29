@@ -166,6 +166,7 @@ def sync_koodo_sqlite(lib: Library, owner_id: str, source_id: str,
               "deleted": 0, "unchanged": 0, "pending": 0}
     seen = set()
     with lib.transaction():
+        lib.bind_digital_source(owner_id, "koodo", source_id)
         for book, note in snapshot:
             note_key = note["key"]
             seen.add(note_key)

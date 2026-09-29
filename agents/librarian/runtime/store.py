@@ -147,6 +147,7 @@ class Library:
         self.db.executescript((Path(__file__).parent / "migrations" / "0001_initial.sql").read_text(encoding="utf-8"))
         self.db.executescript((Path(__file__).parent / "migrations" / "0002_koodo_native.sql").read_text(encoding="utf-8"))
         self.db.executescript((Path(__file__).parent / "migrations" / "0003_weread_native.sql").read_text(encoding="utf-8"))
+        self.db.executescript((Path(__file__).parent / "migrations" / "0004_digital_source_owners.sql").read_text(encoding="utf-8"))
 
     def close(self) -> None:
         self.db.close()
@@ -174,6 +175,23 @@ class Library:
             self.db.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
             self.db.execute(f"RELEASE SAVEPOINT {savepoint}")
             raise
+
+    def bind_digital_source(self, owner_id: str, kind: str, source_id: str) -> None:
+        """Claim one native source for one owner inside the caller's transaction."""
+        tables = {"koodo": "koodo_native_records", "weread": "weread_native_records"}
+        if not owner_id or not source_id or kind not in tables:
+            raise LibrarianError("VALIDATION_FAILED", "digital source identity required")
+        legacy_owners = {row["owner_id"] for row in self.db.execute(
+            f"SELECT DISTINCT owner_id FROM {tables[kind]} WHERE source_id=?", (source_id,))}
+        if legacy_owners - {owner_id}:
+            raise LibrarianError("UNAUTHORIZED", "digital source is bound to another owner")
+        self.db.execute("INSERT OR IGNORE INTO digital_source_owners VALUES(?,?,?)",
+                        (kind, source_id, owner_id))
+        bound = self.db.execute(
+            "SELECT owner_id FROM digital_source_owners WHERE kind=? AND source_id=?",
+            (kind, source_id)).fetchone()
+        if bound["owner_id"] != owner_id:
+            raise LibrarianError("UNAUTHORIZED", "digital source is bound to another owner")
 
     def _get(self, owner_id: str, model: str, object_id: str) -> dict[str, Any]:
         row = self.db.execute("SELECT body FROM records WHERE owner_id=? AND model=? AND id=? AND current=1",

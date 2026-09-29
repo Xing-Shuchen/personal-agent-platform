@@ -93,6 +93,9 @@ test("a second owner cannot inherit a shared digital source or Vault", async () 
     messageChannel: "telegram", agentAccountId: "bot" }), null);
   assert.equal(await acceptMessage(two, { senderId: "another", messageId: "m",
     media: [] }, ctx, () => { throw new Error("bridge must remain closed"); }), null);
+  const mismatched = { ...one, digitalSources: { ...one.digitalSources,
+    ownerId: "owner_b" } };
+  assert.ok(!workerArgs(mismatched, "owner_fixture").includes("--koodo-books-db"));
 });
 
 test("worker runs without a Vault and binds a configurable vision model", () => {

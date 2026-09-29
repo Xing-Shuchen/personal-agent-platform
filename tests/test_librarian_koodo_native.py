@@ -124,3 +124,21 @@ def test_native_koodo_rejects_missing_book_before_writing(tmp_path: Path):
             sync_koodo_sqlite(lib, "owner_a", "reader_1", books, notes)
         assert error.value.code == "UPSTREAM_FORMAT_UNSUPPORTED"
         assert lib.db.execute("SELECT COUNT(*) FROM records").fetchone()[0] == 0
+
+
+def test_native_koodo_source_cannot_be_reassigned_to_another_owner(tmp_path: Path):
+    books, notes = _source_databases(tmp_path)
+    root = tmp_path / "librarian"
+    with Library(root) as lib:
+        sync_koodo_sqlite(lib, "owner_a", "reader_1", books, notes)
+        lib.db.execute("DROP TABLE digital_source_owners")  # pre-migration store
+    with Library(root) as lib:
+        binding = lib.db.execute("SELECT owner_id FROM digital_source_owners WHERE kind='koodo' "
+                                 "AND source_id='reader_1'").fetchone()
+        assert binding["owner_id"] == "owner_a"
+        with pytest.raises(LibrarianError) as denied:
+            sync_koodo_sqlite(lib, "owner_b", "reader_1", books, notes)
+        assert denied.value.code == "UNAUTHORIZED"
+        assert search(lib, "owner_b", "First passage") == []
+        assert lib.db.execute("SELECT COUNT(*) FROM koodo_native_records "
+                              "WHERE owner_id='owner_b'").fetchone()[0] == 0

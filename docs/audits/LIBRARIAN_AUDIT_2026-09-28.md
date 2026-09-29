@@ -394,6 +394,8 @@ v12 改动经 Librarian Python 111 项、OpenClaw 插件 13 项测试及配置�
 
 多页区旧元数据复核：逐一目视 11 张原图，均只有一个清楚的印刷页眉；同图正文旁的 42–71 等数字是段落编号，旧提取器误当作页面边界。持久 raw OCR 对应页眉为 24、25、27、28、33、35、36、41、43，旧页区水平范围一致且只覆盖主纸页；相邻纸页窄边未进入痕迹区域。worker 增加多页区的严格页眉判据：页区 ID/坐标须与 observation 一致、旧编号须对应 raw margin marker、唯一页眉须与 marker 不同，人工文字或知识依赖继续由领域命令阻断。周期 worker 在隔离重放期间自行读取工作区新规则，已对正式库 11 张照片做 `CaptureResolution` 新版本，36 条活跃 trace 均 revision 1→2。生产只读复核：36 条原文字、bbox、observation 引用不变，索引 revision 全部一致，目标页码未知 16→0；纸书活跃 unknown 总数 20→4（余下 4 条属于待审核第 29 页扫描），Vault 仍为 83 个 trace 标记、无原图嵌入。隔离快照在运行中途取得，对当时尚未修订的 9 张照片重放成功，二次调用幂等；Librarian Python 116 项通过。这次也发现运行中的定时 worker 会加载尚未提交的工作区 Python 文件，今后此类规则须先在独立检出中隔离验证。相关批次没有新的发送回执，不把笔记落地等同用户端通知送达。
 
+F05 领域边界增量复核：现行 OpenClaw 插件只允许配置一个 owner，双 owner 配置下 `workerArgs` 不生成任务参数、入站及检索工具关闭；正式配置只有一个映射 owner，Koodo/WeRead native 记录也各只有该 owner。adapter 原先可把同一 `source_id` 传给另一个 owner 再次导入，故新增 `digital_source_owners(kind, source_id)→owner_id` 绑定，并从历史 native 记录回填唯一归属；两个 adapter 在写入事务内拒绝跨 owner 重用。双 owner 正反例、旧库重开迁移及正式库只读快照验证通过：现有两来源都回填到原 owner，另一 owner 得到 `UNAUTHORIZED`，无新记录写入。Librarian Python 118 项、OpenClaw 插件 13 项通过。当前仍是单用户产品边界：如果用不同 `source_id` 别名指向同一个上游书库，native 层不能单凭 ID 识别同源；多 owner 正式支持仍需绑定上游账户/路径身份并做配置、凭证隔离，不能据此将 F05 宣称全面关闭。
+
 ## 9. 现行实现计划（2026-09-29）
 
 第 1–7 节仍是对 `d111ace` 的初审，不能用其中的旧行号和测试数量描述当前 HEAD。本节把整改转为可执行批次；每批结束时在第 8 节记录实际提交、测试、生产状态和未验项。除明确列出的真实用户审核外，调试与迁移均通过 Librarian 的 worker、领域命令或受信 Gateway 工具执行，不手改生产数据库或 Vault 生成块。
