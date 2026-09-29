@@ -15,6 +15,7 @@ from PIL import Image, ImageOps
 from .pipeline import render_trace_crop
 from .gateway_review import pending_extractions
 from .store import Library, LibrarianError
+from .gateway_errors import write_error
 
 MAX_INPUT_BYTES = 8192
 
@@ -152,8 +153,7 @@ def main() -> int:
     args = parser.parse_args()
     raw = sys.stdin.buffer.read(MAX_INPUT_BYTES + 1)
     if len(raw) > MAX_INPUT_BYTES:
-        print(json.dumps({"error": {"code": "VALIDATION_FAILED"}}))
-        return 2
+        return write_error(LibrarianError("VALIDATION_FAILED", "input too large"), "gateway.evidence")
     try:
         message = json.loads(raw)
         if not isinstance(message, dict):
@@ -168,10 +168,8 @@ def main() -> int:
                                       candidate_id=message.get("candidate_id"),
                                       gap_index=message.get("gap_index"),
                                       pending_run_id=message.get("pending_run_id"))
-    except (json.JSONDecodeError, LibrarianError) as error:
-        code = error.code if isinstance(error, LibrarianError) else "VALIDATION_FAILED"
-        print(json.dumps({"error": {"code": code}}))
-        return 2
+    except Exception as error:
+        return write_error(error, "gateway.evidence")
     print(json.dumps(result, ensure_ascii=False))
     return 0
 

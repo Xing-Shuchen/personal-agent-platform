@@ -17,6 +17,7 @@ from typing import Any
 
 from .commands import execute_command
 from .store import Library, LibrarianError
+from .gateway_errors import write_error
 
 
 MAX_INPUT_BYTES = 80 * 1024 * 1024
@@ -93,18 +94,15 @@ def main() -> int:
     args = parser.parse_args()
     raw = sys.stdin.buffer.read(MAX_INPUT_BYTES + 1)
     if len(raw) > MAX_INPUT_BYTES:
-        print(json.dumps({"error": {"code": "VALIDATION_FAILED", "message": "input too large"}}))
-        return 2
+        return write_error(LibrarianError("VALIDATION_FAILED", "input too large"), "gateway.media_intake")
     try:
         message = json.loads(raw)
         if not isinstance(message, dict):
             raise LibrarianError("VALIDATION_FAILED", "message must be an object")
         with Library(args.root) as lib:
             receipt = accept_inbound(lib, message)
-    except (json.JSONDecodeError, LibrarianError) as error:
-        code = error.code if isinstance(error, LibrarianError) else "VALIDATION_FAILED"
-        print(json.dumps({"error": {"code": code, "message": str(error)}}))
-        return 2
+    except Exception as error:
+        return write_error(error, "gateway.media_intake")
     print(json.dumps(receipt))
     return 0
 

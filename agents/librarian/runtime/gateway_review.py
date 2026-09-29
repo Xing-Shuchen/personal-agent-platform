@@ -10,6 +10,7 @@ from pathlib import Path
 from .ocr import _flip_bbox
 from .pipeline import _traces_for_capture, normalize
 from .store import Library, LibrarianError
+from .gateway_errors import write_error
 
 MAX_INPUT_BYTES = 8192
 
@@ -169,8 +170,7 @@ def main() -> int:
     args = parser.parse_args()
     raw = sys.stdin.buffer.read(MAX_INPUT_BYTES + 1)
     if len(raw) > MAX_INPUT_BYTES:
-        print(json.dumps({"error": {"code": "VALIDATION_FAILED"}}))
-        return 2
+        return write_error(LibrarianError("VALIDATION_FAILED", "input too large"), "gateway.review")
     try:
         message = json.loads(raw)
         if not isinstance(message, dict):
@@ -180,10 +180,8 @@ def main() -> int:
         with Library(args.root) as lib:
             result = pending_extractions(lib, message.get("owner_id"),
                                          message.get("capture_id"))
-    except (json.JSONDecodeError, LibrarianError) as error:
-        code = error.code if isinstance(error, LibrarianError) else "VALIDATION_FAILED"
-        print(json.dumps({"error": {"code": code}}))
-        return 2
+    except Exception as error:
+        return write_error(error, "gateway.review")
     print(json.dumps(result, ensure_ascii=False))
     return 0
 

@@ -13,6 +13,7 @@ from pathlib import Path
 
 from .commands import execute_command
 from .store import Library, LibrarianError, _now
+from .gateway_errors import write_error
 
 
 MAX_INPUT_BYTES = 8192
@@ -159,8 +160,7 @@ def main() -> int:
     args = parser.parse_args()
     raw = sys.stdin.buffer.read(MAX_INPUT_BYTES + 1)
     if len(raw) > MAX_INPUT_BYTES:
-        print(json.dumps({"error": {"code": "VALIDATION_FAILED"}}))
-        return 2
+        return write_error(LibrarianError("VALIDATION_FAILED", "input too large"), "gateway.session")
     try:
         message = json.loads(raw)
         if not isinstance(message, dict):
@@ -169,10 +169,8 @@ def main() -> int:
             raise LibrarianError("OBJECT_STORE_UNAVAILABLE", "Librarian store is unavailable")
         with Library(args.root) as lib:
             result = session_inbound(lib, message)
-    except (json.JSONDecodeError, LibrarianError) as error:
-        code = error.code if isinstance(error, LibrarianError) else "VALIDATION_FAILED"
-        print(json.dumps({"error": {"code": code}}))
-        return 2
+    except Exception as error:
+        return write_error(error, "gateway.session")
     print(json.dumps(result, ensure_ascii=False))
     return 0
 

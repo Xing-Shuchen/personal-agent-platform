@@ -2576,7 +2576,16 @@
             "INDEX_UNAVAILABLE",
             "EXTRACTION_SCHEMA_INVALID",
             "UNAUTHORIZED",
-            "VALIDATION_FAILED"
+            "VALIDATION_FAILED",
+            "OBJECT_NOT_FOUND",
+            "RECONCILIATION_REQUIRED",
+            "REVIEW_EDIT_CONFLICT",
+            "NEEDS_BOOK_RESOLUTION",
+            "NEEDS_PAGE_RESOLUTION",
+            "NO_MARKS",
+            "UPSTREAM_FORMAT_UNSUPPORTED",
+            "UPSTREAM_UNAVAILABLE",
+            "BRIDGE_FAILED"
           ]
         },
         "stage": {
