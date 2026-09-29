@@ -79,7 +79,13 @@ def _validate_semantics(model: str, value: dict[str, Any]) -> None:
             identity = value[field]
             if (identity["status"] == "resolved") != (identity["value"] is not None):
                 raise LibrarianError("VALIDATION_FAILED", f"{field} resolution status/value disagree")
+        page_ids = [region["id"] for region in value["pages"]]
+        if len(page_ids) != len(set(page_ids)):
+            raise LibrarianError("VALIDATION_FAILED", "resolution page region IDs must be unique")
         for region in value["pages"]:
+            box = region["bbox"]
+            if not (box[0] < box[2] and box[1] < box[3]):
+                raise LibrarianError("VALIDATION_FAILED", "resolution page region has zero area")
             page = region["page"]
             if (page["status"] == "resolved") != (page["value"] is not None):
                 raise LibrarianError("VALIDATION_FAILED", "page status/value disagree")

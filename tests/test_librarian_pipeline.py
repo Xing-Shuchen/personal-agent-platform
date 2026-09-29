@@ -568,6 +568,20 @@ def test_storage_rejects_resolution_with_missing_catalog_context(tmp_path: Path)
         assert lib.db.execute("SELECT 1 FROM records WHERE id=?",
                               (forged["id"],)).fetchone() is None
 
+        duplicate = json.loads(json.dumps(resolution))
+        duplicate["id"] = "resolution_duplicate_page"
+        duplicate["pages"].append(json.loads(json.dumps(duplicate["pages"][0])))
+        zero_area = json.loads(json.dumps(resolution))
+        zero_area["id"] = "resolution_zero_area"
+        zero_area["pages"][0]["bbox"] = [.1, .1, .1, .5]
+        for record in (duplicate, zero_area):
+            with pytest.raises(LibrarianError) as rejected:
+                with lib.transaction():
+                    lib._put(record)
+            assert rejected.value.code == "VALIDATION_FAILED"
+            assert lib.db.execute("SELECT 1 FROM records WHERE id=?",
+                                  (record["id"],)).fetchone() is None
+
 
 def test_reconciliation_index_failure_never_serves_superseded_trace(tmp_path: Path,
                                                                      monkeypatch) -> None:
