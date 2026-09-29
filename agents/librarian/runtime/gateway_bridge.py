@@ -90,16 +90,15 @@ def accept_inbound(lib: Library, message: dict[str, Any]) -> dict[str, Any]:
     with lib.transaction():
         lib.adopt_selected_session_scope(owner_id, source["transport"], source["account_id"],
                                          source["conversation_id"], legacy_conversation_id)
-        for item in attachments:
-            existing = lib.db.execute(
-                "SELECT capture_id FROM source_items WHERE owner_id=? AND transport=? "
-                "AND account_id=? AND source_event_id=? AND source_item_id=?",
-                (owner_id, source["transport"], source["account_id"],
-                 source["source_event_id"], item["source_item_id"])).fetchone()
-            if existing:
-                capture = lib.get(owner_id, "PageCapture", existing["capture_id"])
-                if capture["origin"]["conversation_id"] != source["conversation_id"]:
-                    raise LibrarianError("IDEMPOTENCY_CONFLICT", "source message changed scope")
+        existing = lib.db.execute(
+            "SELECT capture_id FROM source_items WHERE owner_id=? AND transport=? "
+            "AND account_id=? AND source_event_id=? LIMIT 1",
+            (owner_id, source["transport"], source["account_id"],
+             source["source_event_id"])).fetchone()
+        if existing:
+            capture = lib.get(owner_id, "PageCapture", existing["capture_id"])
+            if capture["origin"]["conversation_id"] != source["conversation_id"]:
+                raise LibrarianError("IDEMPOTENCY_CONFLICT", "source message changed scope")
         return execute_command(lib, command, trusted_owner_id=owner_id,
                                trusted_actor_id=actor_id,
                                resolve_upload=upload_bytes.__getitem__)

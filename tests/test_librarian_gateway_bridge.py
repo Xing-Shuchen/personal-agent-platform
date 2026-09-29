@@ -128,6 +128,7 @@ def test_gateway_bridge_rejects_same_source_when_conversation_scope_changes(tmp_
         accept_inbound(lib, message)
         replay = _message(_image())
         replay["source"]["conversation_id"] = "agent:legacy"
+        replay["attachments"][0]["source_item_id"] = "message_a:renumbered"
         with pytest.raises(LibrarianError) as error:
             accept_inbound(lib, replay)
         assert error.value.code == "IDEMPOTENCY_CONFLICT"
