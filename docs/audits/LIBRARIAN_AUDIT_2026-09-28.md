@@ -296,3 +296,5 @@ v8 本地 OCR 局部重试：强划线而整页 OCR 无法匹配 EPUB 的正文�
 08:00 周期 worker 只读核验：Gateway 自 07:49 重启后，两个当前可处理纸书批次的状态在 08:00 更新为 `partial`，分别保留 10/76 条活跃 trace；后者明确列出 5 张 `RECONCILIATION_REQUIRED`，重试次数为 0。`digital-sync-status.json` 同时记录 Koodo、WeRead 均成功。状态目录另有 7 个旧 `error` 文件，但对应批次不在当前 `_processing_batches` 集合，文件时间停在 09-28 23:30–23:35，不能误报为这轮 worker 的失败。当前没有滞留的 Librarian worker 进程。此证据证明本次周期调度和两类任务各自完成，尚不能代替慢源、网络中断及多次 timer 进程上界的专门验收。
 
 08:05 再观察一个完整周期：同两张当前批次状态分别在 08:05:12、08:05:20 更新，仍为 `partial` 及 10/76 条 trace，5 个待对账 capture 未变；数字同步在 08:05:09 更新，Koodo 与 WeRead 均成功。08:05:31 无残留 worker 进程。两次正常周期未见进程堆积，但不能推断故障或慢源场景的上界。
+
+09:15 用户第三次从飞书发送 `/lib read 社会理论二十讲`。Gateway 入站身份绑定为 `owner=true saved=true`，会话工具 factory 为 `recent=true available=true`；agent trajectory 出现 `tool.call librarian_session`，参数为 `{"action":"start","book":"社会理论二十讲"}`，随后 `tool.result` 返回 `status=active`、revision 1、会话 `session_1094c8d65911414c9d3893a54328eccf`。agent 的飞书回复引用该回执。生产 Library 中同一 owner 的 ReadingSession 为 active、对应《社会理论二十讲》的 Work/Edition/Copy、进度为空；`gateway_session_receipts` 有唯一匹配回执。因此 `/lib read` 的受信入站→agent 工具调用→领域命令→数据库回执→飞书回复已按真实链路验证。页码 progress、暂停/恢复/结束、检索及原图取证尚未因这一条成功而视为通过；首书的 5 张待对账照片也仍需人工裁定。
