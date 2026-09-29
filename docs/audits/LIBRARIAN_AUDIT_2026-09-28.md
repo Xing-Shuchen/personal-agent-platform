@@ -620,3 +620,5 @@ Vault 渲染新增 EPUB 章节投影：用 `EpubIndex` 将印刷引文映射到 
 这补充了 R1/R3 对**当前保留数据**的兼容与一致性证据；开发期清除的旧纸书派生记录不在本次样本内，现有库没有 KnowledgeCandidate/TraceRelation 实例。上述检查不证明图片内容准确、所有未来写入口的原子性或跨账户真实授权，也不能代替 R3 的完整条款→执行层矩阵及负例。
 
 手写审核链接改为受限 `view=handwriting` 登录后直达该页，避免用户再从 27 页总览寻找入口；同源 cookie、Host/Origin 检查维持原约束。Chrome 无头浏览器从新 token 链接完成跳转并渲染首张手写裁片、OCR 初稿、文本框与确认/排除按钮；临时截图及浏览器 profile 已清理。此为客户端页面呈现证据，不等于用户已确认内容。
+
+新手写提交入口的 R4 反例：隔离库使用他人 owner 访问当前笔记返回 `UNAUTHORIZED`，尝试把普通印刷 trace 当作手写笔记提交返回 `VALIDATION_FAILED`；浏览器无同源 Origin 的 POST 返回 403。`test_librarian_bookscan_review_apply.py` 7/7 通过。这证明此新增本机入口的受信范围，未扩展到飞书跨账户整链路。

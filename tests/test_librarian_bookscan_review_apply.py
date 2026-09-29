@@ -233,3 +233,20 @@ def test_handwriting_only_rejection_removes_note_without_touching_printed_marks(
             "expected_revision": 2, "decision": "accepted", "text": "重新确认的手写笔记"})
         assert restored["revision"] == 3
         assert lib.get("owner", "ReadingTrace", note["id"])["status"] == "active"
+
+
+def test_handwriting_review_rejects_foreign_owner_and_printed_trace(tmp_path):
+    with Library(tmp_path) as lib:
+        _setup(lib)
+        note = _note_trace(lib)
+        decision = {"trace_id": note["id"], "expected_revision": 1,
+                    "decision": "accepted", "text": "人工手写文字"}
+        with pytest.raises(LibrarianError) as foreign:
+            review_handwriting(lib, "other_owner", decision)
+        assert foreign.value.code == "UNAUTHORIZED"
+        printed = next(json.loads(row[0]) for row in lib.db.execute(
+            "SELECT body FROM records WHERE owner_id='owner' AND model='ReadingTrace' "
+            "AND current=1") if "margin_note" not in json.loads(row[0])["trace_types"])
+        with pytest.raises(LibrarianError) as invalid:
+            review_handwriting(lib, "owner", {**decision, "trace_id": printed["id"]})
+        assert invalid.value.code == "VALIDATION_FAILED"
