@@ -70,7 +70,8 @@ def search_inbound(lib: Library, message: dict) -> dict:
             if str(page) not in item.get("pages", []):
                 continue
             detail = pending_extractions(lib, owner, item["capture_id"])
-            candidates = [{"candidate_index": index, "printed_text": candidate["printed_text"],
+            candidates = [{"candidate_index": index, "candidate_id": candidate["candidate_id"],
+                           "printed_text": candidate["printed_text"],
                            "page": candidate["page"]}
                           for index, candidate in enumerate(detail["proposed"])
                           if candidate["page"] and candidate["page"]["number"] == page]

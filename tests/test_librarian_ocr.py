@@ -69,3 +69,31 @@ def test_printed_header_number_outweighs_inline_marginal_number(monkeypatch) -> 
     observation = json.loads(output.observation)
     assert [page["page"]["value"]["number"] for page in observation["pages"]] == [23]
     assert json.loads(output.raw)["page_markers"][0]["source"] == "header_ocr"
+
+
+def test_visual_review_removes_weak_false_underline_but_retains_raw_evidence(monkeypatch) -> None:
+    from agents.librarian.runtime import ocr
+    import rapidocr
+
+    boxes = [[[100, top], [800, top], [800, top + 35], [100, top + 35]]
+             for top in (200, 280, 360, 440, 520)]
+    result = SimpleNamespace(boxes=boxes,
+                             txts=[f"这是照片上第{i}行完整的印刷正文，可以用来检查画线。"
+                                   for i in range(5)], scores=[.95] * 5)
+    monkeypatch.setattr(rapidocr, "RapidOCR", lambda: lambda _pixels: result)
+    calls = []
+    def underline(_gray, _points):
+        calls.append(1)
+        return (.08, [.1, .9]) if len(calls) == 2 else (0.0, [0, 0])
+    monkeypatch.setattr(ocr, "_underline_evidence", underline)
+    image = io.BytesIO()
+    Image.new("RGB", (1000, 1400), "white").save(image, "PNG")
+    output = ocr.ocr_extractor(underline_refiner=lambda _crop: (
+        {"has_underline": False, "underlined_text": "", "uncertain": False},
+        {"model": "fixture"}))(image.getvalue())
+    observation = json.loads(output.observation)
+    assert observation["marks"] == []
+    assert observation["printed_regions"] == []
+    raw = json.loads(output.raw)
+    assert raw["lines"][1]["underline_score"] == .08
+    assert raw["underline_refinements"][0]["answer"]["has_underline"] is False

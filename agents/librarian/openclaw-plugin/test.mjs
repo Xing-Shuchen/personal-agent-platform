@@ -200,12 +200,13 @@ test("evidence tool labels pending scan crop without calling it a stored trace",
       delivery: { send: async (payload) => sent.push(payload) } };
     const bridge = async (_config, message) => {
       assert.deepEqual(message, { owner_id: "owner_fixture", capture_id: "capture_scan",
-        candidate_index: 1 });
+        candidate_id: "candidate_fixture" });
       return { capture_id: "capture_scan", candidate_index: 1,
+        candidate_id: "candidate_fixture",
         source_status: "pending_review", media_path: mediaPath };
     };
     const tool = librarianEvidenceTool({ ...config, stateRoot, deliveryMediaRoot }, context, bridge);
-    const result = await tool.execute("call", { capture_id: "capture_scan", candidate_index: 1 });
+    const result = await tool.execute("call", { capture_id: "capture_scan", candidate_id: "candidate_fixture" });
     assert.match(sent[0].text, /待审核/);
     assert.equal(JSON.parse(result.content[0].text).source_status, "pending_review");
   } finally {

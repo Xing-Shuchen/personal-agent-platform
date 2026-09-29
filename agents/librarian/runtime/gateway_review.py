@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
 from pathlib import Path
@@ -10,6 +11,14 @@ from .pipeline import _traces_for_capture, normalize
 from .store import Library, LibrarianError
 
 MAX_INPUT_BYTES = 8192
+
+
+def candidate_id(capture_id: str, detection_ids: list[str]) -> str:
+    """Stable within a capture while the same detected ink group survives reruns."""
+    marks = sorted(identifier for identifier in detection_ids
+                   if identifier.startswith(("underline_", "highlight_", "note_", "symbol_")))
+    payload = json.dumps([capture_id, marks], separators=(",", ":"))
+    return "candidate_" + hashlib.sha256(payload.encode()).hexdigest()[:24]
 
 
 def pending_extractions(lib: Library, owner: str, capture_id: str | None = None) -> dict:
@@ -75,7 +84,8 @@ def pending_extractions(lib: Library, owner: str, capture_id: str | None = None)
                          run["normalizer_version"], vocabulary=vocabulary)
 
     def brief(trace: dict) -> dict:
-        return {"trace_id": trace["id"], "revision": trace["revision"],
+        return {"trace_id": trace["id"], "candidate_id": candidate_id(capture_id, trace["source"]["detection_ids"]),
+                "revision": trace["revision"],
                 "page": trace["location"]["page"],
                 "bbox": trace["location"]["bbox"],
                 "types": trace["trace_types"],
@@ -85,8 +95,16 @@ def pending_extractions(lib: Library, owner: str, capture_id: str | None = None)
 
     old = _traces_for_capture(lib, owner, capture_id)
     ocr_gaps = []
+    visual_checks = []
     try:
         raw = json.loads(lib._read_object(observation["raw_output_asset"]))
+        for item in raw.get("underline_refinements", []):
+            answer = item.get("answer", {})
+            visual_checks.append({"mark_ids": item.get("mark_ids", []),
+                                  "has_underline": answer.get("has_underline"),
+                                  "underlined_text": answer.get("underlined_text", ""),
+                                  "uncertain": answer.get("uncertain"),
+                                  "epub_match": item.get("epub_match")})
         printed_boxes = [item["bbox"] for item in observation["printed_regions"]]
         for line in raw.get("lines", []):
             if (line.get("underline_score", 0) < .065 or
@@ -114,6 +132,7 @@ def pending_extractions(lib: Library, owner: str, capture_id: str | None = None)
             "current": [brief(item) for item in old],
             "proposed": [brief(item) for item in proposed],
             "ocr_gaps": ocr_gaps[:20],
+            "visual_checks": visual_checks[:20],
             "decision": "human_review_required"}
 
 

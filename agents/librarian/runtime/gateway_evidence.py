@@ -19,8 +19,15 @@ from .store import Library, LibrarianError
 MAX_INPUT_BYTES = 8192
 
 
-def _pending_crop(lib: Library, owner: str, capture_id: str, candidate_index: int) -> tuple[bytes, dict]:
+def _pending_crop(lib: Library, owner: str, capture_id: str, candidate_index: int | None,
+                  candidate_id: str | None) -> tuple[bytes, dict]:
     detail = pending_extractions(lib, owner, capture_id)
+    if candidate_id is not None:
+        matches = [index for index, item in enumerate(detail["proposed"])
+                   if item["candidate_id"] == candidate_id]
+        if len(matches) != 1:
+            raise LibrarianError("OBJECT_NOT_FOUND", "pending candidate not found")
+        candidate_index = matches[0]
     if isinstance(candidate_index, bool) or not isinstance(candidate_index, int) or not 0 <= candidate_index < len(detail["proposed"]):
         raise LibrarianError("VALIDATION_FAILED", "candidate index out of range")
     candidate = detail["proposed"][candidate_index]
@@ -40,16 +47,18 @@ def _pending_crop(lib: Library, owner: str, capture_id: str, candidate_index: in
         image.crop(bounds).save(output, format="PNG")
     return output.getvalue(), {"capture_id": capture["id"],
                                 "candidate_index": candidate_index,
+                                "candidate_id": candidate["candidate_id"],
                                 "page": candidate["page"],
                                 "source_status": "pending_review"}
 
 
 def prepare_evidence(lib: Library, owner: str, trace_id: str | None, directory: Path,
-                     *, capture_id: str | None = None, candidate_index: int | None = None) -> dict:
+                     *, capture_id: str | None = None, candidate_index: int | None = None,
+                     candidate_id: str | None = None) -> dict:
     if not isinstance(owner, str) or not owner or ((trace_id is None) == (capture_id is None)):
         raise LibrarianError("VALIDATION_FAILED", "choose trace or pending capture")
     if trace_id is not None:
-        if not isinstance(trace_id, str) or not trace_id.startswith("rt_") or candidate_index is not None:
+        if not isinstance(trace_id, str) or not trace_id.startswith("rt_") or candidate_index is not None or candidate_id is not None:
             raise LibrarianError("VALIDATION_FAILED", "trace ID required")
         trace = lib.get(owner, "ReadingTrace", trace_id)
         if trace.get("medium") != "physical" or trace.get("location", {}).get("kind") != "physical":
@@ -60,7 +69,12 @@ def prepare_evidence(lib: Library, owner: str, trace_id: str | None, directory: 
     else:
         if not isinstance(capture_id, str) or not capture_id.startswith("capture_"):
             raise LibrarianError("VALIDATION_FAILED", "capture ID required")
-        crop_bytes, source = _pending_crop(lib, owner, capture_id, candidate_index)
+        if (candidate_id is None) == (candidate_index is None):
+            raise LibrarianError("VALIDATION_FAILED", "choose candidate ID or index")
+        if candidate_id is not None and (not isinstance(candidate_id, str) or
+                                         not candidate_id.startswith("candidate_")):
+            raise LibrarianError("VALIDATION_FAILED", "candidate ID required")
+        crop_bytes, source = _pending_crop(lib, owner, capture_id, candidate_index, candidate_id)
     with Image.open(io.BytesIO(crop_bytes)) as image_source:
         crop = image_source.convert("RGB")
         crop.thumbnail((2200, 2200))
@@ -96,7 +110,8 @@ def main() -> int:
             result = prepare_evidence(lib, message.get("owner_id"),
                                       message.get("trace_id"), args.root / "delivery-evidence",
                                       capture_id=message.get("capture_id"),
-                                      candidate_index=message.get("candidate_index"))
+                                      candidate_index=message.get("candidate_index"),
+                                      candidate_id=message.get("candidate_id"))
     except (json.JSONDecodeError, LibrarianError) as error:
         code = error.code if isinstance(error, LibrarianError) else "VALIDATION_FAILED"
         print(json.dumps({"error": {"code": code}}))

@@ -24,7 +24,7 @@ from xml.etree import ElementTree as ET
 
 from PIL import Image, ImageOps
 
-from .ocr import ocr_extractor, openclaw_note_refiner
+from .ocr import ocr_extractor, openclaw_note_refiner, openclaw_underline_refiner
 from .pipeline import (process_capture, reconcile_extraction, bind_fingerprint_context,
                        _repair_trace_index_best_effort)
 from .vision import openclaw_extractor
@@ -712,6 +712,14 @@ def _process_batch(lib: Library, root: Path, vault: Path | None, owner: str,
         epub_hash = hashlib.sha256(epub.read_bytes()).hexdigest()[:16]
         version = f"rapidocr-epub-notes-v8:{isbn}:{epub_hash}"
         extractor = ocr_extractor(epub=epub, note_refiner=openclaw_note_refiner)
+        pending_review_ids = {run["capture_id"] for run in _current(lib, owner, "ProcessingRun")
+                              if run["outcome"] == "pending" and
+                              run["extractor_version"] == version and
+                              "RECONCILIATION_REQUIRED" in run["issues"]}
+        review_version = f"rapidocr-epub-notes-v9-vision:{isbn}:{epub_hash}"
+        review_extractor = (ocr_extractor(epub=epub, note_refiner=openclaw_note_refiner,
+                                          underline_refiner=openclaw_underline_refiner)
+                            if pending_review_ids else None)
     else:
         title = "待确认书籍"
         version = f"rapidocr-generic-v1:{vision_model}"
@@ -767,16 +775,23 @@ def _process_batch(lib: Library, root: Path, vault: Path | None, owner: str,
             except LibrarianError as error:
                 extraction_issues.append({"capture_id": capture_id, "code": error.code})
         try:
-            process_capture(lib, owner, capture_id, extractor,
-                            extractor_version=version)
+            use_visual_review = match and capture_id in pending_review_ids
+            selected_version = review_version if use_visual_review else version
+            selected_extractor = review_extractor if use_visual_review else extractor
+            process_capture(lib, owner, capture_id, selected_extractor,
+                            extractor_version=selected_version)
         except LibrarianError as error:
             if error.code == "RECONCILIATION_REQUIRED":
-                try:
-                    reconcile_extraction(lib, owner, capture_id, version,
-                                         allow_rotation_upgrade=True)
-                except LibrarianError as conflict:
+                if use_visual_review:
                     extraction_issues.append({"capture_id": capture_id,
-                                              "code": conflict.code})
+                                              "code": error.code})
+                else:
+                    try:
+                        reconcile_extraction(lib, owner, capture_id, selected_version,
+                                             allow_rotation_upgrade=True)
+                    except LibrarianError as conflict:
+                        extraction_issues.append({"capture_id": capture_id,
+                                                  "code": conflict.code})
             elif error.code in {"EXTRACTION_SCHEMA_INVALID", "EXTRACTOR_UNAVAILABLE"}:
                 extraction_issues.append({"capture_id": capture_id,
                                           "code": error.code})

@@ -56,7 +56,7 @@ def test_pending_scan_crop_uses_review_candidate_without_promotion(tmp_path: Pat
 
     def review(_lib, owner, capture_id):
         assert (owner, capture_id) == ("owner", "capture_scan")
-        return {"proposed": [{"bbox": [.2, .4, .7, .5],
+        return {"proposed": [{"candidate_id": "candidate_one", "bbox": [.2, .4, .7, .5],
                               "page": {"number": 39, "label": "39"}}]}
 
     monkeypatch.setattr("agents.librarian.runtime.gateway_evidence.pending_extractions", review)
@@ -75,9 +75,13 @@ def test_pending_scan_crop_uses_review_candidate_without_promotion(tmp_path: Pat
                               capture_id="capture_scan", candidate_index=0)
     assert result["source_status"] == "pending_review"
     assert result["candidate_index"] == 0
+    assert result["candidate_id"] == "candidate_one"
     with Image.open(result["media_path"]) as crop:
         assert crop.size == (540, 112)
         assert crop.getpixel((270, 55)) == (0, 0, 0)
     with pytest.raises(LibrarianError):
         prepare_evidence(FakeLibrary(), "owner", None, directory,
                          capture_id="capture_scan", candidate_index=1)
+    by_id = prepare_evidence(FakeLibrary(), "owner", None, directory,
+                             capture_id="capture_scan", candidate_id="candidate_one")
+    assert by_id["candidate_index"] == 0

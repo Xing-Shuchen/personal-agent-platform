@@ -260,9 +260,45 @@ def openclaw_note_refiner(crop: bytes) -> tuple[str, dict]:
     return response, envelope
 
 
+def openclaw_underline_refiner(crop: bytes) -> tuple[dict, dict]:
+    """Verify one OCR-proposed underline group against a high-resolution crop."""
+    with tempfile.TemporaryDirectory(prefix="librarian-underline-") as directory:
+        path = Path(directory) / "marked-region.jpg"
+        path.write_bytes(crop)
+        prompt = ("请只根据图像判断读者是否亲手画了下划线。不要把印刷字边缘、扫描噪声或页边当画线。"
+                  "若有画线，转录被画线覆盖的印刷文字；跨行同一处画线合并，未画线的前后文字不要补入。"
+                  "只输出 JSON 对象：has_underline（布尔值）、underlined_text（字符串，无则空）、uncertain（布尔值）。")
+        result = subprocess.run(["openclaw", "infer", "model", "run", "--agent", "librarian",
+                                 "--model", "zai/glm-5.3-flash", "--file", str(path),
+                                 "--prompt", prompt, "--json"], capture_output=True,
+                                text=True, timeout=90)
+    if result.returncode:
+        raise RuntimeError("underline model unavailable")
+    envelope = json.loads(result.stdout)
+    outputs = envelope.get("outputs") if isinstance(envelope, dict) else None
+    if (envelope.get("ok") is not True or envelope.get("provider") != "zai" or
+            envelope.get("model") != "glm-5.3-flash" or not isinstance(outputs, list) or
+            len(outputs) != 1 or not isinstance(outputs[0], dict) or
+            not isinstance(outputs[0].get("text"), str)):
+        raise RuntimeError("underline model response invalid")
+    value = outputs[0]["text"].strip()
+    if value.startswith("```"):
+        value = re.sub(r"^```(?:json)?\s*|\s*```$", "", value, flags=re.I).strip()
+    answer = json.loads(value)
+    if (not isinstance(answer, dict) or
+            set(answer) != {"has_underline", "underlined_text", "uncertain"} or
+            not isinstance(answer["has_underline"], bool) or
+            not isinstance(answer["uncertain"], bool) or
+            not isinstance(answer["underlined_text"], str) or
+            len(answer["underlined_text"]) > 1000):
+        raise RuntimeError("underline model fields invalid")
+    return answer, envelope
+
+
 def ocr_extractor(*, epub: Path | None = None, max_edge: int = 2000,
                   max_pixels: int = 2_000_000,
-                  note_refiner: Callable[[bytes], tuple[str, dict]] | None = None):
+                  note_refiner: Callable[[bytes], tuple[str, dict]] | None = None,
+                  underline_refiner: Callable[[bytes], tuple[dict, dict]] | None = None):
     """Return a reusable local extractor; only evidence on the photo is traced."""
     from rapidocr import RapidOCR
     import cv2
@@ -464,6 +500,57 @@ def ocr_extractor(*, epub: Path | None = None, max_edge: int = 2000,
                     observation["links"].append({"from_id": prior_id,
                                                  "to_id": current_id,
                                                  "kind": "continues", "confidence": .9})
+            underline_refinements = []
+            if underline_refiner and marked:
+                groups: list[list[tuple[dict, str]]] = []
+                linked_next = {(link["from_id"], link["to_id"])
+                               for link in observation["links"] if link["kind"] == "continues"}
+                for item in marked:
+                    if groups and (groups[-1][-1][1], item[1]) in linked_next:
+                        groups[-1].append(item)
+                    else:
+                        groups.append([item])
+                for group in groups[:6]:
+                    boxes = [line["bbox"] for line, _ in group]
+                    x0, y0 = min(box[0] for box in boxes), min(box[1] for box in boxes)
+                    x1, y1 = max(box[2] for box in boxes), max(box[3] for box in boxes)
+                    crop = Image.fromarray(pixels).crop((
+                        max(0, int((x0 - .02) * width)), max(0, int((y0 - .02) * height)),
+                        min(width, int((x1 + .02) * width)), min(height, int((y1 + .02) * height))))
+                    crop.thumbnail((2200, 2200))
+                    output = io.BytesIO()
+                    crop.save(output, "JPEG", quality=88)
+                    ids = {identifier for _, identifier in group}
+                    scores = [line["underline_score"] for line, _ in group]
+                    try:
+                        answer, response = underline_refiner(output.getvalue())
+                        underline_refinements.append({"mark_ids": sorted(ids),
+                                                      "answer": answer, "model": response})
+                    except (RuntimeError, OSError, ValueError, subprocess.TimeoutExpired):
+                        observation["warnings"].append("Underline visual review unavailable")
+                        continue
+                    if answer["uncertain"]:
+                        observation["warnings"].append("Underline visual review uncertain")
+                    elif not answer["has_underline"]:
+                        if max(scores) < .10:
+                            print_ids = {f'print_{line["id"]}' for line, _ in group}
+                            observation["marks"] = [item for item in observation["marks"]
+                                                    if item["id"] not in ids]
+                            observation["printed_regions"] = [item for item in observation["printed_regions"]
+                                                               if item["id"] not in print_ids]
+                            observation["links"] = [item for item in observation["links"]
+                                                    if item["from_id"] not in ids and item["to_id"] not in ids]
+                        else:
+                            observation["warnings"].append("Visual and ink evidence disagree on underline")
+                    elif answer["underlined_text"] and groundtruth:
+                        aligned, match = groundtruth.match(answer["underlined_text"])
+                        underline_refinements[-1]["epub_match"] = round(match, 4)
+                        underline_refinements[-1]["epub_text"] = aligned if match >= .85 else None
+                        # Two high-resolution calls on the same real scan gave
+                        # different start words. Keep the OCR observation intact;
+                        # the visual wording is review evidence, not authority.
+                        if match < .85:
+                            observation["warnings"].append("Underline text disagrees with EPUB")
             # Preserve one positioned print region per visible OCR line. EPUB
             # matching helps classify print but cannot enlarge photographed text.
             short_margin = [line for line in lines if
@@ -548,7 +635,8 @@ def ocr_extractor(*, epub: Path | None = None, max_edge: int = 2000,
                "image_space": observation["image_space"], "lines": lines,
                "page_markers": locals().get("markers", []),
                "page_marker_probe": locals().get("marker_probe", []),
-               "note_refinements": locals().get("note_refinements", [])}
+               "note_refinements": locals().get("note_refinements", []),
+               "underline_refinements": locals().get("underline_refinements", [])}
         return ExtractionOutput(raw=json.dumps(raw, ensure_ascii=False).encode(),
                                 observation=json.dumps(observation, ensure_ascii=False).encode(),
                                 derivative=derivative, derivative_width=dw,
