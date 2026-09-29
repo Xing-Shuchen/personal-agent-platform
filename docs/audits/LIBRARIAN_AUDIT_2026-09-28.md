@@ -402,6 +402,8 @@ F06 状态文件清点：目录中 7 个 `error` 文件来自旧版逐张照片�
 
 12:51 定时 worker 运行后只读核验：5 图组状态从旧的 `partial / unresolved_pages=3` 更新为 `processed / unresolved_pages=0`；22 图组仍为 `partial / unresolved_pages=4`，保留 3 项 `RECONCILIATION_REQUIRED`，没有把待审扫描误报为完成。两组状态时间均刷新到本轮，旧逐张错误文件仍作为历史记录存在；读取现行状态须以 `_processing_batches` 的组 ID 为准。本次修复的 Librarian Python 120 项通过，真实 Gateway 用户端未单独查询状态。
 
+F07 当前 HEAD 复核更正：第 8 节早先“词表快照的持久化身份、明确 lineage 尚未实现”描述已过时。`process_capture` 现在把启用词表的完整配置保存为不可变对象，并在 `ProcessingRun.vocabulary_config_ref` 记录引用与版本；重试按配置摘要区分，`reconcile_extraction` 从该引用恢复词表且拒绝新旧摘要不同的自动替换。可确定的一对一重提取会在同一领域事务写入 `TraceRelation(relation=supersedes)`，测试覆盖词表同名异内容拒绝、同快照换 extractor 后 lineage 和知识依赖保护。此为当前代码及本地测试证据，尚未对所有旧版本关系和 3 张待审核扫描的实际对账做端到端复审；F07 的验收门槛仍须按 §2.3 核对，不能以这项更正宣称全面关闭。
+
 ## 9. 现行实现计划（2026-09-29）
 
 第 1–7 节仍是对 `d111ace` 的初审，不能用其中的旧行号和测试数量描述当前 HEAD。本节把整改转为可执行批次；每批结束时在第 8 节记录实际提交、测试、生产状态和未验项。除明确列出的真实用户审核外，调试与迁移均通过 Librarian 的 worker、领域命令或受信 Gateway 工具执行，不手改生产数据库或 Vault 生成块。
