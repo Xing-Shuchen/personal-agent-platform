@@ -560,4 +560,6 @@ B 的后续清单：现有 11 张旧版多页区照片与笔记时间来源已�
 
 正式 SQLite 只读 `PRAGMA integrity_check` 返回 `ok`，`foreign_key_check` 返回 0 条违规；这只证明数据库物理完整性和已声明的外键，不代替 §9.1 所列跨记录语义不变量。
 
-R1 故障注入补证：在隔离库对 Bookscan 网页复核对账的 `reading.trace.corrected` outbox 写入注入失败，旧 trace/current 指针与事件保持原状；恢复后重试同一审核包，完成新版本及每条旧 trace 的修订事件。在知识晋升的 `reading.knowledge.promoted` 事件写入注入失败，candidate 保持 `approved` 且无成功事件；恢复后用同一知识服务幂等键重试并只产生一条成功事件。`test_librarian_bookscan_review_apply.py` 与 `test_librarian_knowledge.py` 合计 9/9 通过。此项补齐两条指定入口的事务反例；不表示所有 R1 修订入口、实际知识服务或备份恢复已验收。
+R1 故障注入补证：在隔离库对 Bookscan 网页复核对账的 `reading.trace.corrected` outbox 写入注入失败，旧 trace/current 指针与事件保持原状；恢复后重试同一审核包，完成新版本及每条旧 trace 的修订事件。在知识晋升的 `reading.knowledge.promoted` 事件写入注入失败，candidate 保持 `approved` 且无成功事件；恢复后用同一知识服务幂等键重试并只产生一条成功事件。`test_librarian_bookscan_review_apply.py` 与 `test_librarian_knowledge.py` 合计 9/9 通过。此项补齐两条指定入口的事务反例；不表示所有 R1 修订入口或实际知识服务已验收。
+
+R1 隔离恢复演练：对正式 SQLite 做在线 backup，复制私有 `objects/` 与 `source-books/` 到临时目录并从副本重新打开 Library。副本 257/257 个唯一对象通过大小和散列检查，27/27 张已接受原图可经领域 API 读取，p.39 检索仍返回 6 条；临时目录退出后清理，正式库未改。此演练覆盖库、对象、目录和索引的基础恢复；未包含 2.1 GB 的 Bookscan 审核产物、Vault 或真实 Gateway 切换，故不宣称完整生产灾备通过。
