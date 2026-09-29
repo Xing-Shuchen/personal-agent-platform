@@ -437,7 +437,8 @@ def _render_batch_note_legacy(batch: dict, title: str, traces: list[dict], *,
 
 def _render_batch_note(batch: dict, title: str, traces: list[dict], *,
                        created: str, spatial_order: bool = True,
-                       presentation_version: int = 5) -> str:
+                       presentation_version: int = 6,
+                       received_at_by_capture: dict[str, str] | None = None) -> str:
     if not traces:
         raise LibrarianError("NO_MARKS", "no reading marks found in batch")
     traces = sorted(traces, key=lambda item: (
@@ -495,12 +496,15 @@ def _render_batch_note(batch: dict, title: str, traces: list[dict], *,
                 lines.append(f"> 💭 {rendered_note}（手写待核对）")
             if not printed and not annotation and presentation_version >= 5:
                 lines.append(f"> ⚠️ 检测到标记，文字尚未辨认 ^{trace['id']}")
+            source_time = (received_at_by_capture or {}).get(trace["source"]["capture_id"])
             try:
-                stamp = datetime.fromisoformat(trace["created_at"]).astimezone(
-                    ZoneInfo("Asia/Shanghai")).strftime("%Y-%m-%d %H:%M:%S")
-            except (KeyError, ValueError):
-                stamp = created
-            lines.extend([f"> ⏱ {stamp}",
+                stamp = datetime.fromisoformat(
+                    source_time if presentation_version >= 6 else trace["created_at"]
+                ).astimezone(ZoneInfo("Asia/Shanghai")).strftime("%Y-%m-%d %H:%M:%S")
+            except (TypeError, KeyError, ValueError):
+                stamp = "未知" if presentation_version >= 6 else created
+            time_label = f"收图：{stamp}" if presentation_version >= 6 else stamp
+            lines.extend([f"> ⏱ {time_label}",
                           f"> 原图证据：`{trace['source']['capture_id']}`",
                           _trace_marker(trace["id"], trace["revision"]), ""])
 
@@ -512,13 +516,21 @@ def _render_batch_note(batch: dict, title: str, traces: list[dict], *,
     return "\n".join(lines).rstrip() + "\n"
 
 
+def _capture_received_times(lib: Library, owner: str, capture_ids: set[str]) -> dict[str, str]:
+    return {capture["id"]: capture["received_at"]
+            for capture in _current(lib, owner, "PageCapture")
+            if capture["id"] in capture_ids}
+
+
 def _export(lib: Library, owner: str, batch: dict, title: str, vault: Path) -> Path:
     folder = vault / "2Area" / "40 学习与阅读" / "阅读笔记"
     note = folder / f"{title}.md"
     traces = [trace for trace in _current(lib, owner, "ReadingTrace")
               if trace["status"] == "active" and
               trace["source"].get("capture_id") in batch["capture_ids"]]
-    block = _render_batch_note(batch, title, traces, created=_now()[:10])
+    received = _capture_received_times(lib, owner, set(batch["capture_ids"]))
+    block = _render_batch_note(batch, title, traces, created=_now()[:10],
+                               received_at_by_capture=received)
     if note.exists():
         old = note.read_text(encoding="utf-8")
         if re.search(r'data-librarian-batch="batch_book_[0-9]{13}"', old):
@@ -531,7 +543,8 @@ def _export(lib: Library, owner: str, batch: dict, title: str, vault: Path) -> P
 
 
 def _refresh_generated_note(vault: Path, batch: dict, title: str,
-                            old_traces: list[dict], new_traces: list[dict]) -> Path:
+                            old_traces: list[dict], new_traces: list[dict],
+                            received_at_by_capture: dict[str, str] | None = None) -> Path:
     """Replace only an unchanged generated note; preserve any review edits."""
     note = vault / "2Area" / "40 学习与阅读" / "阅读笔记" / f"{title}.md"
     old = note.read_text(encoding="utf-8")
@@ -539,7 +552,10 @@ def _refresh_generated_note(vault: Path, batch: dict, title: str,
         return note
     match = re.search(r"(?m)^created: (\d{4}-\d{2}-\d{2})$", old)
     candidates = (
-            _render_batch_note(batch, title, old_traces, created=match.group(1)),
+            _render_batch_note(batch, title, old_traces, created=match.group(1),
+                               received_at_by_capture=received_at_by_capture),
+            _render_batch_note(batch, title, old_traces, created=match.group(1),
+                               presentation_version=5),
             _render_batch_note(batch, title, old_traces, created=match.group(1),
                                presentation_version=1),
             _render_batch_note(batch, title, old_traces, created=match.group(1),
@@ -560,7 +576,8 @@ def _refresh_generated_note(vault: Path, batch: dict, title: str,
     if not matches:
         raise LibrarianError("REVIEW_EDIT_CONFLICT", "Vault review note has edits; preserve it for manual reconciliation")
     matched, index = matches[0]
-    revised = _render_batch_note(batch, title, new_traces, created=match.group(1))
+    revised = _render_batch_note(batch, title, new_traces, created=match.group(1),
+                                 received_at_by_capture=received_at_by_capture)
     updated = old[:index] + revised + old[index + len(matched):]
     if updated != old:
         _atomic_write(note, updated.encode("utf-8"))
@@ -609,9 +626,12 @@ def _consolidate_generated_note(lib: Library, owner: str, title: str,
             traces.append(json.loads(row["body"]))
         if not traces:
             raise LibrarianError("REVIEW_EDIT_CONFLICT", "review note has no trace anchors")
+        received = _capture_received_times(lib, owner,
+                                            {trace["source"]["capture_id"] for trace in traces})
         variants = [_render_batch_note(batch, title, traces, created=stamp.group(1),
-                                       presentation_version=version).strip()
-                    for version in (1, 2, 3, 4, 5)]
+                                       presentation_version=version,
+                                       received_at_by_capture=received).strip()
+                    for version in (1, 2, 3, 4, 5, 6)]
         variants.extend([_render_batch_note_legacy(batch, title, traces,
                                                    created=stamp.group(1)).strip(),
                          _render_batch_note_legacy(batch, title, traces,
@@ -630,7 +650,10 @@ def _consolidate_generated_note(lib: Library, owner: str, title: str,
     if not current:
         return note
     rendered = _render_batch_note({"id": aggregate_id, "isbn": isbn},
-                                  title, current, created=date)
+                                  title, current, created=date,
+                                  received_at_by_capture=_capture_received_times(
+                                      lib, owner,
+                                      {trace["source"]["capture_id"] for trace in current}))
     if rendered != old:
         _atomic_write(note, rendered.encode("utf-8"))
     return note
@@ -817,7 +840,9 @@ def _process_batch(lib: Library, root: Path, vault: Path | None, owner: str,
                     if trace["status"] == "active" and
                     trace["source"].get("capture_id") in batch["capture_ids"]]
         if vault:
-            _refresh_generated_note(vault, batch, title, existing, existing)
+            _refresh_generated_note(vault, batch, title, existing, existing,
+                                    _capture_received_times(lib, owner,
+                                        {trace["source"]["capture_id"] for trace in existing}))
             note = _consolidate_generated_note(lib, owner, title, vault)
             _notify_correction(root, batch, note, len(existing),
                                unresolved=sum(trace["location"]["page"] is None
@@ -899,7 +924,9 @@ def _process_batch(lib: Library, root: Path, vault: Path | None, owner: str,
         return {"batch_id": batch["id"], "status": "partial", "traces": len(traces),
                 "code": "NEEDS_BOOK_RESOLUTION"}
     if notified:
-        note = _refresh_generated_note(vault, batch, title, old_traces, traces)
+        note = _refresh_generated_note(vault, batch, title, old_traces, traces,
+                                       _capture_received_times(lib, owner,
+                                           {trace["source"]["capture_id"] for trace in traces}))
         note = _consolidate_generated_note(lib, owner, title, vault)
         _notify_correction(root, batch, note, len(traces),
                            unresolved=sum(trace["location"]["page"] is None for trace in traces),

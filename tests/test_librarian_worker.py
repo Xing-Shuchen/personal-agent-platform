@@ -444,11 +444,14 @@ def test_physical_note_uses_weread_layout_and_upgrades_unchanged_legacy(tmp_path
              "content": {"printed_text": {"text": "正是帕森斯，\n完成整合。"},
                          "annotation": {"text": None}},
              "source": {"capture_id": "capture_fixture"}}
-    new = _render_batch_note(batch, "社会理论二十讲", [trace], created="2026-09-28")
+    received = {"capture_fixture": "2026-09-27T12:00:00+00:00"}
+    new = _render_batch_note(batch, "社会理论二十讲", [trace], created="2026-09-28",
+                             received_at_by_capture=received)
     assert "# 元数据" in new and "# 高亮划线" in new
     assert "## 第 39 页" in new
     assert "> 📌 正是帕森斯，完成整合。 ^rt_fixture" in new
-    assert "> ⏱ 2026-09-28 20:00:00" in new
+    assert "> ⏱ 收图：2026-09-27 20:00:00" in new
+    assert "2026-09-28 20:00:00" not in new
     assert "<span hidden data-librarian-trace=" in new
     assert "![[" not in new
 
@@ -457,11 +460,24 @@ def test_physical_note_uses_weread_layout_and_upgrades_unchanged_legacy(tmp_path
     note = folder / "社会理论二十讲.md"
     note.write_text(_render_batch_note_legacy(batch, "社会理论二十讲", [trace],
                                                created="2026-09-28"), encoding="utf-8")
-    _refresh_generated_note(tmp_path, batch, "社会理论二十讲", [trace], [trace])
+    _refresh_generated_note(tmp_path, batch, "社会理论二十讲", [trace], [trace], received)
+    assert note.read_text(encoding="utf-8") == new
+    trace["revision"] = 2
+    trace["created_at"] = "2026-09-29T12:00:00+00:00"
+    revised = _render_batch_note(batch, "社会理论二十讲", [trace], created="2026-09-28",
+                                  received_at_by_capture=received)
+    assert "> ⏱ 收图：2026-09-27 20:00:00" in revised
+    assert "2026-09-29 20:00:00" not in revised
+    trace["revision"] = 1
+    trace["created_at"] = "2026-09-28T12:00:00+00:00"
+    note.write_text(_render_batch_note(batch, "社会理论二十讲", [trace],
+                                       created="2026-09-28", presentation_version=5),
+                    encoding="utf-8")
+    _refresh_generated_note(tmp_path, batch, "社会理论二十讲", [trace], [trace], received)
     assert note.read_text(encoding="utf-8") == new
     note.write_text(new + "我的审阅\n", encoding="utf-8")
     with pytest.raises(LibrarianError) as error:
-        _refresh_generated_note(tmp_path, batch, "社会理论二十讲", [trace], [trace])
+        _refresh_generated_note(tmp_path, batch, "社会理论二十讲", [trace], [trace], received)
     assert error.value.code == "REVIEW_EDIT_CONFLICT"
 
 
