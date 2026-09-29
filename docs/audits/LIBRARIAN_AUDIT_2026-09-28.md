@@ -622,3 +622,9 @@ Vault 渲染新增 EPUB 章节投影：用 `EpubIndex` 将印刷引文映射到 
 手写审核链接改为受限 `view=handwriting` 登录后直达该页，避免用户再从 27 页总览寻找入口；同源 cookie、Host/Origin 检查维持原约束。Chrome 无头浏览器从新 token 链接完成跳转并渲染首张手写裁片、OCR 初稿、文本框与确认/排除按钮；临时截图及浏览器 profile 已清理。此为客户端页面呈现证据，不等于用户已确认内容。
 
 新手写提交入口的 R4 反例：隔离库使用他人 owner 访问当前笔记返回 `UNAUTHORIZED`，尝试把普通印刷 trace 当作手写笔记提交返回 `VALIDATION_FAILED`；浏览器无同源 Origin 的 POST 返回 403。`test_librarian_bookscan_review_apply.py` 7/7 通过。这证明此新增本机入口的受信范围，未扩展到飞书跨账户整链路。
+
+## 17. 完整私有数据恢复复核（2026-09-29）
+
+在临时目录将正式 SQLite 以在线 backup 复制，并复制 `objects/`、`source-books/`、2.1 GB 的 `bookscan-runs/` 和运行状态文件。首次恢复发现实际缺陷：Bookscan raw 报告中的 `config.output_dir` 是旧主机绝对路径，`review_index` 因安全路径校验把所有恢复后的报告跳过，出现 0 张审核页、0 条手写卡片。已让审核入口优先使用当前私有根目录下的路径，迁移时仅以受限 run ID 在当前 `bookscan-runs` 内寻找唯一产物；含路径分隔符的 ID 和多重匹配均拒绝，不回退访问旧主机路径。隔离测试覆盖迁移、歧义和目录逃逸。
+
+修复后再次完整临时恢复并从副本启动 localhost 服务：27/27 个审核页、15/15 张手写卡片及其裁片可经 HTTP 读取，257/257 个唯一私有对象大小/散列一致。在另一份完整副本连同 Vault 笔记运行正式物理 worker，0 错误，仍生成 1 个第二讲章节标题和 73 个隐藏 trace 标记。临时目录随后清理，生产数据未改。此项证明数据目录迁移后当前 Bookscan 网页与 worker 的基础恢复；尚未演练 Gateway 的真实服务切换、密钥迁移和飞书平台重连，故完整灾备放行仍保留该边界。

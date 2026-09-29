@@ -5,10 +5,28 @@ import argparse
 import html
 import json
 import os
+import re
 from pathlib import Path
 
 from .handwriting_review import ACCEPTED, REJECTED
 from .store import Library
+
+
+def _bookscan_run_dir(root: Path, run: dict) -> Path:
+    """Resolve a report within the current private root after a restore/move."""
+    run_id = run["run_id"]
+    if not isinstance(run_id, str) or not re.fullmatch(r"[A-Za-z0-9_-]+", run_id):
+        raise ValueError("invalid Bookscan run ID")
+    allowed = (root / "bookscan-runs").resolve()
+    configured = Path(run["config"]["output_dir"])
+    candidate = (configured / run_id).resolve()
+    if candidate.is_relative_to(allowed) and candidate.is_dir():
+        return candidate
+    matches = [path.resolve() for path in allowed.glob(f"*/run-*/output/{run_id}")
+               if path.is_dir() and path.resolve().is_relative_to(allowed)]
+    if len(matches) != 1:
+        raise ValueError("Bookscan run not unique in current root")
+    return matches[0]
 
 
 def build_handwriting_index(root: Path, owner: str) -> Path:
@@ -34,8 +52,8 @@ def build_handwriting_index(root: Path, owner: str) -> Path:
                 report = json.loads(lib._read_object(observation["raw_output_asset"]))
                 annotation = report["annotations"][index]
                 run = report["run"]
-                image = (Path(run["config"]["output_dir"]) / run["run_id"] /
-                         "annotations" / f"{annotation['annotation_id']}.png").resolve()
+                image = (_bookscan_run_dir(root, run) / "annotations" /
+                         f"{annotation['annotation_id']}.png").resolve()
                 image.relative_to(root / "bookscan-runs")
                 if not image.is_file():
                     continue
@@ -130,8 +148,7 @@ def build_index(root: Path, owner: str) -> Path:
                 report = json.loads(lib._read_object(observation["raw_output_asset"]))
                 run = report["run"]
                 run_id = run["run_id"]
-                output_dir = Path(run["config"]["output_dir"]).resolve()
-                review = (output_dir / run_id / "review.html").resolve()
+                review = (_bookscan_run_dir(root, run) / "review.html").resolve()
                 review.relative_to(root / "bookscan-runs")
                 if not review.is_file():
                     continue
