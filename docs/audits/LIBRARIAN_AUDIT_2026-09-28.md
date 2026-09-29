@@ -659,3 +659,9 @@ Gateway 已重启，`systemctl --user` 返回 active；运行时插件检查为 
 对 `correct_trace` 和 `resolve_capture` 两个仍缺逐入口故障证据的路径注入 outbox 写失败。前者在已有 pending 知识候选的来源 trace 上修正文句，失败后 trace 保持 revision 1、候选保持 pending、无 `reading.trace.corrected` 事件；恢复事件写入后用同一 expected revision 重试，trace 到 revision 2、候选转为 superseded。后者在同张多 trace 照片上修改用户确认的页码，失败后 CaptureResolution 和所有 trace 均保持旧 revision、无 corrected 事件；恢复事件写入后原 expected revision 可重试，resolution 与所有 trace 一起前进。这两项复核了关联候选、解析和 trace 修订不能部分提交。
 
 证据为隔离库的应用入口故障注入；完整 Python 回归 **521 passed**（4 条弃用警告）。这不代表 SQLite 进程崩溃、实际磁盘故障或所有其余入口。正式库未注入故障，也未替用户更改内容。
+
+## 21. R3 候选状态迁移写入边界（2026-09-29）
+
+审视 `KnowledgeCandidate` 时发现 Schema 已限制状态值与 `promoted`/`knowledge_id` 组合，但 `Library._put` 原可接受结构合法的初版 `promoted` 或 `pending→promoted`，绕过 `decide_candidate` 的批准步骤。最终写入层现只允许初版 `pending`，后续 `pending→approved/rejected/superseded`、`approved→promoted`；来源 trace 引用、候选类型、内容和触发依据在修订中保持不变。非法跳级和改写解释的隔离库反例均拒绝且当前版本不变；现有正常知识流程与回滚测试 52/52 通过。
+
+本约束保证状态链和解释不被普通内部写入绕过；完整 Python 回归 **522 passed**（4 条弃用警告）。`KnowledgeObject` 是否已由外部知识服务持久化，仍由 `promote_candidate` 的 writer 回执和幂等键保证，不能由 SQLite 状态本身证明。当前正式库无 `KnowledgeCandidate`，因此没有可复核的旧候选迁移样本。

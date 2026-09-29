@@ -14,6 +14,11 @@ candidate and page resolution affecting multiple traces. An outbox failure
 rolls back every related revision, and the same expected revision succeeds
 on retry. The current Python suite passes 521 tests. See audit §20.
 
+R3 now enforces the KnowledgeCandidate state path at the final storage write:
+new candidates begin pending; a pending candidate cannot jump directly to
+promoted, and source interpretation cannot silently change across revisions.
+The full Python suite passes 522 tests. See audit §21.
+
 Latest scope change: printed underline text is accepted with its current EPUB
 punctuation expansion. The private review site now offers a handwriting-only
 page with 15 note crops and versioned confirm/edit/reject actions; actual user

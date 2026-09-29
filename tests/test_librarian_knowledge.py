@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import copy
+
 import pytest
 
 from agents.librarian.runtime.commands import execute_command
@@ -87,6 +89,38 @@ def test_storage_rejects_candidate_reference_to_other_owner(tmp_path):
         assert rejected.value.code == "VALIDATION_FAILED"
         assert lib.db.execute("SELECT 1 FROM records WHERE id=?",
                               (forged["id"],)).fetchone() is None
+
+
+def test_storage_enforces_candidate_state_machine_and_immutable_interpretation(tmp_path):
+    with Library(tmp_path) as lib:
+        trace = ingest_export(lib, "owner_a", "weread", "synthetic.md", EXPORT)[0]
+        candidate = create_candidate(lib, "owner_a",
+            [{"trace_id": trace["id"], "revision": 1}], candidate_type="concept",
+            content={"text": None, "confidence": None, "basis": "unknown"},
+            correlation_id="state-test")
+        initial_promotion = {**candidate, "id": "candidate_skipped", "status": "promoted",
+                             "knowledge_id": "knowledge_fake"}
+        with pytest.raises(LibrarianError) as skipped:
+            with lib.transaction():
+                lib._put(initial_promotion)
+        assert skipped.value.code == "INVALID_STATE_TRANSITION"
+
+        forged = {**candidate, "revision": 2, "supersedes_revision": 1,
+                  "status": "promoted", "knowledge_id": "knowledge_fake"}
+        with pytest.raises(LibrarianError) as skipped:
+            with lib.transaction():
+                lib._put(forged)
+        assert skipped.value.code == "INVALID_STATE_TRANSITION"
+
+        changed = copy.deepcopy(candidate)
+        changed.update(revision=2, supersedes_revision=1, status="approved")
+        changed["content"] = {"text": "Different claim", "confidence": None,
+                              "basis": "user_statement"}
+        with pytest.raises(LibrarianError) as altered:
+            with lib.transaction():
+                lib._put(changed)
+        assert altered.value.code == "VALIDATION_FAILED"
+        assert lib.get("owner_a", "KnowledgeCandidate", candidate["id"])["revision"] == 1
 
 
 def test_rejection_reason_and_changed_trace_prevent_stale_approval(tmp_path):

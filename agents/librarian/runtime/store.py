@@ -365,14 +365,25 @@ class Library:
         validate(model, record)
         self._validate_record_links(record)
         revision = record.get("revision", 1)
-        old = self.db.execute("SELECT revision FROM records WHERE owner_id=? AND model=? AND id=? AND current=1",
+        old = self.db.execute("SELECT revision,body FROM records WHERE owner_id=? AND model=? AND id=? AND current=1",
                               (record["owner_id"], model, record["id"])).fetchone()
         if old is None:
             if revision != 1 or record.get("supersedes_revision") is not None:
                 raise LibrarianError("REVISION_CONFLICT", "initial record must be revision 1")
+            if model == "KnowledgeCandidate" and record["status"] != "pending":
+                raise LibrarianError("INVALID_STATE_TRANSITION", "candidate must begin pending")
         else:
             if revision != old["revision"] + 1 or record.get("supersedes_revision") != old["revision"]:
                 raise LibrarianError("REVISION_CONFLICT", "revision must follow current version")
+            if model == "KnowledgeCandidate":
+                previous = json.loads(old["body"])
+                allowed = {"pending": {"approved", "rejected", "superseded"},
+                           "approved": {"promoted"}}
+                if record["status"] not in allowed.get(previous["status"], set()):
+                    raise LibrarianError("INVALID_STATE_TRANSITION", "invalid candidate transition")
+                if any(record[field] != previous[field] for field in
+                       ("source_trace_refs", "candidate_type", "content", "trigger")):
+                    raise LibrarianError("VALIDATION_FAILED", "candidate interpretation is immutable")
             self.db.execute("UPDATE records SET current=0 WHERE owner_id=? AND model=? AND id=? AND current=1",
                             (record["owner_id"], model, record["id"]))
         self.db.execute("INSERT INTO records(owner_id,model,id,revision,current,body) VALUES(?,?,?,?,1,?)",
