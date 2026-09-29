@@ -1,12 +1,24 @@
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { constants } from "node:fs";
-import { chmod, copyFile, mkdir, realpath, stat, unlink } from "node:fs/promises";
+import { chmod, copyFile, mkdir, readdir, realpath, stat, unlink } from "node:fs/promises";
 import { delimiter, dirname, isAbsolute, resolve } from "node:path";
 
 const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
 const MAX_BATCH_BYTES = 100 * 1024 * 1024;
+const EVIDENCE_TTL_MS = 60 * 60 * 1000;
 const INBOUND_SESSIONS = Symbol.for("pap.librarian.inboundSessions");
+
+async function pruneEvidenceMedia(directory) {
+  for (const name of await readdir(directory)) {
+    if (!/^evidence-[0-9a-f-]{36}\.jpg$/.test(name)) continue;
+    const path = resolve(directory, name);
+    const info = await stat(path).catch(() => null);
+    if (info?.isFile() && Date.now() - info.mtimeMs > EVIDENCE_TTL_MS) {
+      await unlink(path).catch(() => {});
+    }
+  }
+}
 
 // OpenClaw can load hook and tool registrations through separate plugin instances.
 // Keep the short-lived inbound binding in the process realm shared by both.
@@ -179,6 +191,7 @@ export function librarianEvidenceTool(config, ctx, bridge = runEvidenceBridge) {
       }
       const deliveryRoot = resolve(config.deliveryMediaRoot);
       const outbound = resolve(deliveryRoot, `evidence-${randomUUID()}.jpg`);
+      let queued = false;
       try {
         const info = await stat(path);
         if (!info.isFile() || info.size < 1 || info.size > MAX_IMAGE_BYTES) {
@@ -186,6 +199,7 @@ export function librarianEvidenceTool(config, ctx, bridge = runEvidenceBridge) {
         }
         await mkdir(deliveryRoot, { recursive: true, mode: 0o700 });
         await chmod(deliveryRoot, 0o700);
+        await pruneEvidenceMedia(deliveryRoot);
         await copyFile(path, outbound, constants.COPYFILE_EXCL);
         await chmod(outbound, 0o600);
         await ctx.delivery.send({ text: result.source_status === "pending_review" ?
@@ -194,9 +208,12 @@ export function librarianEvidenceTool(config, ctx, bridge = runEvidenceBridge) {
             `扫描件 OCR 缺口原图局部：${result.capture_id} 缺口 ${result.gap_index}` :
             `原图局部证据：${result.trace_id}`,
           mediaUrl: outbound });
+        queued = true;
+        // send may only queue the payload; the channel can open mediaUrl later.
+        setTimeout(() => unlink(outbound).catch(() => {}), EVIDENCE_TTL_MS).unref();
       } finally {
         await unlink(path).catch(() => {});
-        await unlink(outbound).catch(() => {});
+        if (!queued) await unlink(outbound).catch(() => {});
       }
       return { content: [{ type: "text", text: JSON.stringify({
         trace_id: result.trace_id ?? null, capture_id: result.capture_id,

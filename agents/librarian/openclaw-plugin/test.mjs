@@ -190,7 +190,7 @@ test("review finalization requires a fresh bound inbound message", async () => {
     { ...trusted, requesterSenderId: "stranger" }, recent, bridge, 1001), null);
 });
 
-test("evidence tool sends only to the bound route and removes temporary media", async () => {
+test("evidence tool retains queued media for channel delivery and removes bridge media", async () => {
   const stateRoot = await mkdtemp(join(tmpdir(), "librarian-evidence-"));
   try {
     const evidenceDir = join(stateRoot, "delivery-evidence");
@@ -219,11 +219,39 @@ test("evidence tool sends only to the bound route and removes temporary media", 
     assert.ok(sent[0].mediaUrl.startsWith(deliveryMediaRoot + "/evidence-"));
     assert.equal(JSON.parse(receipt.content[0].text).delivery_status, "queued");
     await assert.rejects(() => import("node:fs/promises").then(({ stat }) => stat(mediaPath)));
-    await assert.rejects(() => import("node:fs/promises").then(({ stat }) => stat(sent[0].mediaUrl)));
+    const deferredBytes = await import("node:fs/promises").then(({ readFile }) =>
+      readFile(sent[0].mediaUrl));
+    assert.deepEqual(deferredBytes, Buffer.from("synthetic crop"));
     assert.equal(librarianEvidenceTool({ ...config, stateRoot },
       { ...trusted, requesterSenderId: "other" }, bridge), null);
     assert.equal(librarianEvidenceTool({ ...config, stateRoot, deliveryMediaRoot },
       { ...trusted, delivery: undefined }, bridge), null);
+  } finally {
+    await rm(stateRoot, { recursive: true, force: true });
+  }
+});
+
+test("evidence tool cleans media when channel queueing fails", async () => {
+  const stateRoot = await mkdtemp(join(tmpdir(), "librarian-evidence-failure-"));
+  try {
+    const evidenceDir = join(stateRoot, "delivery-evidence");
+    const deliveryMediaRoot = join(stateRoot, "allowed-media");
+    await import("node:fs/promises").then(({ mkdir }) => mkdir(evidenceDir));
+    const mediaPath = join(evidenceDir, "evidence-fixture.jpg");
+    await writeFile(mediaPath, Buffer.from("synthetic crop"));
+    const trusted = { agentId: "librarian", requesterSenderId: "person",
+      messageChannel: "telegram", agentAccountId: "bot",
+      deliveryContext: { channel: "telegram", accountId: "bot" },
+      delivery: { send: async () => { throw new Error("channel unavailable"); } } };
+    const bridge = async () => ({ trace_id: "rt_fixture", capture_id: "capture_fixture",
+      media_path: mediaPath });
+    const tool = librarianEvidenceTool({ ...config, stateRoot, deliveryMediaRoot }, trusted, bridge);
+    await assert.rejects(() => tool.execute("call", { trace_id: "rt_fixture" }),
+      /channel unavailable/);
+    const files = await import("node:fs/promises").then(({ readdir }) =>
+      readdir(deliveryMediaRoot));
+    assert.deepEqual(files, []);
+    await assert.rejects(() => import("node:fs/promises").then(({ stat }) => stat(mediaPath)));
   } finally {
     await rm(stateRoot, { recursive: true, force: true });
   }
