@@ -29,6 +29,29 @@ def test_marked_sentence_start_near_prior_punctuation_is_clipped() -> None:
     assert box[0] > .69
 
 
+def test_middle_line_of_continuous_underline_keeps_text_before_period() -> None:
+    observation = {"links": [{"from_id": "underline_27", "to_id": "underline_28",
+                              "kind": "continues"},
+                             {"from_id": "underline_28", "to_id": "underline_29",
+                              "kind": "continues"}],
+                   "printed_regions": [{"id": "print_28", "bbox": [.6, .7, .9, .73],
+                                        "text": {"text": "是帕森斯，多亏帕森斯"}}]}
+    line = {"id": 28, "bbox": [.2, .7, .9, .73],
+            "ocr_text": "多花时间思考他们究竟是如何获得大师地位的。是帕森斯，多亏帕森斯"}
+    ocr._restore_interior_marked_lines(observation, [line])
+    region = observation["printed_regions"][0]
+    assert region["text"]["text"].startswith("多花时间思考")
+    assert region["bbox"] == line["bbox"]
+
+
+def test_long_midline_stroke_clips_unmarked_prefix() -> None:
+    line = {"ocr_text": "个学科的“老手”，都相信涂尔干或韦伯的古典大师地位已经理所当然到没必要再",
+            "bbox": [.2, .7, .9, .73], "underline_span": [.2777, .9917]}
+    value, box = ocr._visible_marked_text(line, recover_span=True)
+    assert value.startswith("都相信")
+    assert box[0] > line["bbox"][0]
+
+
 def test_generic_ocr_keeps_mark_without_epub(monkeypatch) -> None:
     import rapidocr
 

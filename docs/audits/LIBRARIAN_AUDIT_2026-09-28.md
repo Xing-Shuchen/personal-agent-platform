@@ -326,3 +326,15 @@ v8 本地 OCR 局部重试：强划线而整页 OCR 无法匹配 EPUB 的正文�
 增加 `librarian_review_finalize`：只有当前 run 的每个候选都有来源绑定的接受/拒绝决定，且用户明确要求替换整张扫描件的旧组、旧 trace ID+revision 与最新快照完全一致时才通过正式版本化对账；旧 trace 变 superseded，接受候选按原 observation 建新 trace，更正文本标记 `user_statement`，索引和事件沿用 pipeline，随后触发 worker 导出 Vault。知识依赖和用户已更正旧 trace 继续阻断。合成端到端测试覆盖一条接受、一条拒绝、提前提交拒绝与同源幂等；Python 102 项、Node 12 项通过，Gateway 重启、飞书长连接启动。生产 5 张图尚无审核账本决定，新工具无真实飞书调用，故不能把本地测试视为首书入库完成。
 
 回归时发现审核列表用秒级 `created_at` 加随机 run ID 选“最新”；同一秒内创建旧成功 run 与新 pending run 时可能反选旧版，表现为待审核图消失。改为按 records 插入 rowid 选当前最新 run；同秒合成对账测试稳定通过，生产第 39 页仍指向 v10 pending run。此修复只影响审核定位，不自动提升内容。
+
+11:22–11:23 用户按新提示发来真实飞书审核消息。agent 先调用 `librarian_review` 列出 5 张当前待对账图，再查第 39/40 页扫描件的两个候选；随后调用 `librarian_review_decision`，以 v10 run `run_f673f47233794ead9b97480326ca0bce` 和稳定候选 `candidate_0dd1e286dac983485c6c8fc8` 记录第 39 页「接受」，工具回报 recorded，生产审核账本有同一决定。agent 还分别调用 `librarian_evidence` 投送第 39、40 页扫描局部，工具回报 queued；客户端是否显示仍需用户确认。第 40 页未决定，`librarian_review_finalize` 未调用，活跃 trace 与 Vault 未替换。这个真实调用证明审核决定入口可用，但不等于整图入库验收。
+
+用生产 Library 的隔离副本和单独的临时 Vault 演练另一阶段：模拟接受第 39 页、拒绝第 40 页后，正式对账将原扫描 5 条旧 trace 版本化 supersede、新建 1 条第 39 页 trace；活跃总数在副本中 208→204。基于现有生成笔记的历史 trace 锚点，`_consolidate_generated_note` 校验旧内容后在临时 Vault 渲染了新 trace 与「正是帕森斯」文字，不嵌入原图。此为结构和刷新路径验证，模拟决定未写入生产，也不能代替用户对第 40 页的判断。
+
+第 40 页局部目视确有连续多行手划线，但 v10 候选漏掉第二行句号前「多花时间思考他们究竟是如何获得大师地位的。」；原因是逐行按单条最连续墨迹截句，忽略其与上下行同属一组。增加可选 `recover_span` 路径：内部行保留完整 OCR 文字，并在已确认有强墨迹的行内合并横跨不同高度的波浪线片段，以估计首尾边界；只读原图重跑可恢复第二行，并将首行未画线的「个学科的‘老手’」排除。阈值不由合并结果提高，避免单靠密集印刷笔画新增标记；合成测试覆盖该边界。该选项默认关闭，生产 v10 observation/候选未重跑，用户刚记录的第 39 页决定仍绑定原 run，绝不能把这次只读重跑当成已更新的审核候选或 Vault 文本。
+
+11:30–11:33 用户在真实飞书确认两张局部已收到，指出第 40 页候选不应含「个学科的老手」，应从「涂尔干或韦伯的古典大师地位……」开始；随后明确「接受。这块你可以和 epub 文件对齐」。agent 在第二条入站调用 `librarian_review_decision`，将第 40 页稳定候选记为 accept，并提交从用户指定起点至照片可见终点的完整更正文字。账本现有第 39、40 页两条 accept；第 40 页文字经服务端对原图关联 OCR 起止锚点和该 EPUB 匹配度 1.0 校验。agent 未调用整图 finalize。独立副本使用这两条生产审核决定正式对账得 2 条新 trace、总活跃 205，并在临时 Vault 验证两条文字均可渲染。
+
+11:38 正式 worker 基于两条受信审核决定自动对账第 39/40 页扫描件：只在旧 trace 全为空文本、旧版本更正事件仅为 `capture resolution`、所有新候选均有决定、照片 OCR 起止与 EPUB 一致时自动执行。生产旧 5 条空文本 trace 已 superseded，新建 2 条活跃 trace（第 39 页 printed_text basis=vision；第 40 页更正 basis=user_statement），活跃总数 208→205，待对账 capture 5→4。Obsidian《社会理论二十讲》生成笔记包含两条新 trace 与用户批准的第 40 页全文，未嵌原图；`batch_528...-revision-8dc44caebfca13f8.json` 于 11:38 记录修订通知已投送。客户端是否显示通知仍需用户确认。另 4 张扫描图与大批 unknown 页码继续待核对，不能称整本书验收完成。
+
+11:43 后续周期 worker 对第 45 页扫描件的 0→0 冲突完成无标记对账：局部视觉复核明确 `has_underline=false`、无 OCR 缺口，故以 `visual_negative_no_marks` 清除该待对账状态，没有新建 trace。生产批次状态现列 3 张待对账扫描件，活跃总数仍为 205。其一是倒置的第 65/66 页附近扫描，原图局部可见「行动参照框架（action frame of reference）」连续画线，但该候选页码为 unknown，尚未审核入库；另两张分别有边注转写差异和第 41 页画线判断冲突。不能因第 45 页无标记对账而推断余下扫描可自动处理。

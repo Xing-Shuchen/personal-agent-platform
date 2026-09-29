@@ -25,6 +25,7 @@ from xml.etree import ElementTree as ET
 from PIL import Image, ImageOps
 
 from .ocr import ocr_extractor, openclaw_note_refiner, openclaw_underline_refiner
+from .gateway_review_finalize import auto_reconcile_fully_reviewed
 from .pipeline import (process_capture, reconcile_extraction, bind_fingerprint_context,
                        _repair_trace_index_best_effort)
 from .vision import openclaw_extractor
@@ -733,6 +734,12 @@ def _process_batch(lib: Library, root: Path, vault: Path | None, owner: str,
                     observation["symbols"]):
                 return local
             return vision_extractor(original)
+    for capture_id in batch["capture_ids"]:
+        try:
+            auto_reconcile_fully_reviewed(lib, owner, capture_id)
+        except LibrarianError as error:
+            if error.code not in {"RECONCILIATION_REQUIRED", "REVISION_CONFLICT"}:
+                raise
     runs = [run for run in _current(lib, owner, "ProcessingRun")
             if run["capture_id"] in batch["capture_ids"] and
             run["extractor_version"] == version and

@@ -3,7 +3,8 @@ from pathlib import Path
 import pytest
 
 from agents.librarian.runtime.gateway_review_decision import record_review_decision
-from agents.librarian.runtime.gateway_review_finalize import finalize_review
+from agents.librarian.runtime.gateway_review_finalize import (
+    auto_reconcile_fully_reviewed, finalize_review)
 from agents.librarian.runtime.gateway_review import pending_extractions
 from agents.librarian.runtime.pipeline import process_capture
 from agents.librarian.runtime.store import Library, LibrarianError
@@ -119,6 +120,7 @@ def test_complete_review_reconciles_through_versioned_pipeline(tmp_path: Path) -
                                           "revision": item["revision"]}
                                          for item in detail["current"]],
                     "replace_all_current": True}
+        assert auto_reconcile_fully_reviewed(lib, "owner", capture) is None
         result = finalize_review(lib, approval)
         assert (result["accepted"], result["rejected"]) == (1, 1)
         assert finalize_review(lib, approval) == result

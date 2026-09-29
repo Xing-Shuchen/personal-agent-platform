@@ -137,7 +137,8 @@ def _box(points: list[list[float]], width: int, height: int) -> list[float]:
             round(min(1.0, max(xs) / width), 5), round(min(1.0, max(ys) / height), 5)]
 
 
-def _underline_evidence(gray, points: list[list[float]]) -> tuple[float, list[float]]:
+def _underline_evidence(gray, points: list[list[float]], *,
+                        recover_span: bool = False) -> tuple[float, list[float]]:
     import cv2
     import numpy as np
 
@@ -167,11 +168,26 @@ def _underline_evidence(gray, points: list[list[float]]) -> tuple[float, list[fl
             score = (end - start) / width
             if score > best:
                 best, best_span = score, (int(start), int(end))
+    # A hand-drawn line waves between rows. Its longest single-row segment
+    # can start far inside the true stroke. Union the lower band only to
+    # locate a strong mark already established by the single-row test; dense
+    # printed glyphs alone must not raise the mark score.
+    if recover_span and best >= .10:
+        band = ink[int(height * .75):min(target_height, int(height * 1.5))].max(axis=0)
+        joined = cv2.morphologyEx(band.reshape(1, -1), cv2.MORPH_CLOSE,
+                                  np.ones((1, 15), np.uint8))[0]
+        changes = np.diff(np.r_[0, joined.astype(int), 0])
+        spans = list(zip(np.flatnonzero(changes == 1), np.flatnonzero(changes == -1)))
+        if spans:
+            extended = max(spans, key=lambda pair: pair[1] - pair[0])
+            extent = (extended[1] - extended[0]) / width
+            if extent >= .25 and extent >= best + .10:
+                best_span = (int(extended[0]), int(extended[1]))
     return round(best, 4), [round(best_span[0] / width, 4),
                             round(best_span[1] / width, 4)]
 
 
-def _visible_marked_text(line: dict) -> tuple[str, list[float]]:
+def _visible_marked_text(line: dict, *, recover_span: bool = False) -> tuple[str, list[float]]:
     """Keep the photographed sentence around the detected ink, never EPUB context."""
     value = line["ocr_text"]
     box = line["bbox"]
@@ -184,6 +200,8 @@ def _visible_marked_text(line: dict) -> tuple[str, list[float]]:
     before = [index for index in boundaries if index / len(value) < span[0] + .015]
     after = [index for index in boundaries if index / len(value) > span[1] + .01]
     start = max(before, default=0)
+    if recover_span and not before and span[0] >= .18 and span[1] - span[0] >= .35:
+        start = max(0, round(span[0] * len(value)) - 1)
     end = min(after, default=len(value))
     if start >= end:
         return value, box
@@ -191,6 +209,27 @@ def _visible_marked_text(line: dict) -> tuple[str, list[float]]:
     clipped = [round(box[0] + width * start / len(value), 5), box[1],
                round(box[0] + width * end / len(value), 5), box[3]]
     return value[start:end].strip(), clipped
+
+
+def _restore_interior_marked_lines(observation: dict, lines: list[dict]) -> None:
+    """Keep the full photographed OCR line between two linked ink lines.
+
+    A sentence boundary inside a continuous multi-line underline must not
+    discard the beginning of the second line merely because a short segment
+    of its ink was detected after the boundary.
+    """
+    links = [item for item in observation["links"] if item["kind"] == "continues"]
+    interior = {item["from_id"] for item in links} & {item["to_id"] for item in links}
+    by_mark = {f'underline_{line["id"]}': line for line in lines}
+    by_print = {item["id"]: item for item in observation["printed_regions"]}
+    for mark_id in interior:
+        line = by_mark.get(mark_id)
+        if line is None:
+            continue
+        region = by_print.get(f'print_{line["id"]}')
+        if region is not None:
+            region["text"]["text"] = line["ocr_text"]
+            region["bbox"] = line["bbox"]
 
 
 def _retry_ink_line_ocr(engine, image: Image.Image, line: dict,
@@ -300,7 +339,8 @@ def openclaw_underline_refiner(crop: bytes) -> tuple[dict, dict]:
 def ocr_extractor(*, epub: Path | None = None, max_edge: int = 2000,
                   max_pixels: int = 2_000_000,
                   note_refiner: Callable[[bytes], tuple[str, dict]] | None = None,
-                  underline_refiner: Callable[[bytes], tuple[dict, dict]] | None = None):
+                  underline_refiner: Callable[[bytes], tuple[dict, dict]] | None = None,
+                  recover_span: bool = False):
     """Return a reusable local extractor; only evidence on the photo is traced."""
     from rapidocr import RapidOCR
     import cv2
@@ -331,7 +371,8 @@ def ocr_extractor(*, epub: Path | None = None, max_edge: int = 2000,
             points = [[float(coord) for coord in point] for point in quad]
             box = _box(points, width, height)
             epub_text, match = groundtruth.match(str(text)) if groundtruth else (None, 0.0)
-            stroke_score, stroke_span = _underline_evidence(gray, points)
+            stroke_score, stroke_span = (_underline_evidence(gray, points, recover_span=True)
+                                         if recover_span else _underline_evidence(gray, points))
             lines.append({"id": index, "bbox": box, "quad": points, "ocr_text": str(text),
                           "ocr_score": round(float(score), 4), "epub_text": epub_text,
                           "epub_match": round(float(match), 4),
@@ -475,7 +516,8 @@ def ocr_extractor(*, epub: Path | None = None, max_edge: int = 2000,
                     continue
                 label = f'print_{line["id"]}'
                 region_id = region_for(box)
-                visible_text, text_box = _visible_marked_text(line)
+                visible_text, text_box = _visible_marked_text(line,
+                                                               recover_span=recover_span)
                 observation["printed_regions"].append(_detection(
                     label, text_box, "printed", visible_text,
                     line["ocr_score"], basis="vision",
@@ -502,6 +544,8 @@ def ocr_extractor(*, epub: Path | None = None, max_edge: int = 2000,
                     observation["links"].append({"from_id": prior_id,
                                                  "to_id": current_id,
                                                  "kind": "continues", "confidence": .9})
+            if recover_span:
+                _restore_interior_marked_lines(observation, lines)
             underline_refinements = []
             if underline_refiner and marked:
                 groups: list[list[tuple[dict, str]]] = []
