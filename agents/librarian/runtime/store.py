@@ -293,6 +293,15 @@ class Library:
                 if target["revision"] is None:
                     raise LibrarianError("VALIDATION_FAILED", "trace relation target needs a revision")
                 self._record_version(owner, "ReadingTrace", target["id"], target["revision"])
+        elif model == "ReadingTrace" and record["medium"] != "physical":
+            self._check_catalog_chain(
+                owner, work_id=record["work_id"], edition_id=record["edition_id"],
+                book_instance_id=record["book_instance_id"])
+            if record["session_id"]:
+                session = self._current_link(owner, "ReadingSession", record["session_id"])
+                for field in ("work_id", "edition_id", "book_instance_id"):
+                    if session[field] and record[field] != session[field]:
+                        raise LibrarianError("VALIDATION_FAILED", "digital trace and session disagree")
         elif model == "ReadingTrace" and record["medium"] == "physical":
             source = record["source"]
             capture_id = source["capture_id"]

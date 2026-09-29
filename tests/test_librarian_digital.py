@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -48,6 +49,28 @@ def test_parsers_keep_source_identity_and_separate_comment():
     assert title == "Synthetic Koodo Book"
     assert len(entries) == 2
     assert entries[0]["chapter"] == "Chapter A"
+
+
+def test_storage_rejects_digital_trace_with_foreign_or_missing_catalog(tmp_path: Path) -> None:
+    with Library(tmp_path) as lib:
+        trace = ingest_export(lib, "owner_a", "weread", "book.md", WEREAD)[0]
+        foreign = {"object_type": "Work", "schema_version": "0.1.0",
+                   "id": "work_foreign", "owner_id": "owner_b",
+                   "created_at": trace["created_at"], "title": "Foreign book",
+                   "original_title": None, "authors": [], "identifiers": [],
+                   "revision": 1, "supersedes_revision": None}
+        lib.register("owner_b", foreign)
+        for suffix, work_id in (("foreign", "work_foreign"),
+                                ("missing", "work_missing")):
+            forged = json.loads(json.dumps(trace))
+            forged["id"] = f"rt_digital_{suffix}"
+            forged["work_id"] = work_id
+            with pytest.raises(LibrarianError) as rejected:
+                with lib.transaction():
+                    lib._put(forged)
+            assert rejected.value.code == "VALIDATION_FAILED"
+            assert lib.db.execute("SELECT 1 FROM records WHERE id=?",
+                                  (forged["id"],)).fetchone() is None
 
 
 def test_export_commit_survives_index_failure(tmp_path: Path, monkeypatch) -> None:
