@@ -19,8 +19,27 @@ from .store import Library, LibrarianError
 MAX_INPUT_BYTES = 8192
 
 
+def _analysis_rotation(lib: Library, owner: str, *, observation_id: str | None = None,
+                       run_id: str | None = None) -> int:
+    """Orient a delivery crop as it appeared to the extractor."""
+    if observation_id:
+        observation = lib.get(owner, "PageObservation", observation_id)
+    elif run_id and hasattr(lib, "db"):
+        row = lib.db.execute(
+            "SELECT body FROM records WHERE owner_id=? AND model='PageObservation' "
+            "AND current=1 AND json_extract(body,'$.processing_run_id')=?",
+            (owner, run_id)).fetchone()
+        observation = json.loads(row[0]) if row else None
+    else:
+        observation = None
+    if not observation:
+        return 0
+    return (180 if "Upside-down scan analyzed after 180-degree rotation"
+            in observation.get("warnings", []) else 0)
+
+
 def _pending_crop(lib: Library, owner: str, capture_id: str, candidate_index: int | None,
-                  candidate_id: str | None) -> tuple[bytes, dict]:
+                  candidate_id: str | None) -> tuple[bytes, dict, int]:
     detail = pending_extractions(lib, owner, capture_id)
     if candidate_id is not None:
         matches = [index for index, item in enumerate(detail["proposed"])
@@ -49,7 +68,8 @@ def _pending_crop(lib: Library, owner: str, capture_id: str, candidate_index: in
                                 "candidate_index": candidate_index,
                                 "candidate_id": candidate["candidate_id"],
                                 "page": candidate["page"],
-                                "source_status": "pending_review"}
+                                "source_status": "pending_review"}, _analysis_rotation(
+                                    lib, owner, run_id=detail.get("pending_run_id"))
 
 
 def prepare_evidence(lib: Library, owner: str, trace_id: str | None, directory: Path,
@@ -66,6 +86,8 @@ def prepare_evidence(lib: Library, owner: str, trace_id: str | None, directory: 
         crop_bytes = render_trace_crop(lib, owner, trace_id, context=.2)
         source = {"trace_id": trace_id, "capture_id": trace["source"]["capture_id"],
                   "source_status": "stored_trace"}
+        rotation = _analysis_rotation(
+            lib, owner, observation_id=trace["source"].get("observation_id"))
     else:
         if not isinstance(capture_id, str) or not capture_id.startswith("capture_"):
             raise LibrarianError("VALIDATION_FAILED", "capture ID required")
@@ -74,9 +96,12 @@ def prepare_evidence(lib: Library, owner: str, trace_id: str | None, directory: 
         if candidate_id is not None and (not isinstance(candidate_id, str) or
                                          not candidate_id.startswith("candidate_")):
             raise LibrarianError("VALIDATION_FAILED", "candidate ID required")
-        crop_bytes, source = _pending_crop(lib, owner, capture_id, candidate_index, candidate_id)
+        crop_bytes, source, rotation = _pending_crop(
+            lib, owner, capture_id, candidate_index, candidate_id)
     with Image.open(io.BytesIO(crop_bytes)) as image_source:
         crop = image_source.convert("RGB")
+        if rotation:
+            crop = crop.rotate(rotation, expand=True)
         crop.thumbnail((2200, 2200))
         directory.mkdir(parents=True, exist_ok=True, mode=0o700)
         for old in directory.glob("evidence-*.jpg"):

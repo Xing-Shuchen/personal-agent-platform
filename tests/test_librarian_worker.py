@@ -9,11 +9,23 @@ from PIL import Image
 
 from agents.librarian.runtime.store import Library, LibrarianError, _now, _unknown_time
 from agents.librarian.runtime.worker import (_catalog, _current, _hide_vault_markers,
+                                             _latest_pending_review_ids,
                                              _remove_vault_images, _sync_digital,
                                              _render_batch_note, _render_batch_note_legacy,
                                              _refresh_generated_note, _review_digest,
                                              _notify_correction,
                                              _repair_legacy_auto_affinity)
+
+
+def test_only_latest_pending_run_reopens_a_capture() -> None:
+    runs = [
+        {"capture_id": "resolved", "outcome": "pending",
+         "issues": ["RECONCILIATION_REQUIRED"]},
+        {"capture_id": "still_pending", "outcome": "pending",
+         "issues": ["RECONCILIATION_REQUIRED"]},
+        {"capture_id": "resolved", "outcome": "success", "issues": []},
+    ]
+    assert _latest_pending_review_ids(runs) == {"still_pending"}
 
 
 def _epub(path: Path) -> None:

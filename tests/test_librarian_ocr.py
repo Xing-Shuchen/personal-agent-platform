@@ -3,6 +3,7 @@ import json
 from types import SimpleNamespace
 
 from PIL import Image
+import pytest
 
 from agents.librarian.runtime import ocr
 from agents.librarian.runtime.ocr import _visible_marked_text
@@ -79,16 +80,21 @@ def test_generic_ocr_keeps_mark_without_epub(monkeypatch) -> None:
     assert json.loads(output.raw)["epub_sha256"] is None
 
 
-def test_printed_header_number_outweighs_inline_marginal_number(monkeypatch) -> None:
+@pytest.mark.parametrize("offset", [0, 200])
+def test_printed_header_number_outweighs_inline_marginal_number(monkeypatch, offset) -> None:
     from agents.librarian.runtime import ocr
     import rapidocr
 
-    body_boxes = [[[150, top], [800, top], [800, top + 32], [150, top + 32]]
+    body_boxes = [[[150, top + offset], [800, top + offset],
+                   [800, top + offset + 32], [150, top + offset + 32]]
                   for top in (100, 190, 280, 370, 460)]
-    boxes = ([[480, 45], [670, 45], [670, 65], [480, 65]],
-             [[680, 45], [705, 45], [705, 65], [680, 65]],
+    boxes = ([[480, 45 + offset], [670, 45 + offset],
+              [670, 65 + offset], [480, 65 + offset]],
+             [[680, 45 + offset], [705, 45 + offset],
+              [705, 65 + offset], [680, 65 + offset]],
              *body_boxes,
-             [[810, 570], [835, 570], [835, 590], [810, 590]])
+             [[810, 570 + offset], [835, 570 + offset],
+              [835, 590 + offset], [810, 590 + offset]])
     texts = ["第二讲帕森斯与社会学理论", "23",
              *[f"这里是第{i}行完整的印刷正文，包含一整句话。" for i in range(5)], "41"]
     result = SimpleNamespace(boxes=boxes, txts=texts, scores=[.95] * len(texts))

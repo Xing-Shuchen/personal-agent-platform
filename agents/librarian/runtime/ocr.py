@@ -407,7 +407,11 @@ def ocr_extractor(*, epub: Path | None = None, max_edge: int = 2000,
             for line in lines:
                 value = re.fullmatch(r"\s*(\d{1,3})\s*", line["ocr_text"])
                 box = line["bbox"]
-                if not value or box[1] > .12 or not page_box[0] <= box[0] < box[2] <= page_box[2]:
+                # A photographed page can begin well below the image edge.
+                # The header sits above its first body line, regardless of
+                # how much desk/background the photo includes.
+                if (not value or box[1] >= top - .005 or
+                        not page_box[0] <= box[0] < box[2] <= page_box[2]):
                     continue
                 center_y = (box[1] + box[3]) / 2
                 adjacent_header = any(

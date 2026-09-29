@@ -40,6 +40,14 @@ def _current(lib: Library, owner: str, model: str) -> list[dict]:
     return [json.loads(row["body"]) for row in rows]
 
 
+def _latest_pending_review_ids(runs: list[dict]) -> set[str]:
+    """Older pending versions must not reopen a later reconciled capture."""
+    latest = {run["capture_id"]: run for run in runs}
+    return {capture_id for capture_id, run in latest.items()
+            if run["outcome"] == "pending" and
+            "RECONCILIATION_REQUIRED" in run["issues"]}
+
+
 def _epub_metadata(path: Path) -> dict:
     values: dict[str, list[str]] = {}
     with ZipFile(path) as archive:
@@ -713,11 +721,9 @@ def _process_batch(lib: Library, root: Path, vault: Path | None, owner: str,
         epub_hash = hashlib.sha256(epub.read_bytes()).hexdigest()[:16]
         version = f"rapidocr-epub-notes-v8:{isbn}:{epub_hash}"
         extractor = ocr_extractor(epub=epub, note_refiner=openclaw_note_refiner)
-        pending_review_ids = {run["capture_id"] for run in _current(lib, owner, "ProcessingRun")
-                              if run["outcome"] == "pending" and
-                              run["extractor_version"] == version and
-                              "RECONCILIATION_REQUIRED" in run["issues"]}
-        review_version = f"rapidocr-epub-notes-v10-vision:{isbn}:{epub_hash}"
+        pending_review_ids = _latest_pending_review_ids(
+            _current(lib, owner, "ProcessingRun"))
+        review_version = f"rapidocr-epub-notes-v11-vision:{isbn}:{epub_hash}"
         review_extractor = (ocr_extractor(epub=epub, note_refiner=openclaw_note_refiner,
                                           underline_refiner=openclaw_underline_refiner)
                             if pending_review_ids else None)
@@ -740,6 +746,10 @@ def _process_batch(lib: Library, root: Path, vault: Path | None, owner: str,
         except LibrarianError as error:
             if error.code not in {"RECONCILIATION_REQUIRED", "REVISION_CONFLICT"}:
                 raise
+    latest_runs = {run["capture_id"]: run for run in
+                   _current(lib, owner, "ProcessingRun")}
+    if match:
+        pending_review_ids = _latest_pending_review_ids(list(latest_runs.values()))
     runs = [run for run in _current(lib, owner, "ProcessingRun")
             if run["capture_id"] in batch["capture_ids"] and
             run["extractor_version"] == version and
@@ -776,6 +786,14 @@ def _process_batch(lib: Library, root: Path, vault: Path | None, owner: str,
             _atomic_write(snapshot, json.dumps(old_traces, ensure_ascii=False).encode())
     extraction_issues = []
     for capture_id in batch["capture_ids"]:
+        latest_run = latest_runs.get(capture_id)
+        if (match and capture_id not in pending_review_ids and latest_run and
+                latest_run["outcome"] in {"success", "partial"} and
+                latest_run["extractor_version"].startswith("rapidocr-epub-notes-v") and
+                latest_run["extractor_version"] != version):
+            # A reviewed scan can have an older pending v8 run. Keep its
+            # newer successful result instead of replaying that old version.
+            continue
         if match:
             try:
                 bind_fingerprint_context(lib, owner, capture_id)

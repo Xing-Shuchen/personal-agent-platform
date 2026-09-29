@@ -47,6 +47,34 @@ def test_digital_trace_cannot_be_opened_as_a_photo(tmp_path: Path) -> None:
     assert error.value.code == "VALIDATION_FAILED"
 
 
+def test_upside_down_trace_crop_is_upright_for_delivery(tmp_path: Path) -> None:
+    source = BytesIO()
+    image = Image.new("RGB", (200, 200), "red")
+    from PIL import ImageDraw
+    ImageDraw.Draw(image).rectangle((0, 100, 199, 199), fill="blue")
+    image.save(source, "PNG")
+
+    class FakeLibrary:
+        def get(self, owner, model, identifier):
+            assert owner == "owner"
+            if model == "ReadingTrace":
+                return {"medium": "physical", "location": {"kind": "physical",
+                        "bbox": [0, 0, 1, 1], "page_bbox": [0, 0, 1, 1]},
+                        "source": {"capture_id": "capture_one",
+                                   "observation_id": "observation_one"}}
+            assert (model, identifier) == ("PageObservation", "observation_one")
+            return {"warnings": ["Upside-down scan analyzed after 180-degree rotation"]}
+
+        def read_original(self, owner, capture_id):
+            assert (owner, capture_id) == ("owner", "capture_one")
+            return source.getvalue()
+
+    result = prepare_evidence(FakeLibrary(), "owner", "rt_one", tmp_path / "delivery")
+    with Image.open(result["media_path"]) as crop:
+        assert crop.getpixel((100, 25))[2] > 200
+        assert crop.getpixel((100, 175))[0] > 200
+
+
 def test_pending_scan_crop_uses_review_candidate_without_promotion(tmp_path: Path, monkeypatch) -> None:
     source = BytesIO()
     image = Image.new("RGB", (1000, 800), "white")
