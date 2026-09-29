@@ -553,3 +553,5 @@ B 的后续清单：现有 11 张旧版多页区照片与笔记时间来源已�
 本轮复跑完整 Python 套件 **511 passed**（4 条弃用警告），离线契约 77 定义、18 入口、42 正例、43 反例通过；OpenClaw 插件 **16/16** 测试通过。正式首书仍为 **0/27 页人工确认**；因此候选文字、漏检和手写正确性仍待用户在审核页判断，不能以自动测试代签。
 
 运行态只读检查：`openclaw-gateway.service` 为 active/running，`pap-librarian-intake` 为 loaded/enabled、1 个 typed hook、7 个工具、0 diagnostics；正式 owner 下《社会理论二十讲》p.39 的现有检索返回 6 个 hit。数字同步状态文件最近一次完成时间为 2026-09-29 12:50 UTC，Koodo 118 条、WeRead 4 条均为 unchanged/success。检索命中和同步状态不能代替真实飞书入站问答、上游真实增改删或客户端投送验收。
+
+正式数据只读完整性检查：27 张当前 PageCapture、81 个当前 PageObservation/ProcessingRun（含 54 个重复 run）、73 条活跃纸书 trace，0 条纸书 trace 标记为人工复核完成；Vault 笔记有 73 个隐藏 trace 锚点。对象审计检查 814 处引用、257 个唯一私有对象，257/257 文件大小与 SHA-256 一致，0 缺失、0 孤儿、0 无效 JSON。该检查证明存储结构完整，不能证明画线识别正确。
