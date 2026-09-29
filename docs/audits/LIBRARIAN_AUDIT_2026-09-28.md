@@ -16,7 +16,7 @@
 | 用户明确延期 | 普通新图旁注/角括号发现和严格墨线与 EPUB 扩句边界本轮跳过；§38.1 四图与底稿暂缓 | §14–15、spec 末尾首书决策；不记为能力通过 |
 | 正式运行核验 | 真人手写判断、真实飞书错误/附件重放/平台投送与客户端显示、数字上游变化和慢源恢复留待现场 | §§9、15、19；当前 Gateway active，插件上轮检查 loaded，无上述新现场结论 |
 
-上表只标识已交付的功能与待运行证据，不把本地测试升级为 `release-v0.8` 全部 AC 通过。第 1–10 节出现的旧 RapidOCR 路径、旧 trace 数量和旧待审 run 均是历史记录；现行入口及数据以 §§10–26 的较新状态为准，原始 F01–F08 的当前判定见 §25，R3 条款映射见 §26。
+上表只标识已交付的功能与待运行证据，不把本地测试升级为 `release-v0.8` 全部 AC 通过。第 1–10 节出现的旧 RapidOCR 路径、旧 trace 数量和旧待审 run 均是历史记录；现行入口及数据以 §§10–27 的较新状态为准，原始 F01–F08 的当前判定见 §25，R3 条款映射见 §26，R1 写入口清单见 §27。
 
 ## 1. 审计边界与方法
 
@@ -499,7 +499,7 @@ B 的后续清单：现有 11 张旧版多页区照片与笔记时间来源已�
 
 | 任务 / 对应批次 | 实施步骤 | 验证与交付物 | 当前边界 |
 |---|---|---|---|
-| R1 · 领域引用与事务（C，F07/F08） | 按规范 §30 逐项列出 `store.py`、`pipeline.py`、知识晋升、review/finalize、数字 adapter 的写入口；检查 owner 链、引用存在性、revision/current 指针、detection/observation/resolution 关联、事件与 trace 同事务、原始 evidence 只增不改。用旧库迁移样本复核新约束 | 每条不变量对应执行位置和正反例；跨 owner、悬空引用、旧 revision、知识依赖及人工修正的失败均无部分提交；注入索引故障后从已存 trace 恢复，extractor 调用次数不增加 | `48099cd`、`399c3f5`、`0880d5c`、`d029cc1`、`686fb10`、`4fb048c`、`498512e`、`aa39e57`、`b3fa5df`、`df93ce6` 已测试索引边界、领域引用、捕获链、空间标签、数字归属、并发摄取、事件失败回滚及对象完整性；正式库 800/800 trace 版本有对应 outbox 事件、290/290 私有对象可读取且散列匹配。仍须完成其余修订入口故障注入、知识晋升、旧迁移链和备份恢复复核 |
+| R1 · 领域引用与事务（C，F07/F08） | 按规范 §30 逐项列出 `store.py`、`pipeline.py`、知识晋升、review/finalize、数字 adapter 的写入口；检查 owner 链、引用存在性、revision/current 指针、detection/observation/resolution 关联、事件与 trace 同事务、原始 evidence 只增不改。用旧库迁移样本复核新约束 | 每条不变量对应执行位置和正反例；跨 owner、悬空引用、旧 revision、知识依赖及人工修正的失败均无部分提交；注入索引故障后从已存 trace 恢复，extractor 调用次数不增加 | §27 已清点 11 组主要写入口与具名测试，§26 对应 §30 十条不变量；§17 完整私有数据目录迁移副本复核通过，当前 195/195 个 trace 版本有事件。仍缺旧候选/旧迁移库样本、全部入口逐项故障注入及真实进程崩溃；早期 800/800 与 290/290 数字属于开发重建前历史样本 |
 | R2 · 历史元数据与证据边界（B，F02/F03/F04） | 只读枚举活跃及受影响历史 trace，将页码、身份、时间、作者、basis、confidence、locator、bbox、provenance、配置版本逐字段追溯到本图、原始返回、EPUB、用户决议或规则；重点核对早期 OCR/EPUB 扩文、自动会话及 bbox 对应的可见文字 | 受影响记录清单与字段来源表；照片局部、raw、EPUB 对齐和旧/新 revision 对照；无照片证据的文字不进入照片原文，未知字段保持 unknown；经确认的更正走领域修订并保持历史可读 | 11 张页码和笔记时间已版本化修订；83 条活跃纸书 trace 的 146 段印刷区、305 个 detection 引用有首轮只读核对。678 个纸书历史版本的页码/身份与其指定 resolution 一致，旧邻图页码的 3 个逻辑 trace 已退出活跃集。历史 677 个 OCR 印刷区中 11 个旧 v2/v3 跨行扩文，涉及 22 个历史 trace 版本、0 个当前活跃 trace。仍须查墨线覆盖、OCR 真值及其余字段；第 29 页 4 条 unknown 和三张待审扫描依赖 A |
 | R3 · Schema 与语义校验（C） | 对规范正文 MUST 和 `schemas/` 的字段、枚举、null/unknown、状态组合逐项比对；把结构校验、跨对象事务校验、外部证据真实性分配到明确执行层；检查旧版对象读取和迁移 | 条款→字段→校验函数/事务→测试矩阵；合法 JSON 但错误 owner、虚假页码 basis、单行 bbox 对应整段文字、失效 revision 等反例由应用层拒绝或进入待审；无法程序验证的真实性标明人工证据 | §26 已将 §30 十条必须落实的不变量映射到最终写入层和 28 个具名测试；四类字段 unknown/value/confidence、候选状态与来源已补。每个字段/状态组合的穷尽反例、旧迁移库和外部事实仍未由此证明 |
 | R4 · Gateway 与投送边界（C/D，F05/F06） | 清点图片、session、search、evidence、review/decision/finalize、digital sync 的每个入口；核对受信身份、account/chat→owner、source→owner、幂等键及 payload 冲突、`ErrorResult`、重启恢复；把“已排队”“平台发送成功”“用户端已显示”分成独立状态 | 插件替身和真实消息分别留证；双 owner/account/chat、重复消息与变更附件、坏批次、慢上游、投送失败重试均有正反例；错误可查询且不会伪报送达或阻塞其他照片 | `3a47e89` 补齐七个 Python bridge 的错误字段，`07f99f3` 将其传过插件，`55d61e7` 修复裁片排队后文件过早删除，`0fd6a2b` 补 hook 错误持久查询，物理/数字 worker 已分锁；只证明本地与指定真实入口。跨账户、真实重复/变更附件、平台投送及慢源恢复留正式运行核验 |
@@ -741,3 +741,23 @@ Gateway 在提交 `c49cfa8` 后重启，服务 active；运行时插件 `loaded/
 | 原始 evidence 不可普通 UPDATE | `evidence_immutable/evidence_undeletable` SQLite triggers；对象先持久化后接收回执 | `test_capture_durability_retry_conflict_and_same_bytes_new_message` 的 SQL UPDATE 反例、`test_object_write_failure_does_not_acknowledge_capture_and_retry_succeeds`；当前对象完整性与 §17 的迁移副本恢复 | 真实磁盘故障、删除生命周期和整机恢复 |
 
 §13/§27 的字段与状态组合另由 JSON Schema、`store.validate`、`_validate_semantics` 及领域入口分层：`test_unknown_field_basis_cannot_claim_a_value_or_score` 覆盖 Text/Time/Identity/Page 四类 `unknown` 值与 confidence 组合；`test_storage_enforces_candidate_state_machine_and_immutable_interpretation` 与 `test_storage_rejects_new_active_candidate_with_stale_source` 覆盖候选跨 revision 状态及当前来源；`test_local_review_requires_bootstrap_cookie_and_same_origin`、插件 owner 工具测试覆盖本机/受信入口。77 定义、18 入口、42 正例、43 反例是契约包规模，**不是**每个字段都有独立反例的证明。当前正式库 498 个记录版本及 442 个 current 对象只读结构一致；用户手写真值、数字上游原始 payload、平台送达和历史旧库迁移仍不由此矩阵证明。
+
+## 27. R1 领域写入口与事务证据清单（2026-09-29）
+
+此表枚举当前应用对 Library 的主要写入入口。共同的最终边界是 `Library._put` 的 Schema/链接/revision 校验与 `Library.transaction`；不能因为共同边界存在，就推断每个入口都经过单独故障注入。命令与 Gateway 桥接还要执行受信 owner/actor 检查。
+
+| 写入口 | 写入及原子边界 | 已执行的入口证据 | 当前边界 |
+|---|---|---|---|
+| `Library.register` | Work/Edition/BookInstance 初版；`_check_catalog_chain` 与单事务 | `test_catalog_owner_chain_and_session_progress`、`test_storage_rejects_cross_owner_and_inconsistent_catalog_links` | 真实 ISBN/版本事实由外部目录核对 |
+| `Library.start_session`、`session_transition` | session revision、scope 与对应事件在事务内；不自动以照片页码报告进度 | `test_session_and_capture_receipts_are_atomic_and_replayable`、`test_catalog_owner_chain_and_session_progress`；历史 `/lib read` 真入站 | 真实 pause/resume/close 与长间隔矩阵未全测 |
+| `Library.ingest` | 原始对象持久化后批次/capture/来源项/幂等回执及 received 事件提交 | `test_capture_durability_retry_conflict_and_same_bytes_new_message`、`test_concurrent_identical_capture_command_returns_one_receipt`、`test_object_write_failure_does_not_acknowledge_capture_and_retry_succeeds` | 真实飞书变更附件与磁盘断电故障留现场 |
+| `execute_command` | 受信 owner/actor，业务指纹与领域操作共用 `command_receipts` 事务 | `test_command_key_ignores_tracking_fields_but_rejects_business_change`、`test_receipt_failure_rolls_back_domain_record_and_event` | 并非所有命令均有真实飞书重放 |
+| `process_capture` | ProcessingRun、immutable PageObservation、resolution、trace 与 outbox 同事务，索引随后投影；错误 raw 另留存 | `test_trace_event_failure_rolls_back_physical_processing_and_retries`、`test_initial_index_failure_preserves_observation_and_retries_projection`、`test_invalid_extraction_keeps_raw_output_without_trace` | BookScan 新图质量依用户决定延期 |
+| `reconcile_extraction` | 待审 run 与旧 trace supersession、新 trace/relation/事件原子切换；修订/知识依赖先阻断 | `test_reextract_keeps_promoted_knowledge_source_active`、`test_reextract_merge_of_old_mark_groups_requires_review`、`test_review_reconciliation_event_failure_keeps_old_traces_and_retries` | 复杂真实拆分/合并由网页人工确认 |
+| `apply_review`、`finalize_review` | 审核包/受信候选决定先校验，再通过 `reconcile_extraction` 形成版本；不直接改 raw | `test_complete_review_versions_rejections_corrections_and_missing_mark`、`test_complete_review_reconciles_through_versioned_pipeline` | 用户尚未逐页提交生产审核；本轮只要求手写复核网页 |
+| `review_handwriting` | trace 修订、候选失效与 corrected 事件同事务；网页/Vault 为提交后投影 | `test_handwriting_only_confirmation_preserves_printed_traces`、`test_handwriting_review_retires_approved_candidate_but_protects_promoted_knowledge`、`test_committed_handwriting_decision_reports_review_page_failure` | 15 条真实手写判断留正式运行 |
+| `correct_trace`、`resolve_capture`、`bind_fingerprint_context` | trace/resolution revision 与 corrected 事件同事务；指纹绑定复用解析入口，索引事后修复 | `test_correction_event_failure_rolls_back_trace_and_candidate`、`test_resolution_event_failure_rolls_back_all_revisions`、`test_late_edition_fingerprint_binds_unknown_capture_without_reextracting` | 人类纠错的文字、页码真值不可由事务测试证明 |
+| `create_candidate`、`decide_candidate`、`promote_candidate` | 创建/批准的来源与状态校验；晋升先由幂等外部 writer 返回知识 ID，再同事务更新 candidate 与 promoted 事件 | `test_candidate_requires_explicit_trigger_and_promotion_confirms_external_write`、`test_promotion_event_failure_rolls_back_candidate_and_retries_same_key`、`test_storage_rejects_new_active_candidate_with_stale_source` | 实际知识 writer 未接入，非 M1 前置；外部写入与本地事务没有分布式原子性 |
+| `ingest_export`、`sync_koodo_sqlite`、`sync_weread_book`、`bind_digital_source` | 来源 owner 绑定；数字 trace 创建/修订/删除与事件、导出幂等键在来源事务内；索引事后投影 | `test_trace_event_failure_rolls_back_digital_export_and_retries`、`test_native_koodo_sync_replays_updates_deletes_and_reconciles_user_correction`、`test_weread_native_replay_update_reconcile_and_delete`、双 owner 来源拒绝测试 | 真实上游增改删、慢源/断网与双凭证现场仍待验 |
+
+本清单与 §26 的不变量表互补：§26 说明最终写入层应拒绝什么，本节说明哪些应用入口经过了何种事务测试。正式库当前 195/195 个 ReadingTrace 历史版本各有同 owner/revision 的 trace 事件；该快照只证明已保留记录，不证明未发生过的崩溃路径。当前实际部署的纸书/数字 worker 启动记录见 §24。

@@ -53,6 +53,10 @@ write boundary and named regression checks. It keeps image truth, upstream
 payload authenticity, older migration databases and live delivery separate
 from local structural evidence.
 
+Audit §27 now lists 11 application write-entry groups across catalog,
+session, capture, extraction, review, correction, knowledge and digital sync,
+with named transaction tests and the remaining migration/crash limits.
+
 Latest scope change: printed underline text is accepted with its current EPUB
 punctuation expansion. The private review site now offers a handwriting-only
 page with 15 note crops and versioned confirm/edit/reject actions; actual user
