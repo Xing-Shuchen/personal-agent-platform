@@ -555,3 +555,5 @@ B 的后续清单：现有 11 张旧版多页区照片与笔记时间来源已�
 运行态只读检查：`openclaw-gateway.service` 为 active/running，`pap-librarian-intake` 为 loaded/enabled、1 个 typed hook、7 个工具、0 diagnostics；正式 owner 下《社会理论二十讲》p.39 的现有检索返回 6 个 hit。数字同步状态文件最近一次完成时间为 2026-09-29 12:50 UTC，Koodo 118 条、WeRead 4 条均为 unchanged/success。检索命中和同步状态不能代替真实飞书入站问答、上游真实增改删或客户端投送验收。
 
 正式数据只读完整性检查：27 张当前 PageCapture、81 个当前 PageObservation/ProcessingRun（含 54 个重复 run）、73 条活跃纸书 trace，0 条纸书 trace 标记为人工复核完成；Vault 笔记有 73 个隐藏 trace 锚点。对象审计检查 814 处引用、257 个唯一私有对象，257/257 文件大小与 SHA-256 一致，0 缺失、0 孤儿、0 无效 JSON。该检查证明存储结构完整，不能证明画线识别正确。
+
+复核站点逐页 HTTP 冒烟检查：27/27 个审核页返回成功；页面引用的 246/246 张图片均返回 200、`image/*` 类型和非空内容；27/27 个 `/api/review-context` 请求成功，共返回 73 条当前 trace 引用，0 错误。此检查覆盖浏览器取资源的路径与身份会话，但未代替真人视觉判读或最终提交动作。
