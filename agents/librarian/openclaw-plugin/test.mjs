@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { acceptMessage, librarianEvidenceTool, librarianReviewTool, librarianReviewDecisionTool, librarianReviewFinalizeTool, librarianSearchTool, librarianSessionTool,
+import { acceptMessage, librarianEvidenceTool, librarianSourceBookTool, librarianReviewTool, librarianReviewDecisionTool, librarianReviewFinalizeTool, librarianSearchTool, librarianSessionTool,
   rememberInboundSession, runPythonBridge, workerArgs } from "./index.js";
 import librarianPlugin from "./index.js";
 
@@ -260,6 +260,49 @@ test("evidence tool retains queued media for channel delivery and removes bridge
       { ...trusted, requesterSenderId: "other" }, bridge), null);
     assert.equal(librarianEvidenceTool({ ...config, stateRoot, deliveryMediaRoot },
       { ...trusted, delivery: undefined }, bridge), null);
+  } finally {
+    await rm(stateRoot, { recursive: true, force: true });
+  }
+});
+
+test("source book tool sends only an owner's catalogued EPUB through allowed media", async () => {
+  const stateRoot = await mkdtemp(join(tmpdir(), "librarian-sourcebook-"));
+  try {
+    const sourceRoot = join(stateRoot, "source-books");
+    const deliveryMediaRoot = join(stateRoot, "allowed-media");
+    await import("node:fs/promises").then(({ mkdir }) => mkdir(sourceRoot));
+    const source = join(sourceRoot, "9787208171411.epub");
+    const bytes = Buffer.from("synthetic epub");
+    await writeFile(source, bytes);
+    let delivered;
+    const trusted = { agentId: "librarian", requesterSenderId: "person",
+      messageChannel: "telegram", agentAccountId: "bot",
+      deliveryContext: { channel: "telegram", accountId: "bot" },
+      delivery: { send: async (payload) => {
+        delivered = payload;
+        const actual = await import("node:fs/promises").then(({ readFile }) =>
+          readFile(payload.mediaUrl));
+        assert.deepEqual(actual, bytes);
+      } } };
+    const bridge = async (_config, request) => {
+      assert.deepEqual(request, { owner_id: "owner_fixture", book: "社会理论二十讲" });
+      return { book_title: "社会理论二十讲", isbn13: "9787208171411",
+        media_path: source, byte_size: bytes.length };
+    };
+    const tool = librarianSourceBookTool({ ...config, stateRoot, deliveryMediaRoot },
+      trusted, bridge);
+    const receipt = await tool.execute("call", { book: "社会理论二十讲" });
+    assert.ok(delivered.mediaUrl.startsWith(deliveryMediaRoot + "/sourcebook-"));
+    assert.equal(JSON.parse(receipt.content[0].text).delivery_status, "queued");
+    assert.deepEqual(await import("node:fs/promises").then(({ readFile }) =>
+      readFile(delivered.mediaUrl)), bytes);
+    assert.equal(librarianSourceBookTool({ ...config, stateRoot, deliveryMediaRoot },
+      { ...trusted, requesterSenderId: "stranger" }, bridge), null);
+    const forged = librarianSourceBookTool({ ...config, stateRoot, deliveryMediaRoot },
+      trusted, async () => ({ book_title: "Other", isbn13: "9787208171411",
+        media_path: join(stateRoot, "other.epub"), byte_size: 1 }));
+    await assert.rejects(() => forged.execute("call", { book: "社会理论二十讲" }),
+      /invalid source book path/);
   } finally {
     await rm(stateRoot, { recursive: true, force: true });
   }

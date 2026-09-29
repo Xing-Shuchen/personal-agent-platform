@@ -5,6 +5,7 @@ import { chmod, copyFile, mkdir, readdir, realpath, stat, unlink } from "node:fs
 import { delimiter, dirname, isAbsolute, resolve } from "node:path";
 
 const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
+const MAX_EPUB_BYTES = 30 * 1024 * 1024;
 const MAX_BATCH_BYTES = 100 * 1024 * 1024;
 const EVIDENCE_TTL_MS = 60 * 60 * 1000;
 const INBOUND_SESSIONS = Symbol.for("pap.librarian.inboundSessions");
@@ -12,6 +13,17 @@ const INBOUND_SESSIONS = Symbol.for("pap.librarian.inboundSessions");
 async function pruneEvidenceMedia(directory) {
   for (const name of await readdir(directory)) {
     if (!/^evidence-[0-9a-f-]{36}\.jpg$/.test(name)) continue;
+    const path = resolve(directory, name);
+    const info = await stat(path).catch(() => null);
+    if (info?.isFile() && Date.now() - info.mtimeMs > EVIDENCE_TTL_MS) {
+      await unlink(path).catch(() => {});
+    }
+  }
+}
+
+async function pruneSourceBookMedia(directory) {
+  for (const name of await readdir(directory)) {
+    if (!/^sourcebook-\d{13}-[0-9a-f-]{36}\.epub$/.test(name)) continue;
     const path = resolve(directory, name);
     const info = await stat(path).catch(() => null);
     if (info?.isFile() && Date.now() - info.mtimeMs > EVIDENCE_TTL_MS) {
@@ -120,6 +132,8 @@ const runSessionBridge = (config, message) => runPythonBridge(
   config, "agents.librarian.runtime.gateway_session", message);
 const runEvidenceBridge = (config, message) => runPythonBridge(
   config, "agents.librarian.runtime.gateway_evidence", message);
+const runSourceBookBridge = (config, message) => runPythonBridge(
+  config, "agents.librarian.runtime.gateway_source_book", message);
 const runReviewBridge = (config, message) => runPythonBridge(
   config, "agents.librarian.runtime.gateway_review", message);
 const runReviewDecisionBridge = (config, message) => runPythonBridge(
@@ -259,6 +273,57 @@ export function librarianEvidenceTool(config, ctx, bridge = runEvidenceBridge) {
         candidate_index: result.candidate_index ?? null,
         gap_index: result.gap_index ?? null,
         source_status: result.source_status ?? "stored_trace",
+        delivery_status: "queued" }) }] };
+    },
+  };
+}
+
+export function librarianSourceBookTool(config, ctx, bridge = runSourceBookBridge) {
+  if (ctx?.agentId !== "librarian" || !ctx.requesterSenderId || !ctx.delivery?.send ||
+      !config.deliveryMediaRoot || !isAbsolute(config.deliveryMediaRoot)) return null;
+  const route = ctx.deliveryContext ?? {};
+  if ((ctx.messageChannel && route.channel && ctx.messageChannel !== route.channel) ||
+      (ctx.agentAccountId && route.accountId && ctx.agentAccountId !== route.accountId)) return null;
+  const ownerId = ownerFor(config, { senderId: ctx.requesterSenderId },
+    { channelId: ctx.messageChannel ?? route.channel,
+      accountId: ctx.agentAccountId ?? route.accountId });
+  if (!ownerId) return null;
+  return {
+    name: "librarian_source_book",
+    label: "Send catalogued Librarian EPUB",
+    description: "Queue the exact EPUB used for OCR alignment for a book owned by this sender. Use only when the user asks for the EPUB file. Returns a queue receipt, not proof of client delivery.",
+    parameters: { type: "object", properties: {
+      book: { type: "string", minLength: 1, maxLength: 200 },
+    }, required: ["book"], additionalProperties: false },
+    async execute(_id, params) {
+      const result = await bridge(config, { owner_id: ownerId, book: params.book });
+      const path = resolve(result.media_path);
+      const expected = resolve(config.stateRoot, "source-books", `${result.isbn13}.epub`);
+      if (!/^\d{13}$/.test(result.isbn13) || path !== expected) {
+        throw new Error("invalid source book path");
+      }
+      const info = await stat(path);
+      if (!info.isFile() || info.size < 1 || info.size > MAX_EPUB_BYTES ||
+          info.size !== result.byte_size) throw new Error("invalid source book file");
+      const deliveryRoot = resolve(config.deliveryMediaRoot);
+      const outbound = resolve(deliveryRoot,
+        `sourcebook-${result.isbn13}-${randomUUID()}.epub`);
+      let queued = false;
+      try {
+        await mkdir(deliveryRoot, { recursive: true, mode: 0o700 });
+        await chmod(deliveryRoot, 0o700);
+        await pruneSourceBookMedia(deliveryRoot);
+        await copyFile(path, outbound, constants.COPYFILE_EXCL);
+        await chmod(outbound, 0o600);
+        await ctx.delivery.send({ text: `《${result.book_title}》EPUB 原文件`,
+          mediaUrl: outbound });
+        queued = true;
+        setTimeout(() => unlink(outbound).catch(() => {}), EVIDENCE_TTL_MS).unref();
+      } finally {
+        if (!queued) await unlink(outbound).catch(() => {});
+      }
+      return { content: [{ type: "text", text: JSON.stringify({
+        book_title: result.book_title, isbn13: result.isbn13,
         delivery_status: "queued" }) }] };
     },
   };
@@ -466,6 +531,8 @@ export default {
     }, { name: "librarian_session" });
     api.registerTool((ctx) => librarianEvidenceTool(config, ctx),
       { name: "librarian_evidence" });
+    api.registerTool((ctx) => librarianSourceBookTool(config, ctx),
+      { name: "librarian_source_book" });
     api.registerTool((ctx) => librarianReviewTool(config, ctx),
       { name: "librarian_review" });
     api.registerTool((ctx) => librarianReviewDecisionTool(config, ctx, recentInbound),

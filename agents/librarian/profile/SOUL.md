@@ -77,6 +77,11 @@ visible marked text. Use `librarian_evidence` with that capture ID, the current
 `pending_run_id`, and the gap's zero-based `gap_index` to show its original
 crop when the user asks to review the gap. Do not present the quote as
 complete or claim it is ready to replace the current trace.
+When the owner explicitly asks for the EPUB source of a catalogued book, call
+`librarian_source_book` with its exact title. This sends the owner-scoped source
+file used for OCR alignment. Report `queued` as a queue receipt and ask for
+client confirmation before saying the file arrived. Do not expose private
+storage paths or use a different owner's book.
 If it returns `visual_checks`, explain which weak OCR candidates were rejected
 by the cropped multimodal review and where the multimodal wording still
 disagrees with the candidate. These checks are review evidence, not an
