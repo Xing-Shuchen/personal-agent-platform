@@ -430,6 +430,8 @@ R1/§30 observation 内部约束增补：原 `_check_observation` 只由 `proces
 
 R1/§30 空间标签写入边界增补：normalizer 原会计算纸书 trace 的方位，但最终 `_put` 可接受页区外 bbox、与页区不一致的 side 或与坐标不一致的 vertical/horizontal。`498512e` 复用同一方位算法，在写入时核对页内非零面积、side 和五乘三方位；无 bbox 时仅允许没有 detection 和方位标签。伪造反例在事务内拒绝；正式库只读备份的 678 个纸书 trace 历史版本全部通过新增检查。Python Librarian 140 项及契约离线校验通过。此检查不替代照片墨迹与文字覆盖范围的人工真实性审核。
 
+R3/§30 页区几何语义增补：`CaptureResolution.pages` 的单项 BBox 仅有坐标范围 Schema，原可接受重复 page ID 或零面积页区。`97998ee` 在共用 `validate` 中拒绝这两类合法 JSON、错误语义的记录；直接 `_put` 负例无部分提交。正式库 137 个 CaptureResolution 历史版本只读校验为 0 违例；Python Librarian 140 项及契约离线校验通过。页码数字及其依据是否来自本图可见印刷内容仍需 R2/A 证据核对。
+
 ## 9. 现行实现计划（2026-09-29）
 
 第 1–7 节仍是对 `d111ace` 的初审，不能用其中的旧行号和测试数量描述当前 HEAD。本节把整改转为可执行批次；每批结束时在第 8 节记录实际提交、测试、生产状态和未验项。除明确列出的真实用户审核外，调试与迁移均通过 Librarian 的 worker、领域命令或受信 Gateway 工具执行，不手改生产数据库或 Vault 生成块。
@@ -475,5 +477,5 @@ B 的后续清单：现有 11 张旧版多页区照片与笔记时间来源已�
 | trace 的 capture/observation/resolution/detection 一致 | `Library._validate_record_links` 在最终写入核对 owner、历史 revision、页区及 detection；`686fb10` 补捕获链 | 人工修正、待审替换及旧迁移样本的全路径故障注入；视觉覆盖仍属 R2/A |
 | observation ID 唯一且 link 有效 | `validate_observation` 在提取和最终写入共用；正式库 142 个版本只读校验通过 | 检测语义和 OCR 真值只能由照片及用户审核确认，不能以结构校验宣称准确 |
 | trace 与领域事件同事务 | 已检查的 `process_capture`、`reconcile_extraction`、`correct_trace`、`resolve_capture`、数字创建/修订在 `Library.transaction` 内调用 `_put` 与 `_event`；索引投影已移出领域事务 | 列举全部 trace 写入口逐项核对事件，包括错误回滚、知识晋升、review/finalize 与迁移；`_put` 自身不强制事件 |
-| bbox、方向和空间标签有效 | observation 共用语义检查；`498512e` 在纸书 trace 写入时验证 bbox/页区/side/方位，正式库 678 个纸书版本兼容 | CaptureResolution 直接写入与历史页区几何还需单独反例；照片中墨线是否对应引文仍需人工审阅 |
+| bbox、方向和空间标签有效 | observation 共用语义检查；`498512e` 在纸书 trace 写入时验证 bbox/页区/side/方位，正式库 678 个纸书版本兼容；`97998ee` 拒绝 resolution 页区重复 ID 与零面积，137 个旧版本兼容 | 页码依据和照片中墨线是否对应引文仍需人工审阅；更多图像方向、跨页链接与旧迁移反例归 R2/R3 |
 | 原始 evidence 无普通 UPDATE | `evidence_immutable` 和 `evidence_undeletable` 触发器保护 PageCapture/PageObservation 的 `records` 行；对象先写后引用 | 对象文件丢失、孤儿回收和备份恢复的现场演练，确认已接受回执始终可重新打开原图 |
