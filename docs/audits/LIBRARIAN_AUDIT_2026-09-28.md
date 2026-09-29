@@ -703,3 +703,5 @@ Gateway 已重启，`systemctl --user` 返回 active；运行时插件检查为 
 Gateway 原先在接收照片后和五分钟定时恢复时启动 detached worker，`spawn` 错误被空处理函数吞掉；此时图片虽已接受，agent 却无法区分“子进程从未启动”和“处理中的失败”。现对每个 owner 的 `physical/digital` 模式分别原子保存最近启动结果 `spawned/failed`，目录 0700、文件 0600，只暴露固定 `WORKER_SPAWN_FAILED` 码、模式与时间，不写进程参数或路径。既有 owner 受限 `librarian_review` 无 capture 查询返回 `worker_launch_status`；下一次同模式成功启动覆盖失败。`spawned` 严格表示进程创建，**不**表示批次、索引或 Vault 已处理成功，其结果仍看相应运行状态。
 
 隔离插件测试让 Python 执行路径不存在，确认写入失败状态；换为可启动进程后同文件转为 spawned。Python 查询反例验证双 owner 隔离且不读取其他 owner 的记录。插件 **19/19**、完整 Python 回归 **526 passed**（4 条弃用警告）。尚未在真实 Gateway 中人为破坏 Python 路径；此项只解决启动故障查询，子进程启动后的业务失败仍需结合 `batch-status` 和数字同步状态判断。
+
+Gateway 在提交 `c49cfa8` 后重启，服务 active；运行时插件 `loaded/enabled`、`message_received` hook 可见、diagnostics 为空。待 Gateway 完成启动后，正式私有目录生成 0600 的 physical/digital 两份最新启动状态；用同 owner 的 `pending_extractions` 查询均为 `spawned`。这是实际 Gateway 创建两类子进程的证据，仍不等于 BookScan 或数字同步处理成功。
