@@ -393,6 +393,9 @@ def normalize(capture: dict[str, Any], observation: dict[str, Any],
                                   if item["text"] and item["text"]["text"]) or None
         scores = [item["text"]["confidence"] for item in linked if item["text"]]
         text_confidence = min(scores) if scores and len(scores) == len(linked) and all(s is not None for s in scores) else None
+        text_bases = {item["text"]["basis"] for item in linked
+                      if item["text"] and item["text"]["text"]}
+        text_basis = next(iter(text_bases)) if len(text_bases) == 1 else "vision"
         notes = [mark["text"] for mark in group if mark in observation["annotations"] and mark["text"] and mark["text"]["text"]]
         annotation = ({"text": "\n".join(note["text"] for note in notes),
                        "confidence": min(note["confidence"] for note in notes)
@@ -437,7 +440,7 @@ def normalize(capture: dict[str, Any], observation: dict[str, Any],
                  "trace_types": kinds,
                  "content": {"printed_text": {"text": printed_text,
                                                 "confidence": text_confidence,
-                                                "basis": "vision" if printed_text else "unknown"},
+                                                "basis": text_basis if printed_text else "unknown"},
                              "annotation": annotation or {"text": None, "confidence": None,
                                                           "basis": "unknown"},
                              "symbols": symbols},

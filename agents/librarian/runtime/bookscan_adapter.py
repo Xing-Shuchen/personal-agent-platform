@@ -53,13 +53,14 @@ def _box(box: list[int], width: int, height: int) -> list[float]:
             round(x2 / width, 6), round(y2 / height, 6)]
 
 
-def _text(value: str | None, confidence: float | None = None) -> dict:
+def _text(value: str | None, confidence: float | None = None,
+          basis: str = "vision") -> dict:
     return {"text": value or None, "confidence": confidence if value else None,
-            "basis": "vision" if value else "unknown"}
+            "basis": basis if value else "unknown"}
 
 
 def adapt_report(report: dict, width: int, height: int) -> dict:
-    """Use photo OCR as trace text; retain EPUB expansion only in raw evidence."""
+    """Use Bookscan's accepted EPUB expansion; keep uncertain OCR for review."""
     pages = report["pages"]
     if len(pages) != 1 or pages[0]["processing_status"] != "processed":
         raise ValueError("bookscan must process exactly one page per capture")
@@ -86,10 +87,19 @@ def adapt_report(report: dict, width: int, height: int) -> dict:
         ocr = "\n".join(row.get("ocr_raw", "") for row in rows).strip()
         scores = [row.get("ocr_score") for row in rows]
         score = min(scores) if scores and all(x is not None for x in scores) else None
+        matched = (group.get("match_status") == "matched" and
+                   group.get("text_basis") == "epub_punctuation_expansion" and
+                   bool(group.get("text_effective")))
+        printed_text = group["text_effective"] if matched else ocr
+        basis = "source_payload" if matched else "vision"
+        if matched:
+            similarity = group.get("epub_candidate", {}).get("similarity")
+            if similarity is not None:
+                score = min(score, similarity) if score is not None else similarity
         group_box = group.get("group_bbox") or group.get("bbox")
         observation["printed_regions"].append({
             "id": text_id, "page_region_id": "page_0", "bbox": _box(group_box, width, height),
-            "kind": "printed", "text": _text(ocr, score), "confidence": score,
+            "kind": "printed", "text": _text(printed_text, score, basis), "confidence": score,
             "linked_text_region_ids": [], "link_confidence": None})
         ink_boxes = group.get("underline_bboxes") or []
         if ink_boxes:

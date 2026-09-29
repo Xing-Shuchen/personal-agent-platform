@@ -8,6 +8,8 @@ import re
 import sys
 from pathlib import Path
 
+from rapidfuzz import fuzz
+
 from .gateway_review import pending_extractions
 from bookscan.epub import EpubIndex, normalized as normalize_epub_text
 from .pipeline import reconcile_extraction
@@ -52,7 +54,10 @@ def _verify_printed_boundaries(lib: Library, owner: str, run: dict,
                   if identifier in groups]
         if marked:
             photographed = compact("".join(group.get("ocr_raw", "") for group in marked))
-            if normalized[:6] not in photographed or normalized[-6:] not in photographed:
+            accepted_expansion = (len(marked) == 1 and
+                                  marked[0].get("match_status") == "matched" and
+                                  normalized == compact(marked[0].get("text_effective", "")))
+            if not accepted_expansion and fuzz.partial_ratio(normalized, photographed) < 60:
                 raise LibrarianError("RECONCILIATION_REQUIRED", "text boundary absent from photo OCR")
         if groundtruth and not any(
                 candidate["similarity"] >= .95 and candidate["query_coverage"] >= .95

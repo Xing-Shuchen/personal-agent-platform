@@ -17,6 +17,32 @@ from bookscan.inputs import bbox_from_source, bbox_to_source, discover
 from bookscan.pagenum import interpolate
 from bookscan.vision import (associate, curved_underline_candidates,
                              text_lines, underline_candidates)
+from agents.librarian.runtime.bookscan_adapter import adapt_report
+
+
+def test_adapter_uses_accepted_sentence_expansion_only() -> None:
+    report = {"pages": [{"processing_status": "processed", "issues": [],
+                         "page_number": {"status": "unknown"}}],
+              "lines": [{"line_id": "a", "ocr_raw": "句子的中间", "ocr_score": .93},
+                        {"line_id": "b", "ocr_raw": "不确定片段", "ocr_score": .7}],
+              "groups": [
+                  {"line_ids": ["a"], "group_bbox": [10, 10, 80, 20],
+                   "underline_bboxes": [], "mark_type": "underline",
+                   "match_status": "matched", "text_basis": "epub_punctuation_expansion",
+                   "text_effective": "这是句子的中间部分。",
+                   "epub_candidate": {"similarity": .91}},
+                  {"line_ids": ["b"], "group_bbox": [10, 30, 80, 40],
+                   "underline_bboxes": [], "mark_type": "underline",
+                   "match_status": "needs_review", "text_basis": "visual_ocr",
+                   "text_effective": "不确定片段", "epub_candidate": None}],
+              "annotations": [], "review_candidates": [], "failures": []}
+    observed = adapt_report(report, 100, 100)
+    matched, uncertain = observed["printed_regions"]
+    assert matched["text"] == {"text": "这是句子的中间部分。",
+                               "confidence": .91, "basis": "source_payload"}
+    assert uncertain["text"] == {"text": "不确定片段",
+                                 "confidence": .7, "basis": "vision"}
+    assert "bookscan_1:epub_alignment_needs_review" in observed["warnings"]
 
 
 def make_epub(path: Path, chapters: list[tuple[str, str]], order: list[str]) -> Path:
