@@ -1,5 +1,20 @@
 # Librarian v0.8 handoff — 2026-09-28
 
+## Latest scope and release status — 2026-09-29
+
+The first-book development deliverable is the BookScan-generated Library/Vault
+result plus the private handwriting review page. The current Library has 27
+retained captures, 73 active physical traces and 15 handwritten candidates;
+the Vault note has exactly 73 hidden trace markers, one EPUB chapter heading,
+no page grouping headings and no embedded original images. The user accepted
+EPUB punctuation expansion for printed underlines and deferred generic new
+photo mark discovery, strict ink endpoints, the four §38.1 annotated photos
+and `source-design.txt`. Actual handwritten decisions and live verification
+belong to formal operation. The Gateway is running with the session/image
+scope fix, but no new real Feishu turn has verified that path. Audit §32 maps
+these decisions to the remaining full `release-v0.8` gates; no release is
+claimed. Local concurrency replay coverage passes 10/10 bridge tests.
+
 ## Current update — 2026-09-29
 
 Gateway image-hook failures now write a private, owner-scoped status keyed by
