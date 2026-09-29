@@ -48,11 +48,11 @@ Configure absolute repository and private state paths, a Python interpreter,
 and an explicit owner mapping. Vault is optional. On this PC,
 `physicalWorkerEnabled` is set to `false` in the private OpenClaw configuration:
 image intake remains active, but the physical worker does not launch after
-intake or on its recovery schedule. Keep this setting until a replacement
-recognizer is integrated with the `PageObservation` handoff described in the
-[runtime README](../runtime/README.md#physical-recognizer-handoff). The digital
-worker has a separate schedule. The following OCR setup describes the dormant
-adapter for deployments that explicitly enable it.
+intake or on its recovery schedule. `bookscanPython` points to the separate
+PaddleOCR interpreter. The Bookscan adapter and its limits are documented in
+[BOOKSCAN_INTEGRATION.md](../runtime/BOOKSCAN_INTEGRATION.md). The digital worker
+has a separate schedule. The following OCR setup describes the historical
+adapter; the physical worker now uses Bookscan when explicitly enabled.
 
 Install the package's `librarian-ocr` extra in that interpreter. An owner-supplied EPUB at
 `stateRoot/source-books/<isbn13>.epub` enables local OCR alignment; without it,
@@ -73,7 +73,7 @@ channel account when routing is decided. On this PC it is bound to the
 The sender is paired and the mapping is active for the first-book run.
 
 ```bash
-openclaw config set plugins.entries.pap-librarian-intake.config '{"repoRoot":"/absolute/path/to/personal-agent-platform","stateRoot":"/absolute/path/to/personal-agent-platform/var/librarian","vaultRoot":"/absolute/path/to/Obsidian/Second_Brain","python":"/absolute/path/to/personal-agent-platform/.venv/bin/python","ownerMappings":[{"channelId":"feishu","accountId":"librarian","senderId":"paired-user-open-id","ownerId":"owner_local"}]}' --strict-json
+openclaw config set plugins.entries.pap-librarian-intake.config '{"repoRoot":"/absolute/path/to/personal-agent-platform","stateRoot":"/absolute/path/to/personal-agent-platform/var/librarian","vaultRoot":"/absolute/path/to/Obsidian/Second_Brain","python":"/absolute/path/to/personal-agent-platform/.venv/bin/python","bookscanPython":"/absolute/path/to/personal-agent-platform/local-processing/.venv/bin/python","physicalWorkerEnabled":false,"ownerMappings":[{"channelId":"feishu","accountId":"librarian","senderId":"paired-user-open-id","ownerId":"owner_local"}]}' --strict-json
 openclaw plugins enable pap-librarian-intake --accept-capabilities
 openclaw plugins inspect pap-librarian-intake --runtime --json
 ```

@@ -24,13 +24,12 @@ from xml.etree import ElementTree as ET
 
 from PIL import Image, ImageOps
 
-from .ocr import (ocr_extractor, openclaw_note_refiner, openclaw_underline_refiner,
-                  visible_header_page)
+from .ocr import visible_header_page
+from .bookscan_adapter import bookscan_extractor, processor_fingerprint
 from .gateway_review_finalize import auto_reconcile_fully_reviewed
 from .pipeline import (process_capture, reconcile_extraction, bind_fingerprint_context,
                        resolve_capture,
                        _repair_trace_index_best_effort)
-from .vision import openclaw_extractor
 from .store import Library, LibrarianError, _new, _now, _unknown_time
 from .koodo_native import sync_koodo_sqlite
 from .weread_native import fetch_weread_book, sync_weread_book
@@ -378,6 +377,7 @@ def _retry_fingerprint(root: Path, vision_model: str) -> str:
     sources = [(path.name, hashlib.sha256(path.read_bytes()).hexdigest())
                for path in sorted((root / "source-books").glob("*.epub"))]
     return hashlib.sha256(json.dumps({"vision_model": vision_model,
+                                      "bookscan": processor_fingerprint(),
                                       "sources": sources}, sort_keys=True).encode()).hexdigest()[:16]
 
 
@@ -863,27 +863,17 @@ def _process_batch(lib: Library, root: Path, vault: Path | None, owner: str,
     if match:
         batch["isbn"] = isbn
         epub_hash = hashlib.sha256(epub.read_bytes()).hexdigest()[:16]
-        version = f"rapidocr-epub-notes-v8:{isbn}:{epub_hash}"
-        extractor = ocr_extractor(epub=epub, note_refiner=openclaw_note_refiner)
+        version = f"bookscan-segment-v1:{processor_fingerprint()}:{isbn}:{epub_hash}"
+        work_root = root / "bookscan-runs" / hashlib.sha256(owner.encode()).hexdigest()[:16]
+        extractor = bookscan_extractor(epub, work_root=work_root)
         pending_review_ids = _latest_pending_review_ids(
             _current(lib, owner, "ProcessingRun"))
-        review_version = f"rapidocr-epub-notes-v12-vision:{isbn}:{epub_hash}"
-        review_extractor = (ocr_extractor(epub=epub, note_refiner=openclaw_note_refiner,
-                                          underline_refiner=openclaw_underline_refiner)
-                            if pending_review_ids else None)
     else:
         title = "待确认书籍"
-        version = f"rapidocr-generic-v1:{vision_model}"
-        local_extractor = ocr_extractor(note_refiner=openclaw_note_refiner)
-        vision_extractor = openclaw_extractor(model=vision_model)
-
-        def extractor(original: bytes):
-            local = local_extractor(original)
-            observation = json.loads(local.observation)
-            if (observation["marks"] or observation["annotations"] or
-                    observation["symbols"]):
-                return local
-            return vision_extractor(original)
+        version = f"bookscan-segment-v1:{processor_fingerprint()}:no-epub"
+        work_root = root / "bookscan-runs" / hashlib.sha256(owner.encode()).hexdigest()[:16]
+        extractor = bookscan_extractor(None, work_root=work_root)
+        pending_review_ids = set()
     for capture_id in batch["capture_ids"]:
         try:
             auto_reconcile_fully_reviewed(lib, owner, capture_id)
@@ -936,37 +926,20 @@ def _process_batch(lib: Library, root: Path, vault: Path | None, owner: str,
             _atomic_write(snapshot, json.dumps(old_traces, ensure_ascii=False).encode())
     extraction_issues = []
     for capture_id in batch["capture_ids"]:
-        latest_run = latest_runs.get(capture_id)
-        if (match and capture_id not in pending_review_ids and latest_run and
-                latest_run["outcome"] in {"success", "partial"} and
-                latest_run["extractor_version"].startswith("rapidocr-epub-notes-v") and
-                latest_run["extractor_version"] != version):
-            # A reviewed scan can have an older pending v8 run. Keep its
-            # newer successful result instead of replaying that old version.
-            continue
         if match:
             try:
                 bind_fingerprint_context(lib, owner, capture_id)
             except LibrarianError as error:
                 extraction_issues.append({"capture_id": capture_id, "code": error.code})
         try:
-            use_visual_review = match and capture_id in pending_review_ids
-            selected_version = review_version if use_visual_review else version
-            selected_extractor = review_extractor if use_visual_review else extractor
+            selected_version = version
+            selected_extractor = extractor
             process_capture(lib, owner, capture_id, selected_extractor,
                             extractor_version=selected_version)
         except LibrarianError as error:
             if error.code == "RECONCILIATION_REQUIRED":
-                if use_visual_review:
-                    extraction_issues.append({"capture_id": capture_id,
-                                              "code": error.code})
-                else:
-                    try:
-                        reconcile_extraction(lib, owner, capture_id, selected_version,
-                                             allow_rotation_upgrade=True)
-                    except LibrarianError as conflict:
-                        extraction_issues.append({"capture_id": capture_id,
-                                                  "code": conflict.code})
+                extraction_issues.append({"capture_id": capture_id,
+                                          "code": error.code})
             elif error.code in {"EXTRACTION_SCHEMA_INVALID", "EXTRACTOR_UNAVAILABLE"}:
                 extraction_issues.append({"capture_id": capture_id,
                                           "code": error.code})

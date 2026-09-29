@@ -376,9 +376,10 @@ def test_interior_photo_without_epub_or_vault_persists_partial_trace(tmp_path: P
                              idempotency_key="interior-command")
     monkeypatch.setattr(worker, "_book_for_cover", lambda *_: None)
     calls = []
-    def extractor(*, model):
+    def extractor(epub, **_kwargs):
+        assert epub is None
         def infer(_):
-            calls.append(model)
+            calls.append("bookscan")
             return json.dumps({
             "image_space": {"width": 100, "height": 100,
                             "basis": "exif_oriented_original"},
@@ -393,11 +394,11 @@ def test_interior_photo_without_epub_or_vault_persists_partial_trace(tmp_path: P
             "marks": [{"id": "mark_1", "page_region_id": "page_1",
                        "bbox": [.1, .18, .8, .21], "kind": "underline", "text": None,
                        "confidence": .8, "linked_text_region_ids": ["text_1"],
-                       "link_confidence": .8}],
+                       "link_confidence": .9}],
             "annotations": [], "symbols": [], "links": [], "warnings": []
             }).encode()
         return infer
-    monkeypatch.setattr(worker, "openclaw_extractor", extractor)
+    monkeypatch.setattr(worker, "bookscan_extractor", extractor)
     monkeypatch.setattr(worker, "_now", lambda: "2099-01-01T00:00:00+00:00")
 
     result = worker.run(state, None, "owner", vision_model="fixture/vision")
@@ -410,10 +411,10 @@ def test_interior_photo_without_epub_or_vault_persists_partial_trace(tmp_path: P
         assert len(traces) == 1 and traces[0]["location"]["page"] is None
         assert traces[0]["work_id"] is None
     worker.run(state, None, "owner", vision_model="fixture/vision")
-    assert calls == ["fixture/vision"]
+    assert calls == ["bookscan"]
 
 
-def test_generic_local_ocr_mark_skips_full_page_model(tmp_path: Path, monkeypatch) -> None:
+def test_generic_photo_uses_bookscan_without_full_page_model(tmp_path: Path, monkeypatch) -> None:
     from agents.librarian.runtime import worker
     from agents.librarian.runtime.pipeline import ExtractionOutput
 
@@ -444,17 +445,13 @@ def test_generic_local_ocr_mark_skips_full_page_model(tmp_path: Path, monkeypatc
                               "confidence": .8, "linked_text_region_ids": ["print_0"],
                               "link_confidence": .9}],
                    "annotations": [], "symbols": [], "links": [], "warnings": []}
-    monkeypatch.setattr(worker, "ocr_extractor", lambda **_: lambda _raw: ExtractionOutput(
+    monkeypatch.setattr(worker, "bookscan_extractor", lambda _epub, **_kwargs: lambda _raw: ExtractionOutput(
         raw=b'{}', observation=json.dumps(observation).encode(), derivative=original,
         derivative_width=100, derivative_height=100, operations=("exif_transpose",)))
-    calls = []
-    monkeypatch.setattr(worker, "openclaw_extractor", lambda **_: lambda _raw:
-                        calls.append("full-page-model") or pytest.fail("model should not run"))
     monkeypatch.setattr(worker, "_now", lambda: "2099-01-01T00:00:00+00:00")
     result = worker.run(state, None, "owner")
     assert result[0]["status"] == "partial"
     assert result[0]["traces"] == 1
-    assert calls == []
     with Library(state) as lib:
         traces = _current(lib, "owner", "ReadingTrace")
         assert traces[0]["source"]["capture_id"] == receipt["capture_ids"][0]
@@ -566,7 +563,7 @@ def test_second_photo_can_supply_epub_identity(tmp_path: Path, monkeypatch) -> N
         seen = []
         monkeypatch.setattr(worker, "_book_for_cover",
                             lambda *_: seen.append(1) or ((epub.stem, epub) if len(seen) == 2 else None))
-        monkeypatch.setattr(worker, "ocr_extractor", lambda **_kwargs: lambda _raw: b"{}")
+        monkeypatch.setattr(worker, "bookscan_extractor", lambda _epub, **_kwargs: lambda _raw: b"{}")
         monkeypatch.setattr(worker, "process_capture", lambda *_args, **_kwargs: [])
         result = worker._process_batch(lib, state, None, "owner", batch, "fixture/vision")
         assert len(seen) == 2

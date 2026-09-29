@@ -4,6 +4,12 @@ __pycache__/
 *.egg-info/
 .venv/
 .pytest_cache/
+# New local inputs remain ignored; the 23 reviewed sample inputs are tracked explicitly.
+/local-processing/*.jpg
+/local-processing/*.epub
+/local-processing/models/
+/local-processing/output/
+/local-processing/.cache/
 
 # Runtime state (gate db, audit logs, per-agent run state)
 #

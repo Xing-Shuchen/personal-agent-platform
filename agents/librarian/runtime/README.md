@@ -13,9 +13,10 @@ source-design attachment prevents a name-for-name comparison with its package.
 
 Automatic physical recognition is paused on this PC: the private OpenClaw
 configuration sets `physicalWorkerEnabled: false`. Feishu image intake still
-stores immutable originals; the digital worker is independent. A new recognizer
-must be explicitly connected before physical processing resumes. Do not run an
-OCR or image model merely because a capture arrived.
+stores immutable originals; the digital worker is independent. The image
+processor is now the fetched local Bookscan implementation; see
+[BOOKSCAN_INTEGRATION.md](BOOKSCAN_INTEGRATION.md) for its adapter, runtime,
+evidence and accuracy limits. The pause remains until live review is complete.
 
 The framework entry point is `pipeline.process_capture(lib, owner_id,
 capture_id, extractor, extractor_version=...)`. The trusted caller supplies the
@@ -114,16 +115,15 @@ plugin in `../openclaw-plugin/` maps a concrete channel/account/sender to an
 owner and forwards only staged `image/*` media with stable message/item IDs.
 It requires an explicit owner mapping before live capture intake.
 
-The existing `ocr.py` adapter runs local RapidOCR on each original, compares printed lines with a
+The historical `ocr.py` adapter runs local RapidOCR on each original, compares printed lines with a
 matching owner-provided EPUB, detects long pen strokes, and expands marked
 printed text to complete EPUB sentences. Only small handwriting crops go to
 the configured OpenClaw image model. Raw OCR boxes, stroke scores and model
-responses remain attached to the processing observation. This adapter is
-historical and currently disabled in the live physical worker. Install the optional
-`librarian-ocr` dependency group in the Python interpreter configured for the
-plugin. `worker.py` recovers accepted Feishu batches, matches a photographed
+responses remain attached to the processing observation. `worker.py` no longer
+selects this adapter or the full-page vision fallback for content extraction.
+`worker.py` recovers accepted Feishu batches, matches a photographed
 ISBN to `source-books/<isbn13>.epub`, registers the book and reading session,
-processes all captures, writes a review note under the configured Obsidian
+processes all captures through Bookscan, writes a review note under the configured Obsidian
 Vault's `2Area/40 学习与阅读/阅读笔记`, and sends one Feishu review message after the
 database and Vault write complete. The plugin launches the physical worker after
 intake and periodically for recovery only when `physicalWorkerEnabled` is true.

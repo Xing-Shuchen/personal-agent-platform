@@ -166,7 +166,8 @@ function startWorker(config, ownerId, mode = "physical") {
   args.push(mode === "digital" ? "--digital-only" : "--physical-only");
   const child = spawn(config.python ?? "python3", args, {
     cwd: config.repoRoot,
-    env: { ...process.env, PYTHONPATH: [config.repoRoot, process.env.PYTHONPATH ?? ""].join(delimiter) },
+    env: { ...process.env, PYTHONPATH: [config.repoRoot, process.env.PYTHONPATH ?? ""].join(delimiter),
+      ...(config.bookscanPython ? { LIBRARIAN_BOOKSCAN_PYTHON: config.bookscanPython } : {}) },
     stdio: "ignore",
     detached: true,
   });
