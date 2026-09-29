@@ -420,6 +420,8 @@ R1/F08 索引事务边界复核与修复：初次照片提取和重提取对账�
 
 R1 引用链写入边界增补：此前知识候选的公开创建路径会校验当前 trace，但 `Library._put` 对 TraceRelation、KnowledgeCandidate 的历史版本引用以及纸书 trace 的 capture→observation→resolution→detection 关联只执行单对象 Schema。`399c3f5` 在最终存储写入口增加同 owner、指定 revision 存在性及纸书页区/身份/bbox 一致性检查，保留历史 superseded trace 可作为 lineage 目标。伪造检测 ID、换用同 owner 其他 capture、缺失或空 trace revision、跨 owner 关系与知识候选均被拒绝且不写半条记录。正式库只读备份用新检查遍历 678 个纸书 trace 版本、70 条 TraceRelation 和 0 条 KnowledgeCandidate，全部兼容；Librarian Python 136 项、契约校验通过。这覆盖所列引用，不表示 §30 其余每条不变量或知识服务外部对象已完成复审。
 
+R1 目录与会话上下文追加检查：`register`、`start_session` 等公开路径原已检查部分引用，但最终 `_put` 可写入形状合法而跨 owner 或互相矛盾的 Edition、BookInstance、ReadingSession、CaptureResolution。`0880d5c` 在写入边界核对 Edition→Work、Instance→Edition、Session 的完整目录链，以及 Resolution 的 Capture、Session 和目录身份；部分未知上下文仍可保持 `null`。跨 owner Work、缺失 Edition、Session 工作归属错误及 Resolution 缺失目录对象的反例均在事务内拒绝且无部分记录。正式库只读备份的 1 个 Edition、2 个 BookInstance、4 个 ReadingSession 与 137 个 CaptureResolution 历史版本均通过新检查；Python 138 项及契约校验通过。此项不证明书目信息真实、全部旧元数据正确或 §30 的附件幂等与事件恢复已全面复审。
+
 ## 9. 现行实现计划（2026-09-29）
 
 第 1–7 节仍是对 `d111ace` 的初审，不能用其中的旧行号和测试数量描述当前 HEAD。本节把整改转为可执行批次；每批结束时在第 8 节记录实际提交、测试、生产状态和未验项。除明确列出的真实用户审核外，调试与迁移均通过 Librarian 的 worker、领域命令或受信 Gateway 工具执行，不手改生产数据库或 Vault 生成块。
