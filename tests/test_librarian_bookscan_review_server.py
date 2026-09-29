@@ -42,6 +42,20 @@ def test_local_review_requires_bootstrap_cookie_and_same_origin(tmp_path):
         except HTTPError as error:
             assert error.code == 400
             assert json.loads(error.read())["code"] == "VALIDATION_FAILED"
+        handwriting = Request(origin + "/api/handwriting-review", data=b"{}",
+                              headers={"Content-Type": "application/json"}, method="POST")
+        try:
+            opener.open(handwriting)
+            assert False, "cross-origin handwriting review was accepted"
+        except HTTPError as error:
+            assert error.code == 403
+        handwriting.add_header("Origin", origin)
+        try:
+            opener.open(handwriting)
+            assert False, "empty handwriting review was accepted"
+        except HTTPError as error:
+            assert error.code == 400
+            assert json.loads(error.read())["code"] == "VALIDATION_FAILED"
     finally:
         server.shutdown()
         server.server_close()
