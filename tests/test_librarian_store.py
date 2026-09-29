@@ -44,6 +44,26 @@ def test_18_entry_schemas_are_valid_and_reject_unknown_fields():
         module.validate("Work", work("owner_a") | {"imaginary": True})
 
 
+@pytest.mark.parametrize("field,key,known", [
+    ("TextField", "text", "printed words"),
+    ("TimeField", "value", "2026-09-28T00:00:00+00:00"),
+    ("IdentityField", "value", "work_one"),
+    ("PageField", "value", {"label": "39", "number": 39, "scheme": "arabic"}),
+])
+def test_unknown_field_basis_cannot_claim_a_value_or_score(field: str, key: str, known):
+    schema = json.loads((RUNTIME / "schemas/contracts.schema.json").read_text())
+    validator = Draft202012Validator({**schema, "$ref": f"#/$defs/{field}"})
+    suffix = {"status": "unresolved"} if field in {"IdentityField", "PageField"} else {}
+    unknown = {key: None, "confidence": None, "basis": "unknown", **suffix}
+    assert validator.is_valid(unknown)
+    assert not validator.is_valid({**unknown, key: known})
+    assert not validator.is_valid({**unknown, "confidence": 0.9})
+    known_field = {**unknown, key: known,
+                   "basis": "user_confirmation" if field == "IdentityField" else "user_statement"}
+    assert validator.is_valid(known_field)
+    assert not validator.is_valid({**known_field, key: None})
+
+
 def test_catalog_owner_chain_and_session_progress(tmp_path: Path):
     with Library(tmp_path) as lib:
         lib.register("owner_a", work("owner_a"))

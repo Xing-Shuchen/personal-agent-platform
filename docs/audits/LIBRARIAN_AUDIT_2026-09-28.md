@@ -442,13 +442,17 @@ R1 原始对象恢复性只读审计：`df93ce6` 新增 `librarian_object_integr
 
 R2 历史文字范围只读审计：`156574a` 新增 `librarian_historical_text_scope.py`，逐个比较 OCR 来源的印刷区文字与同一 raw OCR 行及其 EPUB 对齐行（仅去除空白）。正式库扫描 677 个 OCR 印刷区，发现 11 个旧 v2/v3 印刷区的文字不在对应单行范围内，分布于 3 张 capture；22 个 ReadingTrace 历史版本引用这些印刷区，但当前活跃 trace 引用数为 0。其余 666 个印刷区通过此结构性范围检查。运行命令：`.venv/bin/python docs/audits/librarian_historical_text_scope.py --root var/librarian --details`，输出只含 ID 和字数，不含正文。这说明早期版本存在跨行扩文，不能据此断言这些旧照片原文正确；不可变 observation 与 revision 保持原样，若需更正应走版本化领域命令。本检查也不证明 OCR 准确、墨线覆盖或 EPUB 对齐正确。
 
-A 阶段真实飞书取证：13:57 用户发送「查看《社会理论二十讲》待审核扫描」，受信 librarian trajectory 调用一次 `librarian_review`，成功列出最新 3 张 pending run：第 39 页 5 组、第 29 页 4 组、第 23 页 3 组。13:58 用户再发「都发我看看吧」，同一受信会话调用三次 `librarian_review(capture_id)` 和 12 次 `librarian_evidence(candidate_id)`，12 个工具结果均为 `delivery_status=queued`；agent 随后发出含差异摘要的飞书文字回复。客户端图片是否全部显示仍待用户回报，工具排队不等于平台送达。用户尚未作 accept/reject 决定；三张 capture 保持 `RECONCILIATION_REQUIRED`。第 39 页旧 trace 页码为 65/66、新候选标 39；第 23 页旧 41、新 23，这些差异须按照片可见页眉核对，不凭模型或 EPUB 自动接受。此次 agent 两轮用量分别为约 4.9 万、6.4 万输入 token（另有缓存读取约 4.8 万、9.8 万），一次索取 12 张裁片的成本偏高，D 阶段需记录并优化调用方式。
+A 阶段真实飞书取证：13:57 用户发送「查看《社会理论二十讲》待审核扫描」，受信 librarian trajectory 调用一次 `librarian_review`，成功列出最新 3 张 pending run：第 39 页 5 组、第 29 页 4 组、第 23 页 3 组。13:58 用户再发「都发我看看吧」，同一受信会话调用三次 `librarian_review(capture_id)` 和 12 次 `librarian_evidence(candidate_id)`，12 个工具结果均为 `delivery_status=queued`；agent 随后发出含差异摘要的飞书文字回复。用户随后确认客户端实际收到 12 张扫描局部；这为该次投送提供客户端证据，不等于未来每次排队都已送达。用户尚未作 accept/reject 决定；三张 capture 保持 `RECONCILIATION_REQUIRED`。第 39 页旧 trace 页码为 65/66、新候选标 39；第 23 页旧 41、新 23，这些差异须按照片可见页眉核对，不凭模型或 EPUB 自动接受。此次 agent 两轮用量分别为约 4.9 万、6.4 万输入 token（另有缓存读取约 4.8 万、9.8 万），一次索取 12 张裁片的成本偏高，D 阶段需记录并优化调用方式。
 
 R2 元数据字段来源续审：正式库全部 678 个纸书 ReadingTrace 历史版本逐条回查其引用的指定 CaptureResolution revision，页码、页码置信度及 work/edition/instance/session 四项身份均与对应页区和身份值一致（字段不一致 0）；这是版本引用一致性，不是页码真实性。354 个版本页码 `vision/resolved`，324 个 `unknown/unresolved`；身份来源 636 个版本为 `edition_fingerprint`、42 个 unknown。83 条当前活跃纸书 trace 中，79 条页码为 `vision/resolved`，4 条 unknown，身份全部由 `edition_fingerprint` 绑定，`marked_at` 与 `mark_author` 全为 unknown。关联的 146 个印刷区去空白后全部是同一 raw `ocr_text` 行的子串（110 个也恰好匹配 EPUB 对齐行，36 个只匹配 OCR 行），未发现当前活跃印刷区仅凭 EPUB 扩文；这仍不能证明 OCR 字词或画线边界正确。历史中有 3 个逻辑 trace 的 6 个版本引用 confidence 0.7、`basis=vision` 的邻图推断旧页码，现均为 superseded，未作原位改写。`session_scope` 中两条自动会话已 `selected=0`、最后分配时间为 9 月 28 日；9 月 29 日用户明确启动的会话 `selected=1`，其进度依据为 `user_statement`。当前 83 条纸书痕迹关联旧自动会话，记录既有 capture 归属，不表示该会话仍被长期自动选中。
 
 A/C 旁注审核入口修复：`7eb75fb` 发现正式 `librarian_review_finalize` 把所有接受的候选都强制按印刷 OCR/EPUB 句子核边界，导致第 23、29、39 页共 4 个纯 `margin_note` 候选即便被用户确认也无法提交；`reconcile_extraction` 还会把旁注更正误写到 `printed_text`。现对纯旁注要求非空的审核转录，跳过不适用的印刷句界检查，并将用户明确给出的更正写入 `content.annotation`，标记 `basis=user_statement`；画线继续执行原句界校验。隔离库端到端测试让同一扫描的画线与更正旁注均经决定和 finalize 入库，检查旁注的印刷文字保持空；相关 45 项 Python 测试通过。正式 3 张待审图无新增决议，未执行生产 finalize，Vault 与客户端结果仍待真人审核。
 
 R1/R2 来源对象续审：正式库 678 个纸书 trace 历史版本各有 3 个 provenance 对象引用，逐项都与所指 PageCapture 原图、PageObservation 派生图和 raw_output_asset 完全相同，错链 0；先前对象完整性审计另证明这批底层文件可读且散列吻合。27 张 PageCapture 的 `captured_at` 均为 unknown，而 `received_at` 保留飞书接收时间；3 个当前 ReadingSession 的 `started_at`、`ended_at` 也均为 unknown。现行 normalizer 从 observation 的检测链接拼接印刷/旁注文字和最小置信度，以 ink 与关联文字区域的并集生成 bbox；因此 trace bbox 是取证范围，不是仅覆盖墨线的精确边界。`marked_at`、作者、书籍置信度保持 unknown/null，页码置信度直接取指定 resolution 页区。此字段来源表述已核对 `pipeline.normalize` 和生产数据；OCR 真值、可见笔迹及用户端图片显示仍需 A/R2 的照片复核。
+
+用户于 9 月 29 日明确调整分工：暂停纸书识别，识别方法由用户另行确定；当前只实施框架和数据 Schema。`ec34679` 为插件增加 `physicalWorkerEnabled` 开关，本机私有 OpenClaw 配置已置为 `false`，配置校验与 Gateway 重启后确认服务存活且没有纸书 worker 进程。图片接收、原图私有对象和数字 worker 保留；既有三张待审扫描不自动识别、对账或入库。`e362654` 在纸书 trace 写入入口强制 provenance 与原图/派生图/raw 三个对象精确相符，并强制页码置信度等于所引用 resolution 版本的页区置信度；隔离反例拒绝且旧 revision 未变，2 项定向 Python 测试及 16 项插件测试通过。正式库 678 个历史纸书 trace 版本只读核对均符合这两条关系，因此该约束无需回填既有记录。运行文档新增 `process_capture` 的可替换识别输出契约；没有运行新的 OCR、模型识别或正式扫描 finalize。
+
+R3 数据契约续审：`TextField`、`TimeField`、`IdentityField`、`PageField` 的 JSON Schema 现在要求 `basis=unknown` 时值与 confidence 都为 null；其他 basis 必须有值，但评分仍可为 null。此约束落实 §13 的未知值不得补猜原则，没有改变字段集合或 `schema_version=0.1.0`。只读复核正式库 1,450 条历史 records，新增约束下无 invalid；42 个正例、43 个反例及 18 个入口的离线契约检查通过。合成正例中 4 个「无时间值却标 exif」的来源错误已改成 unknown；4 组定向 schema 正反例和 `test_librarian_store.py` 13 项测试通过。此项只保证值和来源状态相容，不能证明照片正文、手写字形或页码真实性。
 
 | R2 纸书字段 | 当前写入来源与已核对证据 | 尚未由此证明 |
 |---|---|---|
@@ -471,7 +475,7 @@ R1/R2 来源对象续审：正式库 678 个纸书 trace 历史版本各有 3 �
 | D · 运行与三来源验收 | F01/F04/F06、M2。验证无 EPUB/无 Vault/未知书页的普通图片仍进入观察；受限自动会话按 90 分钟/6 小时降级；物理 worker 不被坏批次或慢数字源阻塞；Koodo/WeRead 的真实周期增改删和网络恢复 | Gateway 真实入站、周期任务状态、故障注入、有限重试、实际三来源 SearchHit 与来源身份；记录模型调用数、耗时和冷/热启动成本。核显仅有隔离基准，安装稳定驱动与生产路由前不宣称已启用 | 不丢已接受照片；错误可定位并恢复；同 owner 三来源可检索且错误归属不能进入库；生产成本可量化 |
 | E · 规格验收与交接 | 复跑 §5 的 AC-01–26 并区分本地、现场、未验；回填 `LIBRARIAN_V0_8_HANDOFF.md` 与本报告。§38.1 p159/166/171/184 四张标注照片及 `source-design.txt` 已按用户指示暂缓，不用同号 Vault 孤图代替 | 每条 AC 的当前证据链接、未完成原因、修复提交、真实运行与用户确认记录；延期样本单列 | 核心 P1 与真实闭环均经逐项验收后再考虑 `release-v0.8`；暂缓输入保留“延期/未验”，不得记“通过” |
 
-执行顺序：先完成 B 中不依赖用户的直接页眉修订，再等待 A 的飞书逐图审核；其间可并行推进 C/D 的只读清单与隔离测试。A 的生产替换只由受信用户决定触发。每批在生产落地前先用隔离 Library/Vault 验证字段、索引和事件，再由正式 worker 执行；若新旧分组或文字改变且证据不充分，保留待审核状态。E 仅在 A–D 的相应证据齐备后更新判定。
+执行顺序已按用户最新指示调整：当前只推进 C 中领域框架、Schema、R1/R3 跨字段和跨对象不变量，以及不触发识别的入口与事件可靠性检查。B 的照片页眉识别、A 的三张扫描内容审核和生产替换暂缓；用户给出新识别方法后，将其输出适配到 `PageObservation` 契约，先在隔离 Library 验证，再由受信用户审核候选。E 仅在 A–D 的相应证据齐备后更新判定。
 
 B 的后续清单：现有 11 张旧版多页区照片与笔记时间来源已按第 8 节修订并复核；纸书活跃页码未知尚有 4 条，均在第 29 页待审核扫描，不越过 A 的用户决议自动补号。继续对其余历史 trace 的 bbox、文本 basis、自动会话归属和通知状态做只读清点。不得把 EPUB 页码、边注数字或邻图顺序当作印刷页码；对仍无法从本图证明的页码保留 unknown。
 
@@ -483,12 +487,12 @@ B 的后续清单：现有 11 张旧版多页区照片与笔记时间来源已�
 |---|---|---|---|
 | R1 · 领域引用与事务（C，F07/F08） | 按规范 §30 逐项列出 `store.py`、`pipeline.py`、知识晋升、review/finalize、数字 adapter 的写入口；检查 owner 链、引用存在性、revision/current 指针、detection/observation/resolution 关联、事件与 trace 同事务、原始 evidence 只增不改。用旧库迁移样本复核新约束 | 每条不变量对应执行位置和正反例；跨 owner、悬空引用、旧 revision、知识依赖及人工修正的失败均无部分提交；注入索引故障后从已存 trace 恢复，extractor 调用次数不增加 | `48099cd`、`399c3f5`、`0880d5c`、`d029cc1`、`686fb10`、`4fb048c`、`498512e`、`aa39e57`、`b3fa5df`、`df93ce6` 已测试索引边界、领域引用、捕获链、空间标签、数字归属、并发摄取、事件失败回滚及对象完整性；正式库 800/800 trace 版本有对应 outbox 事件、290/290 私有对象可读取且散列匹配。仍须完成其余修订入口故障注入、知识晋升、旧迁移链和备份恢复复核 |
 | R2 · 历史元数据与证据边界（B，F02/F03/F04） | 只读枚举活跃及受影响历史 trace，将页码、身份、时间、作者、basis、confidence、locator、bbox、provenance、配置版本逐字段追溯到本图、原始返回、EPUB、用户决议或规则；重点核对早期 OCR/EPUB 扩文、自动会话及 bbox 对应的可见文字 | 受影响记录清单与字段来源表；照片局部、raw、EPUB 对齐和旧/新 revision 对照；无照片证据的文字不进入照片原文，未知字段保持 unknown；经确认的更正走领域修订并保持历史可读 | 11 张页码和笔记时间已版本化修订；83 条活跃纸书 trace 的 146 段印刷区、305 个 detection 引用有首轮只读核对。678 个纸书历史版本的页码/身份与其指定 resolution 一致，旧邻图页码的 3 个逻辑 trace 已退出活跃集。历史 677 个 OCR 印刷区中 11 个旧 v2/v3 跨行扩文，涉及 22 个历史 trace 版本、0 个当前活跃 trace。仍须查墨线覆盖、OCR 真值及其余字段；第 29 页 4 条 unknown 和三张待审扫描依赖 A |
-| R3 · Schema 与语义校验（C） | 对规范正文 MUST 和 `schemas/` 的字段、枚举、null/unknown、状态组合逐项比对；把结构校验、跨对象事务校验、外部证据真实性分配到明确执行层；检查旧版对象读取和迁移 | 条款→字段→校验函数/事务→测试矩阵；合法 JSON 但错误 owner、虚假页码 basis、单行 bbox 对应整段文字、失效 revision 等反例由应用层拒绝或进入待审；无法程序验证的真实性标明人工证据 | 契约测试只证明覆盖的结构和语义样本；尚无逐字段完整结论 |
+| R3 · Schema 与语义校验（C） | 对规范正文 MUST 和 `schemas/` 的字段、枚举、null/unknown、状态组合逐项比对；把结构校验、跨对象事务校验、外部证据真实性分配到明确执行层；检查旧版对象读取和迁移 | 条款→字段→校验函数/事务→测试矩阵；合法 JSON 但错误 owner、虚假页码 basis、单行 bbox 对应整段文字、失效 revision 等反例由应用层拒绝或进入待审；无法程序验证的真实性标明人工证据 | 四类字段的 unknown/value/confidence 组合已入 Schema；正式库 1,450 条旧记录与 85 个契约样本兼容。其余状态、来源和跨对象矩阵尚无逐字段完整结论 |
 | R4 · Gateway 与投送边界（C/D，F05/F06） | 清点图片、session、search、evidence、review/decision/finalize、digital sync 的每个入口；核对受信身份、account/chat→owner、source→owner、幂等键及 payload 冲突、`ErrorResult`、重启恢复；把“已排队”“平台发送成功”“用户端已显示”分成独立状态 | 插件替身和真实消息分别留证；双 owner/account/chat、重复消息与变更附件、坏批次、慢上游、投送失败重试均有正反例；错误可查询且不会伪报送达或阻塞其他照片 | `3a47e89` 补齐七个 Python bridge 的错误字段，`07f99f3` 将其传过插件，`55d61e7` 修复裁片排队后文件过早删除，物理/数字 worker 已分锁；只证明本地与指定真实入口。仍须核对入站 hook 错误查询、跨账户授权、真实重复/变更附件、平台投送及慢源恢复 |
 
 实施顺序：R2 的只读清单与 R1/R3/R4 的入口清单先行；发现违反不变量时先在隔离库复现并修复写入口，再经正式 worker 或受信工具形成版本化结果。A 的三张扫描继续等待用户逐项审核；不能用专项复核代替用户对画线和手写文字的判断。R1–R4 完成后，才在 E 中更新 AC-01–26、handoff 与模块结论。
 
-下一轮执行点：继续核对 R1 的全写入口事件事务与 R3 的字段及状态组合矩阵；对发现的缺口在隔离库建立失败反例。R2 继续只读核对历史版本，A 的三个待审 run 只接受受信用户决议后才由正式工具落库。R4 下一步以真实飞书消息核对附件幂等、hook 错误持久查询及投送层级。每个任务结项时在第 8 节记录提交、测试、正式状态及剩余限制，随后才更新本表状态；当前不得把四类模块标为整体通过。
+下一轮执行点：继续核对 R1 的全写入口事件事务与 R3 的字段及状态组合矩阵；对发现的缺口在隔离库建立失败反例。R4 可检查不调用识别器的附件幂等、hook 错误持久查询及投送层级。R2/A 的照片文字、页眉和候选内容判断暂停，三个待审 run 保持原状；识别输出由用户未来确定的新方法产生。每个任务结项时在第 8 节记录提交、测试、正式状态及剩余限制；当前不得把四类模块标为整体通过。
 
 ### 9.2 §30 不变量的当前写入层映射
 

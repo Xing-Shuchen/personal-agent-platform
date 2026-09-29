@@ -9,12 +9,50 @@ fixtures, all 18 model entries, and a validation report. The added definitions
 factor existing nested structures into reusable contracts; the unavailable
 source-design attachment prevents a name-for-name comparison with its package.
 
+## Physical recognizer handoff
+
+Automatic physical recognition is paused on this PC: the private OpenClaw
+configuration sets `physicalWorkerEnabled: false`. Feishu image intake still
+stores immutable originals; the digital worker is independent. A new recognizer
+must be explicitly connected before physical processing resumes. Do not run an
+OCR or image model merely because a capture arrived.
+
+The framework entry point is `pipeline.process_capture(lib, owner_id,
+capture_id, extractor, extractor_version=...)`. The trusted caller supplies the
+owner and capture ID. `extractor(original_bytes)` receives the immutable image
+bytes and returns either UTF-8 JSON bytes containing the observation fields,
+or `ExtractionOutput(raw, derivative, derivative_width, derivative_height,
+operations, observation)`. The second form keeps the recognizer's raw JSON
+response separate from adapted `observation` JSON. `derivative` is a PNG with
+declared dimensions; operations are `exif_transpose` and/or `uniform_resize`.
+Both forms use the EXIF-oriented original as the normalized coordinate space.
+
+The adapted JSON contains only `image_space`, `visible_title`, `pages`,
+`printed_regions`, `marks`, `annotations`, `symbols`, `links`, and `warnings`.
+Its persisted form is `PageObservation` in `schemas/contracts.schema.json`;
+the framework supplies IDs, owner, run linkage, timestamps, and asset refs.
+`image_space` dimensions must match the EXIF-oriented original. Bounding boxes
+are normalized to `[0, 1]`; each detection belongs to exactly one page region,
+and direct text links stay on that page. Unknown text and page numbers remain
+null with `basis: unknown`, rather than guessed from EPUB or upload order.
+The adapter is responsible for mapping any future recognizer output into these
+fields. It is not allowed to claim an owner, run, catalog ID, or trace ID.
+
+The pipeline validates schema, image dimensions, geometry, and references
+before normalization. It preserves the original, raw response, derivative,
+and failed processing attempt when adapted output is invalid. A changed
+`extractor_version` creates an observation requiring reconciliation when a
+successful run already exists; it does not overwrite current or corrected
+traces. User review and a versioned decision remain necessary for uncertain
+marks. The source EPUB may inform an adapter, but its text is not itself
+evidence that a mark covers that sentence.
+
 `store.py` provides owner-scoped Work/Edition/BookInstance registration,
 versioned sessions, scope-limited active session and 90-minute affinity,
 a content-addressed original object store, all-or-retry capture acceptance,
 idempotency, immutable evidence records, and an outbox in the domain
-transaction. `pipeline.py` accepts a replaceable extractor that
-returns raw JSON bytes. It saves those bytes, validates the observation,
+transaction. `pipeline.py` accepts the replaceable extractor above. It saves
+the raw bytes and validates the adapted observation,
 checks dimensions against the EXIF-oriented original, records failed runs,
 rejects a mark's direct printed-text link when it crosses a page region,
 keeps explicit cross-page observation relationships without merging traces,
@@ -76,18 +114,20 @@ plugin in `../openclaw-plugin/` maps a concrete channel/account/sender to an
 owner and forwards only staged `image/*` media with stable message/item IDs.
 It requires an explicit owner mapping before live capture intake.
 
-`ocr.py` runs local RapidOCR on each original, compares printed lines with a
+The existing `ocr.py` adapter runs local RapidOCR on each original, compares printed lines with a
 matching owner-provided EPUB, detects long pen strokes, and expands marked
 printed text to complete EPUB sentences. Only small handwriting crops go to
 the configured OpenClaw image model. Raw OCR boxes, stroke scores and model
-responses remain attached to the processing observation. Install the optional
+responses remain attached to the processing observation. This adapter is
+historical and currently disabled in the live physical worker. Install the optional
 `librarian-ocr` dependency group in the Python interpreter configured for the
 plugin. `worker.py` recovers accepted Feishu batches, matches a photographed
 ISBN to `source-books/<isbn13>.epub`, registers the book and reading session,
 processes all captures, writes a review note under the configured Obsidian
 Vault's `2Area/40 学习与阅读/阅读笔记`, and sends one Feishu review message after the
-database and Vault write complete. The plugin launches it after intake and
-periodically for recovery. `../openclaw-plugin/recover.mjs` can replay a missed
+database and Vault write complete. The plugin launches the physical worker after
+intake and periodically for recovery only when `physicalWorkerEnabled` is true.
+`../openclaw-plugin/recover.mjs` can replay a missed
 OpenClaw transcript event through the same authenticated intake path.
 
 `events.py` publishes the transactional outbox with stable event IDs and

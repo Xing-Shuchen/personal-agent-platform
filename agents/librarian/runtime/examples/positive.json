@@ -54,7 +54,7 @@
       "acquired_at": {
         "value": null,
         "confidence": null,
-        "basis": "exif"
+        "basis": "unknown"
       },
       "ownership_status": "owned",
       "physical": {
@@ -87,12 +87,12 @@
       "started_at": {
         "value": null,
         "confidence": null,
-        "basis": "exif"
+        "basis": "unknown"
       },
       "ended_at": {
         "value": null,
         "confidence": null,
-        "basis": "exif"
+        "basis": "unknown"
       },
       "progress": null,
       "session_note": null,
@@ -872,7 +872,7 @@
           "acquired_at": {
             "value": null,
             "confidence": null,
-            "basis": "exif"
+            "basis": "unknown"
           },
           "ownership_status": "owned",
           "physical": {

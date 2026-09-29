@@ -44,9 +44,17 @@ From the PAP repository root, install the linked local plugin:
 openclaw plugins install --link --force --accept-capabilities ./agents/librarian/openclaw-plugin
 ```
 
-Configure absolute repository and private state paths, an OCR-capable Python
-interpreter, and an explicit owner mapping. Vault is optional. Install the
-package's `librarian-ocr` extra in that interpreter. An owner-supplied EPUB at
+Configure absolute repository and private state paths, a Python interpreter,
+and an explicit owner mapping. Vault is optional. On this PC,
+`physicalWorkerEnabled` is set to `false` in the private OpenClaw configuration:
+image intake remains active, but the physical worker does not launch after
+intake or on its recovery schedule. Keep this setting until a replacement
+recognizer is integrated with the `PageObservation` handoff described in the
+[runtime README](../runtime/README.md#physical-recognizer-handoff). The digital
+worker has a separate schedule. The following OCR setup describes the dormant
+adapter for deployments that explicitly enable it.
+
+Install the package's `librarian-ocr` extra in that interpreter. An owner-supplied EPUB at
 `stateRoot/source-books/<isbn13>.epub` enables local OCR alignment; without it,
 the worker still runs local OCR for printed lines and underlines, then uses the
 configured image-capable OpenClaw model only when local OCR finds no mark.

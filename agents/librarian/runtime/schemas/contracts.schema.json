@@ -49,7 +49,33 @@
         "confidence",
         "basis"
       ],
-      "additionalProperties": false
+      "additionalProperties": false,
+      "if": {
+        "properties": {
+          "basis": {
+            "const": "unknown"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "text": {
+            "type": "null"
+          },
+          "confidence": {
+            "type": "null"
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "text": {
+            "not": {
+              "type": "null"
+            }
+          }
+        }
+      }
     },
     "TimeField": {
       "type": "object",
@@ -84,7 +110,33 @@
         "confidence",
         "basis"
       ],
-      "additionalProperties": false
+      "additionalProperties": false,
+      "if": {
+        "properties": {
+          "basis": {
+            "const": "unknown"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "value": {
+            "type": "null"
+          },
+          "confidence": {
+            "type": "null"
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "value": {
+            "not": {
+              "type": "null"
+            }
+          }
+        }
+      }
     },
     "IdentityField": {
       "type": "object",
@@ -130,7 +182,33 @@
         "basis",
         "status"
       ],
-      "additionalProperties": false
+      "additionalProperties": false,
+      "if": {
+        "properties": {
+          "basis": {
+            "const": "unknown"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "value": {
+            "type": "null"
+          },
+          "confidence": {
+            "type": "null"
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "value": {
+            "not": {
+              "type": "null"
+            }
+          }
+        }
+      }
     },
     "PageLabel": {
       "type": "object",
@@ -206,7 +284,33 @@
         "basis",
         "status"
       ],
-      "additionalProperties": false
+      "additionalProperties": false,
+      "if": {
+        "properties": {
+          "basis": {
+            "const": "unknown"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "value": {
+            "type": "null"
+          },
+          "confidence": {
+            "type": "null"
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "value": {
+            "not": {
+              "type": "null"
+            }
+          }
+        }
+      }
     },
     "ObjectRef": {
       "type": "object",
@@ -1255,7 +1359,10 @@
               "type": "array",
               "items": {
                 "type": "string",
-                "enum": ["exif_transpose", "uniform_resize"]
+                "enum": [
+                  "exif_transpose",
+                  "uniform_resize"
+                ]
               },
               "minItems": 1,
               "uniqueItems": true
@@ -1264,7 +1371,13 @@
               "const": "normalized_same_origin"
             }
           },
-          "required": ["asset", "width", "height", "operations", "coordinate_mapping"],
+          "required": [
+            "asset",
+            "width",
+            "height",
+            "operations",
+            "coordinate_mapping"
+          ],
           "additionalProperties": false
         },
         "visible_title": {
