@@ -20,6 +20,7 @@ spec:
     desired_jobs:
       - name: compiler-hpc-brief
         schedule: "0 7 * * *"
+        deliver_at: "08:10"
         skill: compiler-hpc-brief
         model: qwen/qwen3.8-max
         args: {}
