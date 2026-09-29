@@ -70,6 +70,25 @@ def test_candidate_requires_explicit_trigger_and_promotion_confirms_external_wri
         assert events[0]["payload"]["knowledge_id"] == "knowledge_fixture"
 
 
+def test_storage_rejects_candidate_reference_to_other_owner(tmp_path):
+    with Library(tmp_path) as lib:
+        own = ingest_export(lib, "owner_a", "weread", "own.md", EXPORT)[0]
+        foreign = ingest_export(lib, "owner_b", "weread", "foreign.md", EXPORT)[0]
+        candidate = create_candidate(
+            lib, "owner_a", [{"trace_id": own["id"], "revision": 1}],
+            candidate_type="concept",
+            content={"text": None, "confidence": None, "basis": "unknown"},
+            correlation_id="fixture")
+        forged = {**candidate, "id": "candidate_wrong_owner",
+                  "source_trace_refs": [{"trace_id": foreign["id"], "revision": 1}]}
+        with pytest.raises(LibrarianError) as rejected:
+            with lib.transaction():
+                lib._put(forged)
+        assert rejected.value.code == "VALIDATION_FAILED"
+        assert lib.db.execute("SELECT 1 FROM records WHERE id=?",
+                              (forged["id"],)).fetchone() is None
+
+
 def test_rejection_reason_and_changed_trace_prevent_stale_approval(tmp_path):
     with Library(tmp_path) as lib:
         trace = ingest_export(lib, "owner_a", "weread", "synthetic.md", EXPORT)[0]

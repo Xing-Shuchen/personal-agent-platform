@@ -203,9 +203,71 @@ class Library:
     def get(self, owner_id: str, model: str, object_id: str) -> dict[str, Any]:
         return self._get(owner_id, model, object_id)
 
+    def _record_version(self, owner_id: str, model: str, object_id: str,
+                        revision: int) -> dict[str, Any]:
+        row = self.db.execute(
+            "SELECT body FROM records WHERE owner_id=? AND model=? AND id=? AND revision=?",
+            (owner_id, model, object_id, revision)).fetchone()
+        if row is None:
+            raise LibrarianError("VALIDATION_FAILED", "referenced record version is unavailable")
+        return json.loads(row["body"])
+
+    def _validate_record_links(self, record: dict[str, Any]) -> None:
+        """Check owner-scoped historical references at the final write boundary."""
+        owner = record["owner_id"]
+        model = record["object_type"]
+        if model == "KnowledgeCandidate":
+            for ref in record["source_trace_refs"]:
+                self._record_version(owner, "ReadingTrace", ref["trace_id"], ref["revision"])
+        elif model == "TraceRelation":
+            source = record["source_trace_ref"]
+            self._record_version(owner, "ReadingTrace", source["trace_id"], source["revision"])
+            target = record["target"]
+            if target["type"] == "trace":
+                if target["revision"] is None:
+                    raise LibrarianError("VALIDATION_FAILED", "trace relation target needs a revision")
+                self._record_version(owner, "ReadingTrace", target["id"], target["revision"])
+        elif model == "ReadingTrace" and record["medium"] == "physical":
+            source = record["source"]
+            capture_id = source["capture_id"]
+            self._record_version(owner, "PageCapture", capture_id, 1)
+            observation = self._record_version(owner, "PageObservation",
+                                               source["observation_id"], 1)
+            resolution = self._record_version(owner, "CaptureResolution",
+                                              source["resolution_id"],
+                                              source["resolution_revision"])
+            if observation["capture_id"] != capture_id or resolution["capture_id"] != capture_id:
+                raise LibrarianError("VALIDATION_FAILED", "physical trace capture references disagree")
+            for field, identity in (("session_id", "session"), ("work_id", "work"),
+                                    ("edition_id", "edition"),
+                                    ("book_instance_id", "book_instance")):
+                if record[field] != resolution[identity]["value"]:
+                    raise LibrarianError("VALIDATION_FAILED", "trace and resolution identities disagree")
+            page_id = record["location"]["page_region_id"]
+            page = next((item for item in resolution["pages"] if item["id"] == page_id), None)
+            if (page is None or record["location"]["page"] != page["page"]["value"] or
+                    record["location"]["page_bbox"] != page["bbox"]):
+                raise LibrarianError("VALIDATION_FAILED", "trace page disagrees with resolution")
+            detections = {item["id"]: item for section in
+                          ("printed_regions", "marks", "annotations", "symbols")
+                          for item in observation[section]}
+            ids = source["detection_ids"]
+            if len(ids) != len(set(ids)):
+                raise LibrarianError("VALIDATION_FAILED", "trace detection IDs must be unique")
+            box = record["location"]["bbox"]
+            for identifier in ids:
+                item = detections.get(identifier)
+                if item is None or item["page_region_id"] != page_id:
+                    raise LibrarianError("VALIDATION_FAILED", "trace detection link is invalid")
+                part = item["bbox"]
+                if not (box[0] - 1e-5 <= part[0] and box[1] - 1e-5 <= part[1] and
+                        box[2] + 1e-5 >= part[2] and box[3] + 1e-5 >= part[3]):
+                    raise LibrarianError("VALIDATION_FAILED", "trace bbox misses linked evidence")
+
     def _put(self, record: dict[str, Any]) -> None:
         model = record["object_type"]
         validate(model, record)
+        self._validate_record_links(record)
         revision = record.get("revision", 1)
         old = self.db.execute("SELECT revision FROM records WHERE owner_id=? AND model=? AND id=? AND current=1",
                               (record["owner_id"], model, record["id"])).fetchone()

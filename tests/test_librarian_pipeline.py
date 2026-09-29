@@ -424,6 +424,70 @@ def test_search_response_accepts_corrected_trace_revision(tmp_path: Path) -> Non
             (trace["id"], corrected["revision"])]
 
 
+def test_storage_rejects_forged_physical_detection_and_capture_links(tmp_path: Path) -> None:
+    with Library(tmp_path) as lib:
+        receipt = lib.ingest("owner_a", transport="gateway", account_id="account",
+                             conversation_id="chat", source_event_id="message-1",
+                             attachments=[{"source_item_id": "image-1", "mime_type": "image/png",
+                                           "data": _photo()}], idempotency_key="command-1")
+        trace = process_capture(lib, "owner_a", receipt["capture_ids"][0],
+                                lambda _: _output())[0]
+        another = lib.ingest("owner_a", transport="gateway", account_id="account",
+                             conversation_id="chat", source_event_id="message-2",
+                             attachments=[{"source_item_id": "image-2", "mime_type": "image/png",
+                                           "data": _photo()}], idempotency_key="command-2")
+        for suffix, field, value in (
+                ("detection", "detection_ids", ["printed_missing", "mark_1"]),
+                ("capture", "capture_id", another["capture_ids"][0])):
+            forged = json.loads(json.dumps(trace))
+            forged["id"] = f"rt_forged_{suffix}"
+            forged["source"][field] = value
+            with pytest.raises(LibrarianError) as rejected:
+                with lib.transaction():
+                    lib._put(forged)
+            assert rejected.value.code == "VALIDATION_FAILED"
+            assert lib.db.execute("SELECT 1 FROM records WHERE id=?",
+                                  (forged["id"],)).fetchone() is None
+
+
+def test_storage_checks_owner_and_historical_trace_versions_in_relations(tmp_path: Path) -> None:
+    with Library(tmp_path) as lib:
+        receipt = lib.ingest("owner_a", transport="gateway", account_id="account",
+                             conversation_id="chat", source_event_id="message",
+                             attachments=[{"source_item_id": "image", "mime_type": "image/png",
+                                           "data": _photo()}], idempotency_key="command")
+        trace = process_capture(lib, "owner_a", receipt["capture_ids"][0],
+                                lambda _: _output())[0]
+        revised = correct_trace(lib, "owner_a", trace["id"], 1,
+                                printed_text="Verified", reason="checked")
+        relation = {"object_type": "TraceRelation", "schema_version": "0.1.0",
+                    "id": "relation_history", "owner_id": "owner_a",
+                    "created_at": revised["created_at"], "revision": 1,
+                    "supersedes_revision": None,
+                    "source_trace_ref": {"trace_id": trace["id"], "revision": 2},
+                    "relation": "supersedes",
+                    "target": {"type": "trace", "id": trace["id"], "revision": 1},
+                    "provenance": "user correction", "confidence": None}
+        with lib.transaction():
+            lib._put(relation)
+        assert lib.get("owner_a", "TraceRelation", relation["id"]) == relation
+        for suffix, target_revision in (("missing", 99), ("null", None)):
+            forged = json.loads(json.dumps(relation))
+            forged["id"] = f"relation_{suffix}"
+            forged["target"]["revision"] = target_revision
+            with pytest.raises(LibrarianError) as rejected:
+                with lib.transaction():
+                    lib._put(forged)
+            assert rejected.value.code == "VALIDATION_FAILED"
+        wrong_owner = json.loads(json.dumps(relation))
+        wrong_owner["id"] = "relation_wrong_owner"
+        wrong_owner["owner_id"] = "owner_b"
+        with pytest.raises(LibrarianError) as rejected:
+            with lib.transaction():
+                lib._put(wrong_owner)
+        assert rejected.value.code == "VALIDATION_FAILED"
+
+
 def test_reconciliation_index_failure_never_serves_superseded_trace(tmp_path: Path,
                                                                      monkeypatch) -> None:
     from agents.librarian.runtime import pipeline
