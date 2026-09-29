@@ -242,6 +242,17 @@ class Library:
             self._current_link(owner, "Work", record["work_id"])
         elif model == "BookInstance":
             self._current_link(owner, "Edition", record["edition_id"])
+        elif model == "PageCapture":
+            batch = self._current_link(owner, "CaptureBatch", record["batch_id"])
+            if record["id"] not in batch["capture_ids"]:
+                raise LibrarianError("VALIDATION_FAILED", "capture is absent from its batch")
+        elif model == "ProcessingRun":
+            self._current_link(owner, "PageCapture", record["capture_id"])
+        elif model == "PageObservation":
+            run = self._current_link(owner, "ProcessingRun", record["processing_run_id"])
+            self._current_link(owner, "PageCapture", record["capture_id"])
+            if run["capture_id"] != record["capture_id"]:
+                raise LibrarianError("VALIDATION_FAILED", "observation and processing run capture disagree")
         elif model == "ReadingSession":
             self._check_catalog_chain(
                 owner, work_id=record["work_id"], edition_id=record["edition_id"],

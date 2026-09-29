@@ -45,6 +45,38 @@ def _photo() -> bytes:
     return stream.getvalue()
 
 
+def test_storage_rejects_capture_run_observation_cross_links(tmp_path: Path) -> None:
+    with Library(tmp_path) as lib:
+        first = lib.ingest(
+            "owner_a", transport="gateway", account_id="account", conversation_id="chat",
+            source_event_id="message-1", idempotency_key="command-1",
+            attachments=[{"source_item_id": "image-1", "mime_type": "image/png", "data": _photo()}])
+        second = lib.ingest(
+            "owner_a", transport="gateway", account_id="account", conversation_id="chat",
+            source_event_id="message-2", idempotency_key="command-2",
+            attachments=[{"source_item_id": "image-1", "mime_type": "image/png", "data": _photo()}])
+        first_capture, second_capture = first["capture_ids"][0], second["capture_ids"][0]
+        process_capture(lib, "owner_a", first_capture, lambda _: _output())
+        observation = json.loads(lib.db.execute(
+            "SELECT body FROM records WHERE model='PageObservation' AND owner_id='owner_a'"
+        ).fetchone()["body"])
+        run = lib.get("owner_a", "ProcessingRun", observation["processing_run_id"])
+        capture = lib.get("owner_a", "PageCapture", first_capture)
+
+        forged = [
+            {**capture, "id": "capture_unlisted"},
+            {**run, "id": "run_missing", "capture_id": "capture_missing"},
+            {**observation, "id": "observation_wrong_capture", "capture_id": second_capture},
+            {**observation, "id": "observation_missing_run", "processing_run_id": "run_missing"},
+        ]
+        for record in forged:
+            with pytest.raises(LibrarianError) as rejected:
+                with lib.transaction():
+                    lib._put(record)
+            assert rejected.value.code == "VALIDATION_FAILED"
+            assert lib.db.execute("SELECT 1 FROM records WHERE id=?", (record["id"],)).fetchone() is None
+
+
 def test_vision_page_resolution_revises_only_unknown_page(tmp_path: Path) -> None:
     observation = json.loads(_output())
     observation["pages"][0]["page"] = {"value": None, "confidence": None,
