@@ -418,6 +418,8 @@ R4 原图投送媒体寿命修复：`librarian_evidence` 原先等待 `ctx.deliv
 
 R1/F08 索引事务边界复核与修复：初次照片提取和重提取对账此前已把索引投影移至领域提交之后，但 `correct_trace`、`resolve_capture`、数字导出和 Koodo/WeRead native 创建/更新/删除及待审来源对账仍在领域事务内更新 `trace_index`。这会使索引插入或删除故障回滚用户更正、页码修订或来源同步。`48099cd` 将这些写入口改为先提交 trace revision、来源状态与事件，再由独立的最佳努力索引修复处理投影；重放同一来源也会修复滞后索引。隔离库注入索引异常后，纸书更正、页码修订、数字导出及两种 native 同步的领域结果保留，解除故障后可重建/重放检索。Librarian Python 133 项、插件 14 项、契约校验通过。正式库只读显示 205 个活跃 trace 对 205 条索引、缺失/旧 revision 为 0；这证明当前投影就绪，不替代所有故障点和旧迁移链的完整 R1/F08 验收。
 
+R1 引用链写入边界增补：此前知识候选的公开创建路径会校验当前 trace，但 `Library._put` 对 TraceRelation、KnowledgeCandidate 的历史版本引用以及纸书 trace 的 capture→observation→resolution→detection 关联只执行单对象 Schema。`399c3f5` 在最终存储写入口增加同 owner、指定 revision 存在性及纸书页区/身份/bbox 一致性检查，保留历史 superseded trace 可作为 lineage 目标。伪造检测 ID、换用同 owner 其他 capture、缺失或空 trace revision、跨 owner 关系与知识候选均被拒绝且不写半条记录。正式库只读备份用新检查遍历 678 个纸书 trace 版本、70 条 TraceRelation 和 0 条 KnowledgeCandidate，全部兼容；Librarian Python 136 项、契约校验通过。这覆盖所列引用，不表示 §30 其余每条不变量或知识服务外部对象已完成复审。
+
 ## 9. 现行实现计划（2026-09-29）
 
 第 1–7 节仍是对 `d111ace` 的初审，不能用其中的旧行号和测试数量描述当前 HEAD。本节把整改转为可执行批次；每批结束时在第 8 节记录实际提交、测试、生产状态和未验项。除明确列出的真实用户审核外，调试与迁移均通过 Librarian 的 worker、领域命令或受信 Gateway 工具执行，不手改生产数据库或 Vault 生成块。
