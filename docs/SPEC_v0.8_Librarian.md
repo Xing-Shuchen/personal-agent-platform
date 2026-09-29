@@ -396,7 +396,7 @@ symbol  arrow  page_mark  unknown_mark
 
 `KnowledgeCandidate` 必须记录 `source_trace_refs`，包括 trace ID 和 revision。`candidate_type` 为 `concept / claim / question / disagreement / connection / reread_target`；内容和 entity/concept 解释分别保存自己的来源与 confidence。
 
-**[实现提案]** Candidate 状态为 `pending → approved → promoted`，或 `pending → rejected`。来源发生相关修订时可进入 `superseded`；不能把旧版解释默默迁移为对新版来源的断言。`promoted` 必须引用已由知识服务成功持久化的 `knowledge_id`。
+**[实现提案]** Candidate 状态为 `pending → approved → promoted`，或 `pending → rejected`。`pending` 或 `approved` 的来源发生相关修订时进入 `superseded`；不能把旧版解释默默迁移为对新版来源的断言。已 `promoted` 的历史知识保留原来源 revision，后续纠错由知识层另行处理。`promoted` 必须引用已由知识服务成功持久化的 `knowledge_id`。
 
 模型写出的候选内容须标记为 `basis=model_inference`，不能装入 trace 的 `printed_text` 或用户 `annotation` 字段。仅凭 `Parsons?`，候选只能表达可能存在的联想，不能断言赞同 Parsons、反对 Weber 或已经形成特定理论观点。
 

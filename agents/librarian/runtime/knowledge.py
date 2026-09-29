@@ -36,13 +36,13 @@ def create_candidate(lib: Library, owner_id: str,
 
 def supersede_pending_for_trace(lib: Library, owner_id: str,
                                 old_trace: dict[str, Any], new_trace: dict[str, Any]) -> None:
-    """Retire stale pending interpretations; regenerate only symbol prompts."""
+    """Retire stale unpromoted interpretations; regenerate only pending symbol prompts."""
     rows = lib.db.execute(
         "SELECT body FROM records WHERE owner_id=? AND model='KnowledgeCandidate' AND current=1",
         (owner_id,)).fetchall()
     for row in rows:
         current = json.loads(row["body"])
-        if current["status"] != "pending" or not any(
+        if current["status"] not in {"pending", "approved"} or not any(
                 ref["trace_id"] == old_trace["id"] and ref["revision"] == old_trace["revision"]
                 for ref in current["source_trace_refs"]):
             continue
@@ -50,7 +50,8 @@ def supersede_pending_for_trace(lib: Library, owner_id: str,
                    "supersedes_revision": current["revision"],
                    "created_at": _now(), "status": "superseded"}
         lib._put(revised)
-        if (current.get("trigger") == "symbol" and len(current["source_trace_refs"]) == 1
+        if (current["status"] == "pending" and current.get("trigger") == "symbol"
+                and len(current["source_trace_refs"]) == 1
                 and "promote_candidate" in new_trace["intent_signals"]):
             create_candidate(lib, owner_id,
                              [{"trace_id": new_trace["id"], "revision": new_trace["revision"]}],

@@ -382,7 +382,7 @@ class Library:
             if model == "KnowledgeCandidate":
                 previous = json.loads(old["body"])
                 allowed = {"pending": {"approved", "rejected", "superseded"},
-                           "approved": {"promoted"}}
+                           "approved": {"promoted", "superseded"}}
                 if record["status"] not in allowed.get(previous["status"], set()):
                     raise LibrarianError("INVALID_STATE_TRANSITION", "invalid candidate transition")
                 if any(record[field] != previous[field] for field in

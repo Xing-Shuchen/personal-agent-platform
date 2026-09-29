@@ -24,6 +24,12 @@ candidate when any source trace revision is stale or inactive. Terminal
 candidate history keeps its old source references. Full Python regression:
 523 passed. See audit §22.
 
+An approved candidate now becomes superseded when its source trace is
+corrected, with the old source revision retained. A concurrent knowledge
+promotion then returns a revision conflict and emits no success event. The
+full Python suite remains 523 passed; the spec's candidate transition text
+and audit §22 record this behavior.
+
 Latest scope change: printed underline text is accepted with its current EPUB
 punctuation expansion. The private review site now offers a handwriting-only
 page with 15 note crops and versioned confirm/edit/reject actions; actual user

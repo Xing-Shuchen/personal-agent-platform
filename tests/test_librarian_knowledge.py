@@ -205,7 +205,10 @@ def test_source_correction_during_external_write_does_not_publish_promotion(tmp_
         with pytest.raises(LibrarianError) as stale:
             promote_candidate(lib, "owner_a", candidate["id"], 2, write)
         assert stale.value.code == "REVISION_CONFLICT"
-        assert lib.get("owner_a", "KnowledgeCandidate", candidate["id"])["status"] == "approved"
+        superseded = lib.get("owner_a", "KnowledgeCandidate", candidate["id"])
+        assert superseded["status"] == "superseded"
+        assert superseded["revision"] == 3
+        assert superseded["source_trace_refs"] == [{"trace_id": trace["id"], "revision": 1}]
         assert not any(event["event"] == "reading.knowledge.promoted"
                        for event in lib.pending_events("owner_a"))
 
