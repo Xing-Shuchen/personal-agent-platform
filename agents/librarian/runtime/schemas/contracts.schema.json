@@ -1208,7 +1208,8 @@
             "pending",
             "success",
             "partial",
-            "failed"
+            "failed",
+            "duplicate"
           ]
         },
         "issues": {

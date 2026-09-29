@@ -2,11 +2,40 @@ from __future__ import annotations
 
 import io
 import json
+from pathlib import Path
 
 import pytest
 from PIL import Image
 
 from agents.librarian.runtime.bookscan_adapter import _manifest_entry, adapt_report
+
+
+def test_review_html_changes_do_not_change_processor_version(tmp_path, monkeypatch):
+    from agents.librarian.runtime import bookscan_adapter as adapter
+    source = tmp_path / "bookscan"
+    source.mkdir()
+    (source / "vision.py").write_text("processing-v1")
+    review = source / "review.py"
+    review.write_text("review-v1")
+    evaluation = source / "evaluate.py"
+    evaluation.write_text("evaluation-v1")
+    config = tmp_path / "local-processing"
+    config.mkdir()
+    for name in ("config.yaml", "manifest.json", "inputs.sha256"):
+        (config / name).write_text("baseline")
+    monkeypatch.setattr(adapter, "REPO", tmp_path)
+    monkeypatch.setattr(adapter, "SAMPLE_ROOT", config)
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    adapter.processor_fingerprint.cache_clear()
+    first = adapter.processor_fingerprint()
+    review.write_text("review-v2")
+    evaluation.write_text("evaluation-v2")
+    adapter.processor_fingerprint.cache_clear()
+    assert adapter.processor_fingerprint() == first
+    (source / "vision.py").write_text("processing-v2")
+    adapter.processor_fingerprint.cache_clear()
+    assert adapter.processor_fingerprint() != first
+    adapter.processor_fingerprint.cache_clear()
 from agents.librarian.runtime.pipeline import process_capture
 from agents.librarian.runtime.store import Library
 

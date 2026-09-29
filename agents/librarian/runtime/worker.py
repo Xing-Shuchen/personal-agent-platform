@@ -23,7 +23,8 @@ from xml.etree import ElementTree as ET
 
 from .bookscan_adapter import bookscan_extractor, processor_fingerprint
 from .gateway_review_finalize import auto_reconcile_fully_reviewed
-from .pipeline import (process_capture, reconcile_extraction, bind_fingerprint_context,
+from .pipeline import (process_capture, reconcile_extraction,
+                       dismiss_identical_pending, bind_fingerprint_context,
                        _repair_trace_index_best_effort)
 from .store import Library, LibrarianError, _new, _now, _unknown_time
 from .koodo_native import sync_koodo_sqlite
@@ -53,7 +54,7 @@ def _notified_batch_is_current(batch: dict, *, notified: bool,
     return (notified and revised_notice and not unbound and
             captures.isdisjoint(pending_review_ids) and
             {run["capture_id"] for run in matching_runs} == captures and
-            all(latest_runs.get(capture_id, {}).get("outcome") in {"success", "partial"}
+            all(latest_runs.get(capture_id, {}).get("outcome") in {"success", "partial", "duplicate"}
                 for capture_id in captures))
 
 
@@ -819,13 +820,17 @@ def _process_batch(lib: Library, root: Path, vault: Path | None, owner: str,
         except LibrarianError as error:
             if error.code not in {"RECONCILIATION_REQUIRED", "REVISION_CONFLICT"}:
                 raise
+    for pending in _current(lib, owner, "ProcessingRun"):
+        if (pending["capture_id"] in batch["capture_ids"] and
+                pending["outcome"] == "pending"):
+            dismiss_identical_pending(lib, owner, pending["capture_id"], pending["id"])
     latest_runs = {run["capture_id"]: run for run in
                    _current(lib, owner, "ProcessingRun")}
     pending_review_ids = _latest_pending_review_ids(list(latest_runs.values()))
     runs = [run for run in _current(lib, owner, "ProcessingRun")
             if run["capture_id"] in batch["capture_ids"] and
             run["extractor_version"] == version and
-            run["outcome"] in {"success", "partial"}]
+            run["outcome"] in {"success", "partial", "duplicate"}]
     revised_notice = any((root / "notifications").glob(f"{batch['id']}-revision*.json"))
     unbound = any(trace["work_id"] is None for trace in _current(lib, owner, "ReadingTrace")
                   if trace["status"] == "active" and

@@ -24,11 +24,20 @@ SAMPLE_ROOT = REPO / "local-processing"
 
 @lru_cache(maxsize=1)
 def processor_fingerprint() -> str:
-    """Bind retries and reprocessing to the adapter, configuration and weights."""
+    """Bind extraction retries to processing code, config and weights.
+
+    Review-page rendering and evaluation only consume a finished run. Editing
+    either must not re-run OCR or create a pending reconciliation.
+    """
     digest = hashlib.sha256()
-    sources = [*sorted((REPO / "bookscan").glob("*.py")), Path(__file__),
+    sources = [*sorted(path for path in (REPO / "bookscan").glob("*.py")
+                       if path.name not in {"review.py", "evaluate.py"}),
                SAMPLE_ROOT / "config.yaml", SAMPLE_ROOT / "manifest.json",
                SAMPLE_ROOT / "inputs.sha256"]
+    # The adapter's imports and fingerprint implementation do not change the
+    # observation; adapt_report and the extractor below do.
+    adapter_processing = Path(__file__).read_bytes().split(b"\ndef _box(", 1)[1]
+    digest.update(b"def _box(" + adapter_processing)
     for name in ("PP-OCRv5_mobile_det", "PP-OCRv5_mobile_rec"):
         sources += sorted((Path.home() / ".paddlex" / "official_models" / name).rglob("*"))
     for path in sources:
@@ -37,7 +46,12 @@ def processor_fingerprint() -> str:
             with path.open("rb") as stream:
                 for chunk in iter(lambda: stream.read(1024 * 1024), b""):
                     digest.update(chunk)
-    return digest.hexdigest()[:16]
+    core = digest.hexdigest()[:16]
+    # 30a517d9be8dd3b7 was minted when an ISBN-only review.py change was
+    # included in the old fingerprint. Its processing core is this exact hash.
+    # Preserve the run identity for the current deployed core; any processing
+    # change still yields a new hash and goes through reconciliation.
+    return {"152f23333f2f08f7": "30a517d9be8dd3b7"}.get(core, core)
 
 
 def _jsonl(path: Path) -> list[dict]:

@@ -126,7 +126,7 @@ def process_capture(lib: Library, owner_id: str, capture_id: str,
     old = lib.db.execute("SELECT body FROM records WHERE owner_id=? AND model='ProcessingRun' AND current=1",
                          (owner_id,)).fetchall()
     runs = [run for row in old if (run := json.loads(row["body"]))["capture_id"] == capture_id]
-    completed = [run for run in runs if run["outcome"] in {"success", "partial"}]
+    completed = [run for run in runs if run["outcome"] in {"success", "partial", "duplicate"}]
     for run in completed:
         if (run["extractor_version"] == extractor_version and
                 run["normalizer_version"] == normalizer_version and
@@ -521,6 +521,58 @@ def _traces_for_capture(lib: Library, owner_id: str, capture_id: str) -> list[di
                           (owner_id,)).fetchall()
     return [trace for row in rows if (trace := json.loads(row["body"]))["source"].get("capture_id") == capture_id
             and trace["status"] == "active"]
+
+
+def dismiss_identical_pending(lib: Library, owner_id: str, capture_id: str,
+                              expected_run_id: str) -> str | None:
+    """Version a redundant pending run without replacing existing traces.
+
+    Comparison covers the complete normalized observation. Raw Bookscan JSON
+    can differ in paths, timestamps and review-page content while producing the
+    same domain evidence. A changed observation remains pending for review.
+    """
+    semantic_keys = ("image_space", "visible_title", "pages", "printed_regions",
+                     "marks", "annotations", "symbols", "links", "warnings")
+    with lib.transaction():
+        rows = lib.db.execute("SELECT body FROM records WHERE owner_id=? AND "
+                              "model='ProcessingRun' AND current=1", (owner_id,))
+        runs = [json.loads(row["body"]) for row in rows]
+        pending = next((run for run in runs if run["id"] == expected_run_id and
+                        run["capture_id"] == capture_id and run["outcome"] == "pending" and
+                        "RECONCILIATION_REQUIRED" in run["issues"]), None)
+        if pending is None:
+            return None
+        observations = {item["processing_run_id"]: item for row in lib.db.execute(
+            "SELECT body FROM records WHERE owner_id=? AND model='PageObservation' "
+            "AND current=1", (owner_id,))
+            if (item := json.loads(row["body"]))["capture_id"] == capture_id}
+        candidate = observations.get(expected_run_id)
+        if candidate is None:
+            return None
+        candidate_body = {key: candidate.get(key) for key in semantic_keys}
+        for prior in runs:
+            if (prior["capture_id"] != capture_id or
+                    prior["outcome"] not in {"success", "partial"} or
+                    prior["normalizer_version"] != pending["normalizer_version"] or
+                    prior.get("vocabulary_version") != pending.get("vocabulary_version") or
+                    (prior.get("vocabulary_config_ref") or {}).get("sha256") !=
+                    (pending.get("vocabulary_config_ref") or {}).get("sha256")):
+                continue
+            baseline = observations.get(prior["id"])
+            if baseline is None or any(baseline.get(key) != candidate_body[key]
+                                       for key in semantic_keys):
+                continue
+            duplicate = json.loads(_json(pending))
+            duplicate.update({"created_at": _now(), "revision": pending["revision"] + 1,
+                              "supersedes_revision": pending["revision"],
+                              "outcome": "duplicate", "issues": []})
+            validate("ProcessingRun", duplicate)
+            lib._put(duplicate)
+            lib.db.execute("UPDATE extractor_attempts SET status='duplicate', error_code=NULL "
+                           "WHERE owner_id=? AND capture_id=? AND run_id=?",
+                           (owner_id, capture_id, pending["id"]))
+            return prior["id"]
+    return None
 
 
 def reconcile_extraction(lib: Library, owner_id: str, capture_id: str,

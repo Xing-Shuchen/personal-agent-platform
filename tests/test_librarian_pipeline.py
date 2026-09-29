@@ -8,7 +8,7 @@ import pytest
 from PIL import Image
 
 from agents.librarian.runtime.digital import ingest_export
-from agents.librarian.runtime.pipeline import bind_fingerprint_context, correct_trace, process_capture, reconcile_extraction, rebuild_index, render_trace_crop, resolve_capture, search, search_response
+from agents.librarian.runtime.pipeline import bind_fingerprint_context, correct_trace, dismiss_identical_pending, process_capture, reconcile_extraction, rebuild_index, render_trace_crop, resolve_capture, search, search_response
 from agents.librarian.runtime.knowledge import create_candidate, decide_candidate, promote_candidate
 from agents.librarian.runtime.review import review_queues
 from agents.librarian.runtime.store import Library, LibrarianError, validate
@@ -174,6 +174,30 @@ def test_reextract_keeps_promoted_knowledge_source_active(tmp_path: Path) -> Non
         assert error.value.code == "RECONCILIATION_REQUIRED"
         assert lib.get("owner_a", "ReadingTrace", old[0]["id"])["status"] == "active"
         assert lib.get("owner_a", "KnowledgeCandidate", candidate["id"])["status"] == "promoted"
+
+
+def test_identical_reextract_reuses_original_traces_without_ocr_retry(tmp_path: Path) -> None:
+    with Library(tmp_path) as lib:
+        receipt = lib.ingest("owner_a", transport="gateway", account_id="account",
+                             conversation_id="chat", source_event_id="message-1",
+                             attachments=[{"source_item_id": "image-1", "mime_type": "image/png",
+                                           "data": _photo()}], idempotency_key="command-1")
+        capture_id = receipt["capture_ids"][0]
+        original = process_capture(lib, "owner_a", capture_id, lambda _: _output(),
+                                   extractor_version="v1")
+        with pytest.raises(LibrarianError, match="awaits reconciliation"):
+            process_capture(lib, "owner_a", capture_id, lambda _: _output(),
+                            extractor_version="v2")
+        runs = [json.loads(row[0]) for row in lib.db.execute(
+            "SELECT body FROM records WHERE model='ProcessingRun' AND current=1")]
+        pending = next(run for run in runs if run["extractor_version"] == "v2")
+        assert dismiss_identical_pending(lib, "owner_a", capture_id, pending["id"]) == \
+            next(run["id"] for run in runs if run["extractor_version"] == "v1")
+        assert lib.get("owner_a", "ProcessingRun", pending["id"])["outcome"] == "duplicate"
+        assert [trace["id"] for trace in process_capture(
+            lib, "owner_a", capture_id,
+            lambda _: pytest.fail("duplicate observation reran extractor"),
+            extractor_version="v2")] == [trace["id"] for trace in original]
 
 
 def test_late_edition_fingerprint_binds_unknown_capture_without_reextracting(tmp_path: Path) -> None:
