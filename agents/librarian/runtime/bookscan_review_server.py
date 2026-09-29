@@ -57,8 +57,11 @@ def create_server(root: Path, owner: str, vault: Path | None,
             parsed = urlsplit(self.path)
             if parsed.path == "/" and hmac.compare_digest(
                     parse_qs(parsed.query).get("token", [""])[0], bootstrap):
+                destination = ("/review/handwriting.html" if
+                               parse_qs(parsed.query).get("view") == ["handwriting"] else
+                               "/review/index.html")
                 self.send_response(HTTPStatus.FOUND)
-                self.send_header("Location", "/review/index.html")
+                self.send_header("Location", destination)
                 self.send_header("Set-Cookie", f"librarian_review={cookie_secret}; "
                                  "HttpOnly; SameSite=Strict; Path=/")
                 self.send_header("Cache-Control", "no-store")

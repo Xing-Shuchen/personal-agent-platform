@@ -22,6 +22,7 @@ def test_local_review_requires_bootstrap_cookie_and_same_origin(tmp_path):
             assert error.code == 403
         opener = build_opener(HTTPCookieProcessor(CookieJar()))
         assert b"Bookscan" in opener.open(url).read()
+        assert "手写笔记复核" in opener.open(url + "&view=handwriting").read().decode()
         try:
             opener.open(origin + "/bookscan-runs/%2e%2e/review/index.html")
             assert False, "path traversal was served"
