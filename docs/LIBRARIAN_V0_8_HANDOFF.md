@@ -14,6 +14,9 @@ belong to formal operation. The Gateway is running with the session/image
 scope fix, but no new real Feishu turn has verified that path. Audit §32 maps
 these decisions to the remaining full `release-v0.8` gates; no release is
 claimed. Local concurrency replay coverage passes 10/10 bridge tests.
+Final current-scope rerun: 533 Python tests, 21 plugin tests and the offline
+contract validator pass; the handwriting login reaches HTTP 200. Audit §35
+records the exact evidence and the formal-operation deferrals.
 
 ## Current update — 2026-09-29
 

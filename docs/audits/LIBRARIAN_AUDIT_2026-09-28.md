@@ -839,3 +839,9 @@ OpenClaw 插件当前注册七个 `librarian_*` 工具、一个 `message_receive
 用 `.venv/bin/python docs/audits/librarian_bookscan_timing.py var/librarian` 对当前 27 个非 duplicate 的正式 ProcessingRun，沿对应 PageObservation 的 raw asset 只读解析 `run.json`，不重跑照片、不输出原文。27/27 份报告均使用 `PP-OCRv5_mobile_det`、`PP-OCRv5_mobile_rec` 与 `device=cpu`，视觉页和 OCR 行缓存命中均为 0；合计 133 行。报告中的 BookScan `elapsed_seconds`：总计 133.17 秒，单张最短 3.82 秒、中位 4.72 秒、nearest-rank P90 6.03 秒、最长 7.20 秒。两条 `failure_count` 对应 raw 报告的 `empty_unverified`，不是进程崩溃；相关 run 保留 partial 与原始证据。
 
 这只是每张图进入 BookScan 进程后的处理计时，不含飞书入站排队、worker 冷启动、Vault 投影或客户端回复；报告没有 LLM token/付费记录，因此不能推算端到端 token 成本。核显只做过隔离尝试，**当前正式首书运行并未启用核显**。后续若切换设备，应保留模型/驱动版本与同图耗时、失败率对照，不能把这组 CPU 数字误用为 GPU 性能或普通新图质量验收。
+
+## 35. 本轮开发交付的最终重跑（2026-09-29）
+
+在当前干净工作树重新执行完整 Python 套件 **533 passed**（4 条 `RefResolver` 弃用警告）、OpenClaw 插件 **21/21**、离线契约 **77 定义/18 入口/42 正例/43 反例**通过。正式 SQLite 只读聚合仍为 27 张已接收纸书照片对应的 73 条活跃纸书 trace，其中 15 条手写 vision 待复核、19 条页码 unknown；Vault 生成笔记的 73 个隐藏 `(trace_id,revision)` 与当前活跃记录集合完全相同，缺失/额外均为 0，图片嵌入 0。Gateway systemd 为 active；本机手写审核入口带 token/cookie 完成登录跳转后返回 HTTP 200、`handwriting.html` 15,869 字节。
+
+以上证明用户本轮要求的 BookScan 首书数据、章节笔记和私有手写复核工具在当前环境可交付；§32 所列通用新图/严格墨线边界/四图样本按用户决定延期，真人手写提交、修复后飞书真实入站、平台送达及数字上游变化归正式运行。它们没有被本轮重跑升级为原始规格或 `release-v0.8` 的验收通过。
