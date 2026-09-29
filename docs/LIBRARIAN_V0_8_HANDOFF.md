@@ -16,9 +16,12 @@ matrix and remaining gates.
 A full private-data restore rehearsal now copies SQLite, objects, source EPUB,
 Bookscan runs and the Vault note to an isolated root. The restored review site
 serves all 27 pages and 15 handwritten crops; the worker refreshes the chapter
-note with no error. `fc26e07` fixes old absolute Bookscan output paths after
-such a move. Audit §17 records the boundary: Gateway credentials and Feishu
-reconnection were not part of this local restore.
+note with no error. A synthetic handwritten decision also travels from HTTP
+submission through versioned storage to the restored Vault. `fc26e07` fixes
+old absolute Bookscan output paths after such a move. The latest suite passes
+518 Python tests and 16 plugin tests. Audit §§17–18 record restore and current
+domain-invariant evidence; Gateway credentials and Feishu reconnection were
+not part of this local restore.
 
 The older first-book counts and RapidOCR path below describe the 2026-09-28
 state, not the current runtime. The user authorized clearing all old physical

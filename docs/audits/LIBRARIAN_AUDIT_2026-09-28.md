@@ -630,3 +630,18 @@ Vault 渲染新增 EPUB 章节投影：用 `EpubIndex` 将印刷引文映射到 
 修复后再次完整临时恢复并从副本启动 localhost 服务：27/27 个审核页、15/15 张手写卡片及其裁片可经 HTTP 读取，257/257 个唯一私有对象大小/散列一致。在另一份完整副本连同 Vault 笔记运行正式物理 worker，0 错误，仍生成 1 个第二讲章节标题和 73 个隐藏 trace 标记。临时目录随后清理，生产数据未改。此项证明数据目录迁移后当前 Bookscan 网页与 worker 的基础恢复；尚未演练 Gateway 的真实服务切换、密钥迁移和飞书平台重连，故完整灾备放行仍保留该边界。
 
 再对完整迁移副本执行一条**合成**手写决定的真实 HTTP POST：本地服务返回 `status=applied`、`vault_status=updated`；复核页显示已确认，副本 Vault 出现合成文字。临时目录退出后删除，正式库及正式 Vault 均无该文字。由此复核页在迁移后的 GET、版本化提交、索引重建和 worker 投影链路均可用；这仍不代表用户在生产数据中确认了手写内容。
+
+## 18. R3 结构/语义/外部真实性分层（2026-09-29）
+
+| 约束 | 执行层 | 已有反例/正式证据 | 边界 |
+|---|---|---|---|
+| 字段、枚举、null/unknown、ObjectRef 形状 | JSON Schema；`store.validate` | 77 定义、18 入口、42 正例、43 反例；当前 498 个记录版本通过 | Schema 不判来源真实 |
+| `(owner,model,id,revision)`、current 与 supersedes 链 | `records` 主键/唯一索引、`Library._put` 事务 | 并发/旧 revision 本地反例；当前 442 个对象、498 个版本 0 链错误 | 开发期已删除的旧纸书派生记录不在当前样本 |
+| 书目、会话、捕获、trace、知识来源同 owner | `Library._validate_record_links` 与 `_check_catalog_chain` | 跨 owner、悬空/异捕获链接本地拒绝；当前 498 个版本 0 引用错误 | Gateway 双真实账户入口仍属 R4 |
+| observation 检测 ID、页区、bbox、trace provenance | `validate_observation`、`_validate_record_links` | 越页/缺检测/错 bbox 本地反例；当前纸书版本全量回读通过 | 墨线是否对应文字属照片证据，不由几何包含证明 |
+| resolution 页码/身份的 status 与 value | `_validate_semantics`、`resolve_capture` 受限 `_basis` 与版本事务 | unknown/resolved 状态反例、页区重复/零面积拒绝；当前 27 个 resolution 版本通过 | `basis=user_confirmation` 的外部人类依据须由受信入口/用户决定证明 |
+| 引文/手写 basis 与审阅状态 | Schema、`correct_trace`、`review_handwriting` | 仅手写确认写 `user_statement`，误检退出活跃；隔离 HTTP 及跨 owner 反例通过 | 用户接受当前 EPUB 扩句；实际手写字形真值在正式运行核验 |
+| KnowledgeCandidate 状态、来源 revision、成功知识 ID | `_validate_semantics`、`knowledge.py` | 失败 writer/事件、过期来源、跨 owner 本地反例；候选不提前 promoted | 无当前正式候选与实际知识 writer |
+| trace 修订与 outbox 事件原子性 | 写入口事务、Event 语义校验 | 当前 195/195 版本各有 1 条事件；网页对账及知识晋升事件失败回滚测试 | 外部 publisher/Gateway 崩溃现场未演练 |
+
+完整回归在本次恢复修复后为 **518 passed**（4 条弃用警告），插件 **16/16**。此表将已可程序检查的不变量分配到 Schema、应用事务与证据层；R3 仍保留历史迁移样本与未枚举的每个状态组合逐项反例，R2/R4 的外部真实性不被计入 R3 通过。
