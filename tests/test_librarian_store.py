@@ -92,6 +92,47 @@ def test_catalog_owner_chain_and_session_progress(tmp_path: Path):
             "reading.session.progressed", "reading.session.closed"]
 
 
+def test_storage_rejects_cross_owner_and_inconsistent_catalog_links(tmp_path: Path):
+    with Library(tmp_path) as lib:
+        lib.register("owner_a", work("owner_a"))
+        lib.register("owner_a", work("owner_a", "work_other"))
+        lib.register("owner_b", work("owner_b", "work_foreign"))
+        edition = {"object_type": "Edition", "schema_version": "0.1.0",
+                   "id": "edition_valid", "owner_id": "owner_a",
+                   "created_at": "2026-09-28T00:00:00+00:00", "work_id": "work_one",
+                   "edition_label": None, "publisher": None, "publication_year": None,
+                   "isbn": {"isbn13": None, "isbn10": None}, "language": None,
+                   "page_count": None, "volume_label": None,
+                   "revision": 1, "supersedes_revision": None}
+        with pytest.raises(LibrarianError) as rejected:
+            with lib.transaction():
+                lib._put({**edition, "id": "edition_foreign", "work_id": "work_foreign"})
+        assert rejected.value.code == "VALIDATION_FAILED"
+        lib.register("owner_a", edition)
+        instance = {"object_type": "BookInstance", "schema_version": "0.1.0",
+                    "id": "copy_valid", "owner_id": "owner_a",
+                    "created_at": "2026-09-28T00:00:00+00:00",
+                    "edition_id": edition["id"], "medium": "physical",
+                    "acquired_at": {"value": None, "confidence": None, "basis": "unknown"},
+                    "ownership_status": "unknown", "physical": {"qr_id": None, "shelf": None},
+                    "reading_status": {"state": "unknown", "current_page": None,
+                                       "progress_evidence_ref": None},
+                    "revision": 1, "supersedes_revision": None}
+        with pytest.raises(LibrarianError) as rejected:
+            with lib.transaction():
+                lib._put({**instance, "id": "copy_foreign", "edition_id": "edition_foreign"})
+        assert rejected.value.code == "VALIDATION_FAILED"
+        lib.register("owner_a", instance)
+        session = lib.start_session("owner_a", instance["id"])
+        forged = {**session, "id": "session_wrong_work", "work_id": "work_other"}
+        with pytest.raises(LibrarianError) as rejected:
+            with lib.transaction():
+                lib._put(forged)
+        assert rejected.value.code == "VALIDATION_FAILED"
+        assert lib.db.execute("SELECT 1 FROM records WHERE id IN "
+                              "('edition_foreign','copy_foreign','session_wrong_work')").fetchone() is None
+
+
 def test_capture_durability_retry_conflict_and_same_bytes_new_message(tmp_path: Path):
     photo = b"synthetic image bytes"
     args = dict(transport="gateway", account_id="a", conversation_id="c",

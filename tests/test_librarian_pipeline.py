@@ -488,6 +488,28 @@ def test_storage_checks_owner_and_historical_trace_versions_in_relations(tmp_pat
         assert rejected.value.code == "VALIDATION_FAILED"
 
 
+def test_storage_rejects_resolution_with_missing_catalog_context(tmp_path: Path) -> None:
+    with Library(tmp_path) as lib:
+        receipt = lib.ingest("owner_a", transport="gateway", account_id="account",
+                             conversation_id="chat", source_event_id="message",
+                             attachments=[{"source_item_id": "image", "mime_type": "image/png",
+                                           "data": _photo()}], idempotency_key="command")
+        trace = process_capture(lib, "owner_a", receipt["capture_ids"][0],
+                                lambda _: _output())[0]
+        resolution = lib.get("owner_a", "CaptureResolution",
+                             trace["source"]["resolution_id"])
+        forged = json.loads(json.dumps(resolution))
+        forged["id"] = "resolution_missing_edition"
+        forged["edition"] = {"value": "edition_missing", "confidence": None,
+                             "basis": "user_confirmation", "status": "resolved"}
+        with pytest.raises(LibrarianError) as rejected:
+            with lib.transaction():
+                lib._put(forged)
+        assert rejected.value.code == "VALIDATION_FAILED"
+        assert lib.db.execute("SELECT 1 FROM records WHERE id=?",
+                              (forged["id"],)).fetchone() is None
+
+
 def test_reconciliation_index_failure_never_serves_superseded_trace(tmp_path: Path,
                                                                      monkeypatch) -> None:
     from agents.librarian.runtime import pipeline

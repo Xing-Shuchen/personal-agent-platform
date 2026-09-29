@@ -212,11 +212,54 @@ class Library:
             raise LibrarianError("VALIDATION_FAILED", "referenced record version is unavailable")
         return json.loads(row["body"])
 
+    def _current_link(self, owner_id: str, model: str, object_id: str) -> dict[str, Any]:
+        row = self.db.execute(
+            "SELECT body FROM records WHERE owner_id=? AND model=? AND id=? AND current=1",
+            (owner_id, model, object_id)).fetchone()
+        if row is None:
+            raise LibrarianError("VALIDATION_FAILED", "referenced catalog object is unavailable")
+        return json.loads(row["body"])
+
+    def _check_catalog_chain(self, owner_id: str, *, work_id: str | None,
+                             edition_id: str | None,
+                             book_instance_id: str | None) -> None:
+        if book_instance_id:
+            instance = self._current_link(owner_id, "BookInstance", book_instance_id)
+            if edition_id != instance["edition_id"]:
+                raise LibrarianError("VALIDATION_FAILED", "instance and edition disagree")
+        if edition_id:
+            edition = self._current_link(owner_id, "Edition", edition_id)
+            if work_id != edition["work_id"]:
+                raise LibrarianError("VALIDATION_FAILED", "edition and work disagree")
+        if work_id:
+            self._current_link(owner_id, "Work", work_id)
+
     def _validate_record_links(self, record: dict[str, Any]) -> None:
         """Check owner-scoped historical references at the final write boundary."""
         owner = record["owner_id"]
         model = record["object_type"]
-        if model == "KnowledgeCandidate":
+        if model == "Edition":
+            self._current_link(owner, "Work", record["work_id"])
+        elif model == "BookInstance":
+            self._current_link(owner, "Edition", record["edition_id"])
+        elif model == "ReadingSession":
+            self._check_catalog_chain(
+                owner, work_id=record["work_id"], edition_id=record["edition_id"],
+                book_instance_id=record["book_instance_id"])
+        elif model == "CaptureResolution":
+            self._current_link(owner, "PageCapture", record["capture_id"])
+            values = {field: record[field]["value"] for field in
+                      ("session", "work", "edition", "book_instance")}
+            self._check_catalog_chain(
+                owner, work_id=values["work"], edition_id=values["edition"],
+                book_instance_id=values["book_instance"])
+            if values["session"]:
+                session = self._current_link(owner, "ReadingSession", values["session"])
+                for field, session_field in (("work", "work_id"), ("edition", "edition_id"),
+                                             ("book_instance", "book_instance_id")):
+                    if session[session_field] and values[field] != session[session_field]:
+                        raise LibrarianError("VALIDATION_FAILED", "session and resolution disagree")
+        elif model == "KnowledgeCandidate":
             for ref in record["source_trace_refs"]:
                 self._record_version(owner, "ReadingTrace", ref["trace_id"], ref["revision"])
         elif model == "TraceRelation":
