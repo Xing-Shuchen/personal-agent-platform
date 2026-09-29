@@ -779,3 +779,5 @@ OpenClaw 插件当前注册七个 `librarian_*` 工具、一个 `message_receive
 | `pap-librarian-worker` 定时/图片触发 | 单 owner 配置启动 physical/digital 独立子进程，启动结果 owner 可查 | Gateway 重启后两种模式均见 `spawned`；批次/数字实际结果另看 `batch-status` 和同步状态。慢源与进程崩溃现场未验 |
 
 本机手写网页另用 localhost token/cookie/Origin 与固定 owner 参数，不属于上述 Gateway 工具；其版本化提交、投影失败状态和人工延期见 §§14、23。R4 仍须把“工具排队”“平台接收”“客户端显示”分开取证；没有平台消息 ID 的 `queued` 不能作为交付成功。跨真实账号、真实附件变更和慢上游仍留正式运行。插件新增无 `conversationId` 图片回退测试后 **20/20** 通过；本轮没有为这份入口清单重跑 Python 全套，最近一次完整结果仍为 526 passed。
+
+提交 `dc68c9d` 后 Gateway 重启，服务 active、插件 `loaded/enabled`、`message_received` hook 可见、diagnostics 为空；本机手写复核端口仍监听。实际飞书无 `conversationId` 的新图片入站尚未发生，本项运行检查只证明新插件已加载，不将合成回退测试写成真实消息验收。
