@@ -43,7 +43,7 @@
 | `.venv/bin/python agents/librarian/runtime/tests/validate_contracts.py` | **77 定义、18 入口、42 正例、43 反例通过** | 离线契约及选定跨实体约束 |
 | `.venv/bin/python docs/audits/librarian_20260928_repro.py` | **6 项缺陷复现成功** | F01/F03/F04/F06/F07/F08 的指定条件 |
 
-复现代码：[librarian_20260928_repro.py](librarian_20260928_repro.py)。结果：[librarian_20260928_repro.json](librarian_20260928_repro.json)。脚本中的断言确认被审计版本的缺陷行为，不能当成整改后的合格测试；修复时应改为下文的期望行为。
+历史复现代码位于后续审计提交的 Git 历史中（`8a5494e:docs/audits/librarian_20260928_repro.py`）；旧图像处理模块已按用户要求从当前工作树移除，因此该脚本不再是现行可执行测试。历史结果：[librarian_20260928_repro.json](librarian_20260928_repro.json)。当时的断言确认被审计版本的缺陷行为，不能当成整改后的合格测试。
 
 ### 2.1 模块级审计结论
 
@@ -512,3 +512,18 @@ B 的后续清单：现有 11 张旧版多页区照片与笔记时间来源已�
 | trace 与领域事件同事务 | 已逐入口静态核对 `process_capture`、`reconcile_extraction`、`correct_trace`、`resolve_capture`、数字导出及 Koodo/WeRead 创建/修订/删除/来源对账；正式库 800 个版本各有 1 条对应 outbox 事件。`b3fa5df` 注入初提取和数字导出事件失败，领域记录回滚后可重试；索引投影已移出领域事务 | 其余修订入口逐项故障注入、外部消费者投递与旧迁移链；`_put` 自身不强制事件 |
 | bbox、方向和空间标签有效 | observation 共用语义检查；`498512e` 在纸书 trace 写入时验证 bbox/页区/side/方位，正式库 678 个纸书版本兼容；`97998ee` 拒绝 resolution 页区重复 ID 与零面积，137 个旧版本兼容 | 页码依据和照片中墨线是否对应引文仍需人工审阅；更多图像方向、跨页链接与旧迁移反例归 R2/R3 |
 | 原始 evidence 无普通 UPDATE | `evidence_immutable` 和 `evidence_undeletable` 触发器保护 PageCapture/PageObservation 的 `records` 行；对象先写后引用。`df93ce6` 只读核对 2,891 处引用、290 个对象均可读取且散列匹配，无当前孤儿 | 对象文件丢失后的恢复、未来孤儿回收和备份还原演练，确认已接受回执仍可重新打开原图 |
+
+## 10. 当前状态与未完成项（2026-09-29 晚间）
+
+本节覆盖第 9 节写成时的运行状态，不追改第 1–8 节历史记录。用户随后要求清除旧图像处理流程和结果、用 Bookscan 重建。`8735afc` 移除旧 RapidOCR/整页视觉模块，正式库经专用开发重置清除旧纸书派生记录与 Vault 生成笔记；原始 27 张 PageCapture、目录、会话及 122 个数字 trace 版本保留。清理期间的旧结果备份在重建及完整性验证后按用户“完全清除”的要求删除。这是用户明确授权的开发期重建，不是规格要求的常规版本化纠错；先前 R2 历史记录统计不能再解释为当前库仍保存那些旧 observation/trace。
+
+当前正式库只读检查：27 张 capture 对应 27 个 Bookscan ProcessingRun/Observation/Resolution，19 个 run 为 `success`、8 个为 `partial`、0 个为 `pending`；73 条活跃纸书 trace 为 56 条 underline、2 条 bracket、15 条 margin_note，其中 19 条页码未知。58 个画线/角括号组中，53 个可靠匹配使用 Bookscan 的 EPUB 标点扩展，`printed_text.basis=source_payload`；5 个弱匹配仍保留照片 OCR 转录，`basis=vision`。15 条旁注没有印刷正文。73 条 trace 的 `review.state` 均为 `none`，因此不能把“无 pending run”当成人工审核完成。Vault《社会理论二十讲》已按微信读书式版面重建，正文不再显示内部 trace/capture ID 或原图投送提示，仍有隐藏 trace 标记；原图不在 Vault。私有对象审计为 203/203 对象可读且散列/长度正确、0 缺失、0 孤儿。Gateway active，`physicalWorkerEnabled=true`；本次修正后由 Gateway 的正式物理 worker 自动重跑。上述是运行与结构证据，不是识别准确率或用户审阅结论。
+
+| 未完成项 | 当前需要的证据或决定 |
+|---|---|
+| 首书内容与页码审核（A/R2） | 人工逐页核对 58 个画线/角括号组及 15 条旁注，尤其 5 个弱 EPUB 匹配、19 条 unknown 页码、2 个 Bookscan failure 记录；确认遗漏、误检、墨线覆盖范围和手写字形。旧版 23/29/39 页 pending run 已随开发期重建删除，原计划的 3 张旧新对账不再适用；须以当前 Bookscan run/trace 重新建立审核清单。 |
+| EPUB 引文边界与规格决定（F03/R2/R3） | 当前 53 条匹配文字直接采用 EPUB 补至标点的句子并标注 `source_payload`，与初审规格“trace 只含可由对应照片区域验证的文字”的原要求存在边界差异。需对照照片和纸版逐项验证，明确是否修订规格以允许这种补全，或把超出画线的上下文移到独立字段；异文、跨页和仅半句画线须有反例。 |
+| 通用新图识别（F01/D） | Bookscan 对精确哈希匹配的样本使用预标注旁注/角括号区域；普通新照片尚无这两类区域的自动发现证据。仍需无 EPUB、无 Vault、仅内页、未知书页、旋转/多页、普通新手写及高亮/符号的真实入口与质量验收。 |
+| 领域、Schema 和桥接复审（C/R1–R4） | §9.1、§9.2 剩余的知识依赖、旧迁移与备份恢复、修订入口故障注入、跨 owner/account/chat、幂等附件变更、入站 hook 错误查询及“queued→平台成功→客户端显示”逐层证据尚未齐备；现有单项测试与一次成功运行不能给四类模块整体签发通过。 |
+| 数字来源与运行验收（D/M2） | 当前 `digital-sync-status.json` 仅证明最近一次 Koodo 118 条、WeRead 4 条均为 unchanged/success；仍需真实增改删、断网恢复、慢源隔离、重复 timer/重启进程上界与成本/耗时记录，并验证三来源同一检索契约。 |
+| 规格 AC 与交接（E） | 以当前 HEAD 重跑 AC-01–26，分别标注本地/真实/未验，回填 handoff、修复提交和客户端证据。§38.1 p159/166/171/184 四张标注图及 `source-design.txt` 依用户指示暂缓，保留延期/未验，不用当前 27 图代替。`release-v0.8` 仍未达到审计放行条件。 |
