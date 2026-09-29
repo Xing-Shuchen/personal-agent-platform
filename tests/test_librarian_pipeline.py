@@ -76,6 +76,19 @@ def test_storage_rejects_capture_run_observation_cross_links(tmp_path: Path) -> 
             assert rejected.value.code == "VALIDATION_FAILED"
             assert lib.db.execute("SELECT 1 FROM records WHERE id=?", (record["id"],)).fetchone() is None
 
+        duplicate = json.loads(json.dumps(observation))
+        duplicate["id"] = "observation_duplicate_detection"
+        duplicate["marks"][0]["id"] = duplicate["printed_regions"][0]["id"]
+        invalid_link = json.loads(json.dumps(observation))
+        invalid_link["id"] = "observation_missing_text_link"
+        invalid_link["marks"][0]["linked_text_region_ids"] = ["printed_missing"]
+        for record in (duplicate, invalid_link):
+            with pytest.raises(LibrarianError) as rejected:
+                with lib.transaction():
+                    lib._put(record)
+            assert rejected.value.code == "VALIDATION_FAILED"
+            assert lib.db.execute("SELECT 1 FROM records WHERE id=?", (record["id"],)).fetchone() is None
+
 
 def test_vision_page_resolution_revises_only_unknown_page(tmp_path: Path) -> None:
     observation = json.loads(_output())

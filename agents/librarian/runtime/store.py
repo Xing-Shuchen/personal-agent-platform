@@ -19,6 +19,8 @@ from typing import Any
 
 from jsonschema import Draft202012Validator, FormatChecker
 
+from agents.librarian.runtime.observation_validation import validate_observation
+
 
 class LibrarianError(ValueError):
     def __init__(self, code: str, message: str):
@@ -249,6 +251,10 @@ class Library:
         elif model == "ProcessingRun":
             self._current_link(owner, "PageCapture", record["capture_id"])
         elif model == "PageObservation":
+            try:
+                validate_observation(record)
+            except ValueError as error:
+                raise LibrarianError("VALIDATION_FAILED", str(error)) from error
             run = self._current_link(owner, "ProcessingRun", record["processing_run_id"])
             self._current_link(owner, "PageCapture", record["capture_id"])
             if run["capture_id"] != record["capture_id"]:

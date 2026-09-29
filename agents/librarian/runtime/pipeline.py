@@ -13,6 +13,7 @@ from typing import Any, Callable
 from PIL import Image, ImageOps, UnidentifiedImageError
 
 from .knowledge import create_candidate, supersede_pending_for_trace
+from .observation_validation import validate_observation
 from .store import Library, LibrarianError, _json, _new, _now, _unknown_time, validate
 
 
@@ -42,36 +43,6 @@ def _inside(inner: list[float], outer: list[float]) -> bool:
 def _bbox(boxes: list[list[float]]) -> list[float]:
     return [min(box[0] for box in boxes), min(box[1] for box in boxes),
             max(box[2] for box in boxes), max(box[3] for box in boxes)]
-
-
-def _check_observation(observation: dict[str, Any]) -> None:
-    """Cross-element constraints not expressible in the single-object schema."""
-    regions = {page["id"]: page for page in observation["pages"]}
-    if len(regions) != len(observation["pages"]):
-        raise LibrarianError("EXTRACTION_SCHEMA_INVALID", "duplicate page region ID")
-    elements = observation["printed_regions"] + observation["marks"] + observation["annotations"] + observation["symbols"]
-    by_id = {item["id"]: item for item in elements}
-    if len(by_id) != len(elements):
-        raise LibrarianError("EXTRACTION_SCHEMA_INVALID", "duplicate detection ID")
-    for page in observation["pages"]:
-        box = page["bbox"]
-        if not (box[0] < box[2] and box[1] < box[3]):
-            raise LibrarianError("EXTRACTION_SCHEMA_INVALID", "zero-area page region")
-    printed = {item["id"]: item for item in observation["printed_regions"]}
-    for item in elements:
-        box = item["bbox"]
-        if item["page_region_id"] not in regions or not (box[0] < box[2] and box[1] < box[3]):
-            raise LibrarianError("EXTRACTION_SCHEMA_INVALID", "detection has invalid page or bbox")
-        if not _inside(box, regions[item["page_region_id"]]["bbox"]):
-            raise LibrarianError("EXTRACTION_SCHEMA_INVALID", "detection outside its page region")
-        for link in item["linked_text_region_ids"]:
-            if link not in printed:
-                raise LibrarianError("EXTRACTION_SCHEMA_INVALID", "text link target missing")
-            if printed[link]["page_region_id"] != item["page_region_id"]:
-                raise LibrarianError("EXTRACTION_SCHEMA_INVALID", "direct text link crosses page regions")
-    for link in observation["links"]:
-        if link["from_id"] not in by_id or link["to_id"] not in by_id:
-            raise LibrarianError("EXTRACTION_SCHEMA_INVALID", "observation link target missing")
 
 
 def _spatial(page_box: list[float], trace_box: list[float]) -> tuple[str, str]:
@@ -246,7 +217,7 @@ def process_capture(lib: Library, owner_id: str, capture_id: str,
         validate("PageObservation", observation)
         if (observation["image_space"]["width"], observation["image_space"]["height"]) != oriented_size:
             raise LibrarianError("EXTRACTION_SCHEMA_INVALID", "observation dimensions differ from EXIF-oriented original")
-        _check_observation(observation)
+        validate_observation(observation)
     except (json.JSONDecodeError, ValueError, KeyError, TypeError, LibrarianError) as error:
         _failed_run(lib, owner_id, capture_id, run_id, extractor_version,
                     normalizer_version, "EXTRACTION_SCHEMA_INVALID", raw_asset,
