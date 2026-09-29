@@ -40,6 +40,25 @@ def _source_databases(root: Path) -> tuple[Path, Path]:
     return books, notes
 
 
+def test_koodo_source_commit_survives_index_failure(tmp_path: Path,
+                                                    monkeypatch) -> None:
+    from agents.librarian.runtime import pipeline
+
+    books, notes = _source_databases(tmp_path)
+    real_index = pipeline._index_trace
+    monkeypatch.setattr(pipeline, "_index_trace", lambda *_: (_ for _ in ()).throw(
+        RuntimeError("index unavailable")))
+    with Library(tmp_path / "librarian") as lib:
+        counts = sync_koodo_sqlite(lib, "owner_a", "reader_1", books, notes)
+        assert counts["created"] == 2
+        assert lib.db.execute("SELECT COUNT(*) FROM records WHERE model='ReadingTrace'").fetchone()[0] == 2
+        assert lib.db.execute("SELECT COUNT(*) FROM trace_index").fetchone()[0] == 0
+    monkeypatch.setattr(pipeline, "_index_trace", real_index)
+    with Library(tmp_path / "librarian") as lib:
+        assert sync_koodo_sqlite(lib, "owner_a", "reader_1", books, notes)["unchanged"] == 2
+        assert len(search(lib, "owner_a", "First passage")) == 1
+
+
 def test_native_koodo_sync_replays_updates_deletes_and_reconciles_user_correction(tmp_path: Path):
     books, notes = _source_databases(tmp_path)
     assert len(read_koodo_snapshot(books, notes)) == 2

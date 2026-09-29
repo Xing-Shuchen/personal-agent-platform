@@ -10,7 +10,7 @@ import json
 import re
 from typing import Any
 
-from .pipeline import _index_trace
+from .pipeline import _repair_trace_index_best_effort
 from .store import Library, LibrarianError, _json, _now, _unknown_time, validate
 
 
@@ -144,6 +144,7 @@ def ingest_export(lib: Library, owner_id: str, medium: str, source_key: str,
     if prior:
         if prior["payload_sha256"] != digest:
             raise LibrarianError("RECONCILIATION_REQUIRED", "changed export needs source-record reconciliation")
+        _repair_trace_index_best_effort(lib, owner_id)
         return [lib.get(owner_id, "ReadingTrace", identifier) for identifier in json.loads(prior["trace_ids"])]
     source_book_id, title, entries = (parse_weread(raw) if medium == "weread" else parse_koodo(raw))
     if not entries:
@@ -200,11 +201,11 @@ def ingest_export(lib: Library, owner_id: str, medium: str, source_key: str,
                     raise LibrarianError("RECONCILIATION_REQUIRED", "source record changed or was corrected")
                 continue
             lib._put(trace)
-            _index_trace(lib, trace)
             lib._event(owner_id, "reading.trace.created", "reading_trace", trace["id"], 1,
                        {"trace_id": trace["id"], "revision": 1, "medium": medium,
                         "book_instance_id": None}, source_key)
         lib.db.execute("INSERT INTO digital_exports VALUES(?,?,?,?,?)",
                        (owner_id, medium, source_key, digest,
                         _json([trace["id"] for trace in traces])))
+    _repair_trace_index_best_effort(lib, owner_id)
     return [lib.get(owner_id, "ReadingTrace", trace["id"]) for trace in traces]

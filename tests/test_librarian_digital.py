@@ -50,6 +50,23 @@ def test_parsers_keep_source_identity_and_separate_comment():
     assert entries[0]["chapter"] == "Chapter A"
 
 
+def test_export_commit_survives_index_failure(tmp_path: Path, monkeypatch) -> None:
+    from agents.librarian.runtime import pipeline
+
+    real_index = pipeline._index_trace
+    monkeypatch.setattr(pipeline, "_index_trace", lambda *_: (_ for _ in ()).throw(
+        RuntimeError("index unavailable")))
+    with Library(tmp_path) as lib:
+        traces = ingest_export(lib, "owner_a", "weread", "book.md", WEREAD)
+        assert len(traces) == 2
+        assert lib.db.execute("SELECT COUNT(*) FROM trace_index").fetchone()[0] == 0
+        assert lib.db.execute("SELECT COUNT(*) FROM digital_exports").fetchone()[0] == 1
+    monkeypatch.setattr(pipeline, "_index_trace", real_index)
+    with Library(tmp_path) as lib:
+        assert ingest_export(lib, "owner_a", "weread", "book.md", WEREAD) == traces
+        assert len(search(lib, "owner_a", "Weber")) == 1
+
+
 def test_exports_converge_at_trace_and_retry_is_idempotent(tmp_path: Path):
     with Library(tmp_path) as lib:
         weread = ingest_export(lib, "owner_a", "weread", "vault/weread/book.md", WEREAD)

@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from .knowledge import supersede_pending_for_trace
-from .pipeline import _index_trace
+from .pipeline import _repair_trace_index_best_effort
 from .store import Library, LibrarianError, _json, _now, _unknown_time, validate
 
 
@@ -132,11 +132,6 @@ def _revise(lib: Library, owner_id: str, prior: dict[str, Any], *,
         revised["provenance"] = [asset]
     lib._put(revised)
     supersede_pending_for_trace(lib, owner_id, prior, revised)
-    if status == "active":
-        _index_trace(lib, revised)
-    else:
-        lib.db.execute("DELETE FROM trace_index WHERE owner_id=? AND trace_id=?",
-                       (owner_id, revised["id"]))
     lib._event(owner_id, "reading.trace.corrected", "reading_trace", revised["id"],
                revised["revision"], {"trace_id": revised["id"],
                "previous_revision": prior["revision"], "revision": revised["revision"],
@@ -197,7 +192,6 @@ def sync_koodo_sqlite(lib: Library, owner_id: str, source_id: str,
                     lib._put(_work(owner_id, source_id, book, work_id))
                 trace = _new_trace(owner_id, source_id, book, note, asset)
                 lib._put(trace)
-                _index_trace(lib, trace)
                 lib._event(owner_id, "reading.trace.created", "reading_trace", trace_id, 1,
                            {"trace_id": trace_id, "revision": 1, "medium": "koodo",
                             "book_instance_id": None}, source_id)
@@ -232,6 +226,7 @@ def sync_koodo_sqlite(lib: Library, owner_id: str, source_id: str,
                            "WHERE owner_id=? AND source_id=? AND note_key=?",
                            (owner_id, source_id, row["note_key"]))
             counts["deleted"] += 1
+    _repair_trace_index_best_effort(lib, owner_id)
     return counts
 
 
@@ -275,7 +270,8 @@ def reconcile_koodo_note(lib: Library, owner_id: str, source_id: str,
             "pending_sha256=NULL,pending_asset=NULL "
             "WHERE owner_id=? AND source_id=? AND note_key=?",
             (owner_id, source_id, note_key))
-        return revised
+    _repair_trace_index_best_effort(lib, owner_id)
+    return revised
 
 
 def main() -> None:

@@ -346,6 +346,63 @@ def test_index_failure_recovers_after_reopen_without_reextracting(tmp_path: Path
             "SELECT event_id FROM outbox WHERE owner_id='owner_a' ORDER BY rowid")] == event_ids
 
 
+def test_index_failure_does_not_rollback_user_correction(tmp_path: Path,
+                                                         monkeypatch) -> None:
+    from agents.librarian.runtime import pipeline
+
+    with Library(tmp_path) as lib:
+        receipt = lib.ingest("owner_a", transport="gateway", account_id="account",
+                             conversation_id="chat", source_event_id="message",
+                             attachments=[{"source_item_id": "image", "mime_type": "image/png",
+                                           "data": _photo()}], idempotency_key="command")
+        trace = process_capture(lib, "owner_a", receipt["capture_ids"][0],
+                                lambda _: _output())[0]
+        real_index = pipeline._index_trace
+        monkeypatch.setattr(pipeline, "_index_trace", lambda *_: (_ for _ in ()).throw(
+            RuntimeError("index unavailable")))
+        corrected = correct_trace(lib, "owner_a", trace["id"], 1,
+                                  printed_text="User verified text", reason="checked")
+        assert lib.get("owner_a", "ReadingTrace", trace["id"]) == corrected
+        assert corrected["revision"] == 2
+        assert search(lib, "owner_a", "User verified", include_unresolved=True) == []
+        monkeypatch.setattr(pipeline, "_index_trace", real_index)
+    with Library(tmp_path) as lib:
+        assert lib.get("owner_a", "ReadingTrace", trace["id"])["revision"] == 2
+        rebuild_index(lib, "owner_a")
+        assert [item["id"] for item in search(lib, "owner_a", "User verified",
+                                               include_unresolved=True)] == [trace["id"]]
+
+
+def test_index_failure_does_not_rollback_page_resolution(tmp_path: Path,
+                                                         monkeypatch) -> None:
+    from agents.librarian.runtime import pipeline
+
+    with Library(tmp_path) as lib:
+        receipt = lib.ingest("owner_a", transport="gateway", account_id="account",
+                             conversation_id="chat", source_event_id="message",
+                             attachments=[{"source_item_id": "image", "mime_type": "image/png",
+                                           "data": _photo()}], idempotency_key="command")
+        capture_id = receipt["capture_ids"][0]
+        trace = process_capture(lib, "owner_a", capture_id, lambda _: _output())[0]
+        prior = lib.get("owner_a", "CaptureResolution", trace["source"]["resolution_id"])
+        pages = json.loads(json.dumps(prior["pages"]))
+        pages[0]["page"] = {"value": {"label": "172", "number": 172,
+                                       "scheme": "arabic"}, "confidence": None,
+                            "basis": "user_statement", "status": "resolved"}
+        real_index = pipeline._index_trace
+        monkeypatch.setattr(pipeline, "_index_trace", lambda *_: (_ for _ in ()).throw(
+            RuntimeError("index unavailable")))
+        revised = resolve_capture(lib, "owner_a", capture_id, prior["revision"], pages=pages)
+        current = lib.get("owner_a", "ReadingTrace", trace["id"])
+        assert revised["revision"] == prior["revision"] + 1
+        assert current["revision"] == trace["revision"] + 1
+        assert current["location"]["page"]["number"] == 172
+        monkeypatch.setattr(pipeline, "_index_trace", real_index)
+        rebuild_index(lib, "owner_a")
+        assert lib.db.execute("SELECT revision FROM trace_index WHERE trace_id=?",
+                              (trace["id"],)).fetchone()[0] == current["revision"]
+
+
 def test_search_response_accepts_corrected_trace_revision(tmp_path: Path) -> None:
     with Library(tmp_path) as lib:
         receipt = lib.ingest("owner_a", transport="gateway", account_id="account",

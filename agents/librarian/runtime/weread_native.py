@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from .koodo_native import _revise
-from .pipeline import _index_trace
+from .pipeline import _repair_trace_index_best_effort
 from .store import Library, LibrarianError, _json, _now, _unknown_time, validate
 
 GATEWAY = "https://i.weread.qq.com/api/agent/gateway"
@@ -210,7 +210,6 @@ def sync_weread_book(lib: Library, owner_id: str, source_id: str, book: dict[str
                          "review": {"required": False, "state": "none", "reason": None}}
                 validate("ReadingTrace", trace)
                 lib._put(trace)
-                _index_trace(lib, trace)
                 lib._event(owner_id, "reading.trace.created", "reading_trace", trace_id, 1,
                            {"trace_id": trace_id, "revision": 1, "medium": "weread",
                             "book_instance_id": None}, source_id)
@@ -247,6 +246,7 @@ def sync_weread_book(lib: Library, owner_id: str, source_id: str, book: dict[str
                            "WHERE owner_id=? AND source_id=? AND record_key=?",
                            (owner_id, source_id, row["record_key"]))
             counts["deleted"] += 1
+    _repair_trace_index_best_effort(lib, owner_id)
     return counts
 
 
@@ -290,7 +290,8 @@ def reconcile_weread_record(lib: Library, owner_id: str, source_id: str,
             "pending_sha256=NULL,pending_asset=NULL "
             "WHERE owner_id=? AND source_id=? AND record_key=?",
             (owner_id, source_id, record_key))
-        return revised
+    _repair_trace_index_best_effort(lib, owner_id)
+    return revised
 
 
 def main() -> None:

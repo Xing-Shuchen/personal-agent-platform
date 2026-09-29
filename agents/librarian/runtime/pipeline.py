@@ -870,11 +870,11 @@ def correct_trace(lib: Library, owner_id: str, trace_id: str, expected_revision:
     with lib.transaction():
         lib._put(revised)
         supersede_pending_for_trace(lib, owner_id, prior, revised)
-        _index_trace(lib, revised)
         lib._event(owner_id, "reading.trace.corrected", "reading_trace", trace_id,
                    revised["revision"], {"trace_id": trace_id,
                    "previous_revision": expected_revision,
                    "revision": revised["revision"], "reason": reason}, trace_id)
+    _repair_trace_index_best_effort(lib, owner_id)
     return revised
 
 
@@ -992,13 +992,13 @@ def resolve_capture(lib: Library, owner_id: str, capture_id: str,
             validate("ReadingTrace", revised)
             lib._put(revised)
             supersede_pending_for_trace(lib, owner_id, trace, revised)
-            _index_trace(lib, revised)
             lib._event(owner_id, "reading.trace.corrected", "reading_trace",
                        revised["id"], revised["revision"],
                        {"trace_id": revised["id"], "previous_revision": trace["revision"],
-                        "revision": revised["revision"], "reason": "capture resolution"},
+                       "revision": revised["revision"], "reason": "capture resolution"},
                        resolution["id"])
-        return resolution
+    _repair_trace_index_best_effort(lib, owner_id)
+    return resolution
 
 
 def bind_fingerprint_context(lib: Library, owner_id: str, capture_id: str) -> dict[str, Any] | None:

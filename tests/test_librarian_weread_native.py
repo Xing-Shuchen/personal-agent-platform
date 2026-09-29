@@ -28,6 +28,22 @@ def _items():
     ]
 
 
+def test_weread_source_commit_survives_index_failure(tmp_path, monkeypatch) -> None:
+    from agents.librarian.runtime import pipeline
+
+    real_index = pipeline._index_trace
+    monkeypatch.setattr(pipeline, "_index_trace", lambda *_: (_ for _ in ()).throw(
+        RuntimeError("index unavailable")))
+    with Library(tmp_path) as lib:
+        assert sync_weread_book(lib, "owner_a", "reader_1", BOOK, _items())["created"] == 2
+        assert lib.db.execute("SELECT COUNT(*) FROM records WHERE model='ReadingTrace'").fetchone()[0] == 2
+        assert lib.db.execute("SELECT COUNT(*) FROM trace_index").fetchone()[0] == 0
+    monkeypatch.setattr(pipeline, "_index_trace", real_index)
+    with Library(tmp_path) as lib:
+        assert sync_weread_book(lib, "owner_a", "reader_1", BOOK, _items())["unchanged"] == 2
+        assert len(search(lib, "owner_a", "First passage")) == 1
+
+
 def test_weread_native_replay_update_reconcile_and_delete(tmp_path):
     items = _items()
     with Library(tmp_path) as lib:
