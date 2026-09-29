@@ -144,3 +144,79 @@ def test_complete_review_reconciles_through_versioned_pipeline(tmp_path: Path) -
             "text": "User confirmed sentence.", "confidence": None,
             "basis": "user_statement"}
         assert pending_extractions(lib, "owner")["pending"] == []
+
+
+def test_reviewed_margin_note_correction_stays_an_annotation(tmp_path: Path) -> None:
+    image = io.BytesIO()
+    Image.new("RGB", (1000, 1400), "white").save(image, "PNG")
+
+    def observation(with_note: bool) -> bytes:
+        note = {"id": "note_1", "page_region_id": "page_1",
+                "bbox": [.03, .4, .2, .5], "kind": "margin_note",
+                "text": {"text": "uncertain handwriting", "confidence": .5,
+                         "basis": "vision"}, "confidence": .8,
+                "linked_text_region_ids": [], "link_confidence": None}
+        return json.dumps({
+            "image_space": {"width": 1000, "height": 1400,
+                            "basis": "exif_oriented_original"},
+            "pages": [{"id": "page_1", "bbox": [0, 0, 1, 1], "side": "unknown",
+                       "page": {"value": {"label": "23", "number": 23,
+                                          "scheme": "arabic"}, "confidence": .95,
+                                "basis": "vision", "status": "resolved"}}],
+            "printed_regions": [{"id": "printed_1", "page_region_id": "page_1",
+                                 "bbox": [.2, .1, .7, .15], "kind": "printed",
+                                 "text": {"text": "A complete printed sentence.",
+                                          "confidence": .95, "basis": "vision"},
+                                 "confidence": .95, "linked_text_region_ids": [],
+                                 "link_confidence": None}],
+            "marks": [{"id": "underline_1", "page_region_id": "page_1",
+                       "bbox": [.2, .15, .7, .16], "kind": "underline",
+                       "text": None, "confidence": .9,
+                       "linked_text_region_ids": ["printed_1"],
+                       "link_confidence": .95}],
+            "annotations": [note] if with_note else [], "symbols": [],
+            "links": [], "warnings": []}).encode()
+
+    with Library(tmp_path) as lib:
+        receipt = lib.ingest("owner", transport="feishu", account_id="bot",
+                             conversation_id="chat", source_event_id="photo",
+                             attachments=[{"source_item_id": "photo:0", "mime_type": "image/png",
+                                           "data": image.getvalue()}], idempotency_key="photo")
+        capture = receipt["capture_ids"][0]
+        process_capture(lib, "owner", capture, lambda _: observation(False),
+                        extractor_version="v1")
+        with pytest.raises(LibrarianError) as error:
+            process_capture(lib, "owner", capture, lambda _: observation(True),
+                            extractor_version="v2")
+        assert error.value.code == "RECONCILIATION_REQUIRED"
+        detail = pending_extractions(lib, "owner", capture)
+        assert len(detail["proposed"]) == 2
+        for index, candidate in enumerate(detail["proposed"]):
+            note = candidate["types"] == ["margin_note"]
+            record_review_decision(lib, {"owner_id": "owner", "actor_id": "person",
+                                    "source": {"transport": "feishu", "account_id": "bot",
+                                               "conversation_id": "chat",
+                                               "source_event_id": f"review-{index}"},
+                                    "capture_id": capture,
+                                    "pending_run_id": detail["pending_run_id"],
+                                    "candidate_id": candidate["candidate_id"],
+                                    "decision": "accept",
+                                    "corrected_text": "User confirmed handwriting" if note else None})
+        result = finalize_review(lib, {
+            "owner_id": "owner", "actor_id": "person",
+            "source": {"transport": "feishu", "account_id": "bot",
+                       "conversation_id": "chat", "source_event_id": "replace-all"},
+            "capture_id": capture, "pending_run_id": detail["pending_run_id"],
+            "expected_current": [{"trace_id": item["trace_id"],
+                                  "revision": item["revision"]}
+                                 for item in detail["current"]],
+            "replace_all_current": True})
+        assert (result["accepted"], result["rejected"]) == (2, 0)
+        traces = [lib.get("owner", "ReadingTrace", ref["trace_id"])
+                  for ref in result["trace_refs"]]
+        note_trace = next(trace for trace in traces
+                          if trace["trace_types"] == ["margin_note"])
+        assert note_trace["content"]["annotation"] == {
+            "text": "User confirmed handwriting", "confidence": None,
+            "basis": "user_statement"}
+        assert note_trace["content"]["printed_text"]["text"] is None

@@ -609,9 +609,11 @@ def reconcile_extraction(lib: Library, owner_id: str, capture_id: str,
             correction = reviewed_candidates[candidate_id(
                 capture_id, trace["source"]["detection_ids"])]
             if correction is not None:
-                trace["content"]["printed_text"] = {"text": correction,
-                                                    "confidence": None,
-                                                    "basis": "user_statement"}
+                field = ("annotation" if set(trace["trace_types"]) == {"margin_note"}
+                         else "printed_text")
+                trace["content"][field] = {"text": correction,
+                                           "confidence": None,
+                                           "basis": "user_statement"}
                 validate("ReadingTrace", trace)
     def groups(items: list[dict[str, Any]], mark_ids: set[str]) -> list[tuple[str, ...]]:
         return sorted(tuple(sorted(set(item["source"]["detection_ids"]) & mark_ids))

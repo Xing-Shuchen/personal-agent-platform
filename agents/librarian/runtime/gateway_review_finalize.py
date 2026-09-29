@@ -37,6 +37,12 @@ def _verify_printed_boundaries(lib: Library, owner: str, run: dict,
         candidate = item["candidate_id"]
         if candidate not in accepted:
             continue
+        if set(item["types"]) == {"margin_note"}:
+            # Handwriting has no printed OCR/EPUB sentence boundary. Its
+            # accepted text is the user's reviewed transcription instead.
+            if not _compact(accepted[candidate] or item["annotation"]):
+                raise LibrarianError("RECONCILIATION_REQUIRED", "accepted annotation incomplete")
+            continue
         text = accepted[candidate] or item["printed_text"]
         normalized = _compact(text)
         if len(normalized) < 12:
