@@ -422,6 +422,8 @@ R1 引用链写入边界增补：此前知识候选的公开创建路径会校�
 
 R1 目录与会话上下文追加检查：`register`、`start_session` 等公开路径原已检查部分引用，但最终 `_put` 可写入形状合法而跨 owner 或互相矛盾的 Edition、BookInstance、ReadingSession、CaptureResolution。`0880d5c` 在写入边界核对 Edition→Work、Instance→Edition、Session 的完整目录链，以及 Resolution 的 Capture、Session 和目录身份；部分未知上下文仍可保持 `null`。跨 owner Work、缺失 Edition、Session 工作归属错误及 Resolution 缺失目录对象的反例均在事务内拒绝且无部分记录。正式库只读备份的 1 个 Edition、2 个 BookInstance、4 个 ReadingSession 与 137 个 CaptureResolution 历史版本均通过新检查；Python 138 项及契约校验通过。此项不证明书目信息真实、全部旧元数据正确或 §30 的附件幂等与事件恢复已全面复审。
 
+R1/AC-01 并发摄取幂等修复：两个独立 Library 连接在首次查询后同时接受同一来源消息、附件字节和幂等键，旧代码让先提交者返回 `accepted`，后到者因 `source_items`/`idempotency` 唯一约束得到 `IDEMPOTENCY_CONFLICT`，违反同一命令重试返回同一凭据的要求。`d029cc1` 在唯一约束竞争回滚后重查已提交命令；仅当业务指纹完全相同且原图对象仍可读取时返回胜出者 receipt。并发隔离测试得到相同 `batch_id`，只生成一个 capture、一个幂等记录和一条接收事件；同一来源身份改用不同幂等键仍明确冲突。Python 139 项和契约校验通过。此为受控并发反例，不替代真实 Gateway 重复消息、附件变化和进程重启的全链路验收。
+
 ## 9. 现行实现计划（2026-09-29）
 
 第 1–7 节仍是对 `d111ace` 的初审，不能用其中的旧行号和测试数量描述当前 HEAD。本节把整改转为可执行批次；每批结束时在第 8 节记录实际提交、测试、生产状态和未验项。除明确列出的真实用户审核外，调试与迁移均通过 Librarian 的 worker、领域命令或受信 Gateway 工具执行，不手改生产数据库或 Vault 生成块。
