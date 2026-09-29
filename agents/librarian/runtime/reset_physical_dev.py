@@ -131,11 +131,14 @@ def reset(root: Path, owner: str, backup: Path, expected_captures: int,
                 if path.is_file() and str(path.relative_to(root)) not in refs:
                     path.unlink()
                     removed_objects += 1
-        for name in ("batch-status", "notifications", "reconciliations", "delivery-evidence"):
+        for name in ("batch-status", "notifications", "reconciliations",
+                     "delivery-evidence", "bookscan-runs"):
             path = root / name
             if path.is_dir():
                 shutil.rmtree(path)
                 path.mkdir()
+        for path in root.glob("worker-*.log"):
+            path.unlink()
         if note_bytes is not None:
             vault_note.unlink()
     after = audit(root)

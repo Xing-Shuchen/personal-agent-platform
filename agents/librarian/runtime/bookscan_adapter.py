@@ -151,8 +151,9 @@ def bookscan_extractor(epub: Path | None, *, python: Path | None = None,
         if work_root is None:
             workspace = tempfile.TemporaryDirectory(prefix="librarian-bookscan-")
         else:
-            work_root.mkdir(parents=True, exist_ok=True)
-            workspace = nullcontext(tempfile.mkdtemp(prefix="run-", dir=work_root))
+            runs_root = work_root.resolve()
+            runs_root.mkdir(parents=True, exist_ok=True)
+            workspace = nullcontext(tempfile.mkdtemp(prefix="run-", dir=runs_root))
         with workspace as temporary:
             root = Path(temporary)
             (root / "capture.png").write_bytes(derivative.getvalue())
