@@ -42,6 +42,12 @@ visible in the `librarian_review` summary. A later launch clears the failure;
 `spawned` means process creation only, not successful BookScan or Vault output.
 Plugin 19/19 and full Python regression 526/526 pass. Audit §24.
 
+Audit §25 now gives a current disposition for every original F01–F08 finding,
+separating the repaired local paths from the image-quality and live-platform
+checks the owner deferred to formal use. The current production read-only
+count remains 73 active physical traces, 15 handwritten notes and zero user
+confirmed handwritten notes.
+
 Latest scope change: printed underline text is accepted with its current EPUB
 punctuation expansion. The private review site now offers a handwriting-only
 page with 15 note crops and versioned confirm/edit/reject actions; actual user
