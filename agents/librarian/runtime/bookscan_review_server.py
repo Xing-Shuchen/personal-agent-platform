@@ -127,8 +127,15 @@ def create_server(root: Path, owner: str, vault: Path | None,
                         result = (review_handwriting(lib, owner, bundle)
                                   if route == "/api/handwriting-review" else
                                   apply_review(lib, owner, bundle))
+                    review_page_status = "unchanged"
                     if route == "/api/handwriting-review":
-                        build_index(root, owner)
+                        try:
+                            build_index(root, owner)
+                            review_page_status = "updated"
+                        except Exception:
+                            # The decision is committed; report a projection failure so
+                            # a retry can rebuild the page without a second revision.
+                            review_page_status = "review_required"
                     try:
                         worker = run_worker(root, vault, owner, physical_only=True)
                     except Exception:
@@ -140,7 +147,8 @@ def create_server(root: Path, owner: str, vault: Path | None,
                     vault_status = "review_required"
                 else:
                     vault_status = "updated" if vault else "unconfigured"
-                self._json(HTTPStatus.OK, {**result, "vault_status": vault_status})
+                self._json(HTTPStatus.OK, {**result, "vault_status": vault_status,
+                                           "review_page_status": review_page_status})
             except LibrarianError as error:
                 status = (HTTPStatus.CONFLICT if error.code in
                           {"REVISION_CONFLICT", "RECONCILIATION_REQUIRED"} else

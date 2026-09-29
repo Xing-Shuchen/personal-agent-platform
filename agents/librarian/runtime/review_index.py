@@ -115,8 +115,9 @@ document.querySelectorAll('article').forEach(card => {
       if (!response.ok) throw new Error(data.message || data.code || '提交失败');
       card.dataset.revision = String(data.revision);
       card.querySelector('.state').textContent = decision === 'accepted' ? '已确认' : '已排除';
-      result.textContent = data.vault_status === 'updated' ? '已入库并刷新 Vault' :
-        '已入库；Vault 状态：' + data.vault_status;
+      result.textContent = (data.vault_status === 'updated' ? '已入库并刷新 Vault' :
+        '已入库；Vault 状态：' + data.vault_status) +
+        (data.review_page_status === 'review_required' ? '；复核页待重建' : '');
     } catch (error) { result.textContent = String(error.message || error); }
     finally { card.querySelectorAll('button').forEach(item => item.disabled = false); }
   }));

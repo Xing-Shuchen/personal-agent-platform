@@ -63,7 +63,7 @@ def review_handwriting(lib: Library, owner: str, decision: dict[str, Any]) -> di
                 "SELECT body FROM records WHERE owner_id=? AND model='KnowledgeCandidate' AND current=1",
                 (owner,)):
             candidate = json.loads(row["body"])
-            if (candidate["status"] in {"approved", "promoted"} and
+            if (candidate["status"] == "promoted" and
                     any((ref["trace_id"], ref["revision"]) == source_ref
                         for ref in candidate["source_trace_refs"])):
                 raise LibrarianError("RECONCILIATION_REQUIRED", "knowledge depends on this note")

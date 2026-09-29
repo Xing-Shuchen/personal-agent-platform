@@ -30,6 +30,13 @@ promotion then returns a revision conflict and emits no success event. The
 full Python suite remains 523 passed; the spec's candidate transition text
 and audit §22 record this behavior.
 
+The handwriting HTTP endpoint now reports a committed decision separately
+from review-page and Vault projections. A failed page rebuild returns
+`review_page_status=review_required` while retaining the applied revision;
+retry can rebuild without a second correction. Approved candidates tied to a
+handwritten source are superseded on its correction; promoted knowledge still
+requires reconciliation. Full Python regression: 525 passed. Audit §23.
+
 Latest scope change: printed underline text is accepted with its current EPUB
 punctuation expansion. The private review site now offers a handwriting-only
 page with 15 note crops and versioned confirm/edit/reject actions; actual user

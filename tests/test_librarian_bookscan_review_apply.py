@@ -11,6 +11,7 @@ from agents.librarian.runtime.bookscan_adapter import adapt_report
 from agents.librarian.runtime.bookscan_review_apply import (apply_review,
                                                              prepare_review, review_context)
 from agents.librarian.runtime.handwriting_review import review_handwriting
+from agents.librarian.runtime.knowledge import create_candidate, decide_candidate, promote_candidate
 from agents.librarian.runtime.pipeline import ExtractionOutput, process_capture
 from agents.librarian.runtime.store import Library, LibrarianError
 
@@ -209,6 +210,37 @@ def test_handwriting_only_confirmation_preserves_printed_traces(tmp_path):
                              "SELECT body FROM records WHERE model='ReadingTrace' AND current=1")
                          if "margin_note" not in json.loads(row[0])["trace_types"]}
         assert printed_after == printed_before
+
+
+def test_handwriting_review_retires_approved_candidate_but_protects_promoted_knowledge(tmp_path):
+    with Library(tmp_path) as lib:
+        _setup(lib)
+        note = _note_trace(lib)
+        ref = [{"trace_id": note["id"], "revision": note["revision"]}]
+        approved = create_candidate(lib, "owner", ref, candidate_type="concept",
+            content={"text": None, "confidence": None, "basis": "unknown"},
+            correlation_id="approved-note")
+        decide_candidate(lib, "owner", approved["id"], 1, approve=True)
+        result = review_handwriting(lib, "owner", {"trace_id": note["id"],
+            "expected_revision": 1, "decision": "accepted", "text": "人工确认旁注"})
+        assert result["status"] == "applied"
+        stale = lib.get("owner", "KnowledgeCandidate", approved["id"])
+        assert stale["status"] == "superseded" and stale["revision"] == 3
+        assert stale["source_trace_refs"] == ref
+
+        revised = lib.get("owner", "ReadingTrace", note["id"])
+        promoted = create_candidate(lib, "owner",
+            [{"trace_id": note["id"], "revision": revised["revision"]}],
+            candidate_type="concept",
+            content={"text": None, "confidence": None, "basis": "unknown"},
+            correlation_id="promoted-note")
+        decide_candidate(lib, "owner", promoted["id"], 1, approve=True)
+        promote_candidate(lib, "owner", promoted["id"], 2, lambda *_: "knowledge_fixture")
+        with pytest.raises(LibrarianError) as blocked:
+            review_handwriting(lib, "owner", {"trace_id": note["id"],
+                "expected_revision": revised["revision"], "decision": "rejected", "text": ""})
+        assert blocked.value.code == "RECONCILIATION_REQUIRED"
+        assert lib.get("owner", "ReadingTrace", note["id"])["revision"] == revised["revision"]
 
 
 def test_handwriting_only_rejection_removes_note_without_touching_printed_marks(tmp_path):
