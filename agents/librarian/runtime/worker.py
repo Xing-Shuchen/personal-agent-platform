@@ -1,7 +1,7 @@
 """Recover and complete Feishu capture batches in the Librarian runtime.
 
 The OpenClaw plugin starts this worker after intake and on Gateway startup.
-It uses local OCR for printed text and photo marks, an owner-provided EPUB for
+It uses Bookscan for printed text and photo marks, an owner-provided EPUB for
 alignment, and writes an idempotent Obsidian review note before notifying.
 """
 from __future__ import annotations
@@ -9,7 +9,6 @@ from __future__ import annotations
 import argparse
 import fcntl
 import hashlib
-import io
 import json
 import os
 import re
@@ -22,13 +21,9 @@ from zoneinfo import ZoneInfo
 from zipfile import ZipFile
 from xml.etree import ElementTree as ET
 
-from PIL import Image, ImageOps
-
-from .ocr import visible_header_page
 from .bookscan_adapter import bookscan_extractor, processor_fingerprint
 from .gateway_review_finalize import auto_reconcile_fully_reviewed
 from .pipeline import (process_capture, reconcile_extraction, bind_fingerprint_context,
-                       resolve_capture,
                        _repair_trace_index_best_effort)
 from .store import Library, LibrarianError, _new, _now, _unknown_time
 from .koodo_native import sync_koodo_sqlite
@@ -62,89 +57,6 @@ def _notified_batch_is_current(batch: dict, *, notified: bool,
                 for capture_id in captures))
 
 
-def _header_for_legacy_regions(resolution: dict, observation: dict,
-                               raw: dict) -> tuple[int, float] | None:
-    """Reject margin paragraph numbers misread as vertical page boundaries."""
-    pages = resolution["pages"]
-    observed = observation["pages"]
-    if not pages or len(pages) != len(observed) or not 1 <= len(pages) <= 3:
-        return None
-    if any(page["id"] != seen["id"] or page["bbox"] != seen["bbox"]
-           for page, seen in zip(pages, observed)):
-        return None
-    header = visible_header_page(raw)
-    if not header:
-        return None
-    if len(pages) == 1:
-        return header if pages[0]["page"]["value"] is None else None
-    x0, _, x1, _ = pages[0]["bbox"]
-    if (x1 - x0 < .6 or
-            any(abs(page["bbox"][0] - x0) > .002 or
-                abs(page["bbox"][2] - x1) > .002 for page in pages)):
-        return None
-    markers = raw.get("page_markers", [])
-    if (len(markers) != len(pages) - 1 or
-            pages[0]["page"]["value"] is not None or
-            any(marker.get("source") not in {"full_ocr", "margin_ocr"} or
-                page["page"]["value"] is None or
-                page["page"]["value"]["number"] != marker.get("number")
-                for page, marker in zip(pages[1:], markers))):
-        return None
-    return header if all(marker["number"] != header[0] for marker in markers) else None
-
-
-def _repair_visible_header_pages(lib: Library, owner: str, capture_ids: list[str]) -> int:
-    """Resolve old unknown/margin-number regions from their own printed header."""
-    runs = {run["capture_id"]: run for run in _current(lib, owner, "ProcessingRun")}
-    resolutions = {item["capture_id"]: item for item in
-                   _current(lib, owner, "CaptureResolution")}
-    observations = {item["processing_run_id"]: item for item in
-                    _current(lib, owner, "PageObservation")}
-    repaired = 0
-    for capture_id in capture_ids:
-        run, resolution = runs.get(capture_id), resolutions.get(capture_id)
-        if (not run or run["outcome"] not in {"success", "partial"} or
-                not run["extractor_version"].startswith("rapidocr-epub-notes-") or
-                not resolution):
-            continue
-        observation = observations.get(run["id"])
-        if not observation:
-            continue
-        page_map = {page["id"]: page for page in resolution["pages"]}
-        traces = [trace for trace in _current(lib, owner, "ReadingTrace")
-                  if trace["status"] == "active" and
-                  trace["source"].get("capture_id") == capture_id]
-        if (not traces or not any(trace["location"]["page"] is None for trace in traces) or
-                any((region := page_map.get(trace["location"]["page_region_id"])) is None or
-                    trace["location"]["page"] != region["page"]["value"]
-                    for trace in traces)):
-            continue
-        try:
-            raw = json.loads(lib._read_object(observation["raw_output_asset"]))
-            header = _header_for_legacy_regions(resolution, observation, raw)
-        except (LibrarianError, ValueError, TypeError, KeyError):
-            continue
-        if not header:
-            continue
-        number, confidence = header
-        pages = json.loads(json.dumps(resolution["pages"]))
-        for page in pages:
-            page["page"] = {"value": {"label": str(number), "number": number,
-                                      "scheme": "arabic"},
-                            "confidence": confidence, "basis": "vision",
-                            "status": "resolved"}
-        try:
-            resolve_capture(lib, owner, capture_id, resolution["revision"],
-                            pages=pages, _basis="vision")
-        except LibrarianError as error:
-            if error.code not in {"RECONCILIATION_REQUIRED", "REVISION_CONFLICT",
-                                  "CONTEXT_CONFLICT"}:
-                raise
-            continue
-        repaired += 1
-    return repaired
-
-
 def _epub_metadata(path: Path) -> dict:
     values: dict[str, list[str]] = {}
     with ZipFile(path) as archive:
@@ -159,54 +71,28 @@ def _epub_metadata(path: Path) -> dict:
     return values
 
 
-def _book_for_cover(root: Path, cover: bytes) -> tuple[str, Path] | None:
-    from rapidocr import RapidOCR
-    import numpy as np
-    with Image.open(io.BytesIO(cover)) as source:
-        image = ImageOps.exif_transpose(source).convert("RGB")
-        image.thumbnail((2000, 2000))
-        result = RapidOCR()(np.asarray(image))
-    text = " ".join(result.txts or [])
-    digits = re.sub(r"\D", "", text)
-    for epub in sorted((root / "source-books").glob("[0-9]" * 13 + ".epub")):
-        isbn = epub.stem
-        if isbn in digits or re.search(r"ISBN\s*" + r"\D*".join(isbn), text, re.I):
-            return isbn, epub
-    return None
-
-
-def _book_for_page(root: Path, original: bytes) -> tuple[str, Path] | None:
-    """Identify an already supplied EPUB from multiple printed lines on a page.
-
-    A single common phrase is insufficient evidence of a book identity. The
-    worker can use this when the user sends interior pages without a cover.
-    """
-    from rapidocr import RapidOCR
-    import numpy as np
-    from .ocr import EpubGroundTruth
-
-    epubs = sorted((root / "source-books").glob("[0-9]" * 13 + ".epub"))
-    if not epubs:
+def _book_for_assigned_context(lib: Library, root: Path, owner: str,
+                               capture_ids: list[str]) -> tuple[str, Path] | None:
+    """Reuse an existing capture-to-session assignment during a processor rebuild."""
+    identities = set()
+    for capture_id in capture_ids:
+        row = lib.db.execute("SELECT session_id FROM capture_context WHERE owner_id=? "
+                             "AND capture_id=?", (owner, capture_id)).fetchone()
+        if row is None:
+            return None
+        session = lib.get(owner, "ReadingSession", row["session_id"])
+        if session["edition_id"] is None:
+            return None
+        edition = lib.get(owner, "Edition", session["edition_id"])
+        isbn = edition["isbn"]["isbn13"]
+        if not isbn:
+            return None
+        identities.add(isbn)
+    if len(identities) != 1:
         return None
-    with Image.open(io.BytesIO(original)) as source:
-        image = ImageOps.exif_transpose(source).convert("RGB")
-        image.thumbnail((1800, 1800))
-        result = RapidOCR()(np.asarray(image))
-    lines = [line for line in (result.txts or []) if len(line) >= 12]
-    if len(lines) < 3:
-        return None
-    choices = []
-    for epub in epubs:
-        ground_truth = EpubGroundTruth(epub)
-        matches = sum(ground_truth.match(line)[1] >= .85 for line in lines)
-        if matches >= 3 and matches / len(lines) >= .2:
-            choices.append((matches, epub))
-    if not choices:
-        return None
-    choices.sort(reverse=True)
-    if len(choices) > 1 and choices[0][0] - choices[1][0] < 3:
-        return None
-    return choices[0][1].stem, choices[0][1]
+    isbn = identities.pop()
+    epub = root / "source-books" / f"{isbn}.epub"
+    return (isbn, epub) if epub.is_file() else None
 
 
 def _processing_batches(batches: list[dict]) -> list[dict]:
@@ -843,15 +729,7 @@ def _process_batch(lib: Library, root: Path, vault: Path | None, owner: str,
         _remove_vault_images(vault, batch)
         _hide_vault_markers(vault, batch)
     notified = (root / "notifications" / f"{batch['id']}.json").exists()
-    match = None
-    for capture_id in batch["capture_ids"]:
-        try:
-            original = lib.read_original(owner, capture_id)
-            match = _book_for_cover(root, original) or _book_for_page(root, original)
-        except Exception:
-            match = None
-        if match:
-            break
+    match = _book_for_assigned_context(lib, root, owner, batch["capture_ids"])
     if match:
         isbn, epub = match
         try:
@@ -880,8 +758,6 @@ def _process_batch(lib: Library, root: Path, vault: Path | None, owner: str,
         except LibrarianError as error:
             if error.code not in {"RECONCILIATION_REQUIRED", "REVISION_CONFLICT"}:
                 raise
-    if match:
-        _repair_visible_header_pages(lib, owner, batch["capture_ids"])
     latest_runs = {run["capture_id"]: run for run in
                    _current(lib, owner, "ProcessingRun")}
     pending_review_ids = _latest_pending_review_ids(list(latest_runs.values()))

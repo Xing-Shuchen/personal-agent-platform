@@ -13,18 +13,14 @@ import json
 from PIL import Image
 
 
-def test_ocr_gap_review_respects_visual_negative_and_rotated_coordinates() -> None:
-    observation = {"printed_regions": [], "pages": [{"bbox": [0, 0, 1, 1]}]}
-    raw = {"analysis_rotation_degrees": 180,
-           "lines": [{"id": 7, "bbox": [.2, .3, .7, .35],
-                      "underline_score": .08, "epub_match": 0.0}],
-           "gap_refinements": [{"line_id": 7, "answer": {
-               "has_underline": False, "underlined_text": "", "uncertain": False}}]}
-    assert _reviewable_ocr_gaps(raw, observation) == []
-    raw["gap_refinements"][0]["answer"]["has_underline"] = True
+def test_bookscan_review_candidate_uses_source_coordinates() -> None:
+    observation = {"image_space": {"width": 1000, "height": 2000}}
+    raw = {"review_candidates": [{"bbox": [200, 600, 700, 700],
+                                  "reason": "unassigned_ink"}]}
     gaps = _reviewable_ocr_gaps(raw, observation)
     assert len(gaps) == 1
-    assert gaps[0]["bbox"] == [.3, .65, .8, .7]
+    assert gaps[0]["bbox"] == [.2, .3, .7, .35]
+    assert gaps[0]["reason"] == "unassigned_ink"
 
 
 def test_review_decision_is_source_linked_idempotent_and_does_not_promote(

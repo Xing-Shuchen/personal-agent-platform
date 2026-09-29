@@ -7,7 +7,6 @@ import json
 import sys
 from pathlib import Path
 
-from .ocr import _flip_bbox
 from .pipeline import _traces_for_capture, normalize
 from .store import Library, LibrarianError
 from .gateway_errors import write_error
@@ -24,34 +23,17 @@ def candidate_id(capture_id: str, detection_ids: list[str]) -> str:
 
 
 def _reviewable_ocr_gaps(raw: dict, observation: dict) -> list[dict]:
-    """Keep only ink gaps that the local and visual checks have not ruled out."""
-    checked = {item.get("line_id"): item.get("answer", {})
-               for item in raw.get("gap_refinements", [])}
-    printed_boxes = [item["bbox"] for item in observation["printed_regions"]]
+    """Expose Bookscan ink groups that still need a person's review."""
+    width = observation["image_space"]["width"]
+    height = observation["image_space"]["height"]
     gaps = []
-    for line in raw.get("lines", []):
-        if (line.get("underline_score", 0) < .065 or
-                line.get("epub_match", 0) >= .85):
-            continue
-        check = checked.get(line.get("id"), {})
-        if check.get("has_underline") is False and check.get("uncertain") is False:
-            continue
-        box = line.get("bbox")
-        if not isinstance(box, list) or len(box) != 4:
-            continue
-        if raw.get("analysis_rotation_degrees") == 180:
-            box = _flip_bbox(box)
-        if box[2] - box[0] < .28:
-            continue
-        middle = (box[1] + box[3]) / 2
-        if not any(page["bbox"][1] <= middle <= page["bbox"][3]
-                   for page in observation["pages"]):
-            continue
-        if any(abs(box[1] - printed[1]) < .012 for printed in printed_boxes):
-            continue
-        gaps.append({"bbox": box, "underline_score": line["underline_score"],
-                     "reason": "visible_ink_without_reliable_print_text",
-                     "visual_check": (check if check else None)})
+    for candidate in raw.get("review_candidates", []):
+        box = candidate.get("bbox") or candidate.get("group_bbox")
+        if isinstance(box, list) and len(box) == 4:
+            box = [box[0] / width, box[1] / height,
+                   box[2] / width, box[3] / height]
+        gaps.append({"bbox": box, "reason": candidate.get("reason", "bookscan_review_candidate"),
+                     "candidate": candidate})
     return gaps
 
 
@@ -142,13 +124,6 @@ def pending_extractions(lib: Library, owner: str, capture_id: str | None = None)
     visual_checks = []
     try:
         raw = json.loads(lib._read_object(observation["raw_output_asset"]))
-        for item in raw.get("underline_refinements", []):
-            answer = item.get("answer", {})
-            visual_checks.append({"mark_ids": item.get("mark_ids", []),
-                                  "has_underline": answer.get("has_underline"),
-                                  "underlined_text": answer.get("underlined_text", ""),
-                                  "uncertain": answer.get("uncertain"),
-                                  "epub_match": item.get("epub_match")})
         ocr_gaps = _reviewable_ocr_gaps(raw, observation)
     except (ValueError, TypeError, LibrarianError):
         ocr_gaps.append({"reason": "raw_ocr_unavailable"})

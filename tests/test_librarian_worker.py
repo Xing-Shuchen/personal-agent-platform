@@ -15,7 +15,6 @@ from agents.librarian.runtime.worker import (_catalog, _current, _hide_vault_mar
                                              _render_batch_note, _render_batch_note_legacy,
                                              _refresh_generated_note, _review_digest,
                                              _notify_correction,
-                                             _header_for_legacy_regions,
                                              _repair_legacy_auto_affinity)
 
 
@@ -70,28 +69,6 @@ def test_worker_refreshes_stale_partial_status_after_unchanged_batch(tmp_path: P
     updated = json.loads(status.read_text())
     assert updated["status"] == "processed" and updated["unresolved_pages"] == 0
     assert updated["traces"] == 0 and updated["retry_attempts"] == 0
-
-
-def test_legacy_vertical_regions_need_same_page_geometry_and_distinct_header(monkeypatch) -> None:
-    from agents.librarian.runtime import worker
-
-    pages = [
-        {"id": "page_0", "bbox": [.1, 0, .9, .5], "page": {"value": None}},
-        {"id": "page_1", "bbox": [.1, .44, .9, .9],
-         "page": {"value": {"label": "61", "number": 61, "scheme": "arabic"}}},
-    ]
-    resolution = {"pages": pages}
-    observation = {"pages": pages}
-    raw = {"page_markers": [{"number": 61, "source": "full_ocr"}]}
-    monkeypatch.setattr(worker, "visible_header_page", lambda _raw: (36, 1.0))
-    assert _header_for_legacy_regions(resolution, observation, raw) == (36, 1.0)
-    shifted = json.loads(json.dumps(pages))
-    shifted[1]["bbox"][0] = .35
-    assert _header_for_legacy_regions({"pages": shifted}, {"pages": shifted}, raw) is None
-    assert _header_for_legacy_regions(resolution, {"pages": shifted}, raw) is None
-    assert _header_for_legacy_regions(resolution, observation,
-                                      {"page_markers": [{"number": 36,
-                                                         "source": "full_ocr"}]}) is None
 
 
 def _epub(path: Path) -> None:
@@ -374,7 +351,6 @@ def test_interior_photo_without_epub_or_vault_persists_partial_trace(tmp_path: P
                              attachments=[{"source_item_id": "image-1", "mime_type": "image/png",
                                            "data": stream.getvalue()}],
                              idempotency_key="interior-command")
-    monkeypatch.setattr(worker, "_book_for_cover", lambda *_: None)
     calls = []
     def extractor(epub, **_kwargs):
         assert epub is None
@@ -427,8 +403,6 @@ def test_generic_photo_uses_bookscan_without_full_page_model(tmp_path: Path, mon
                              conversation_id="chat", source_event_id="interior-ocr",
                              attachments=[{"source_item_id": "image", "mime_type": "image/png",
                                            "data": original}], idempotency_key="interior-ocr")
-    monkeypatch.setattr(worker, "_book_for_cover", lambda *_: None)
-    monkeypatch.setattr(worker, "_book_for_page", lambda *_: None)
     observation = {"image_space": {"width": 100, "height": 100,
                                     "basis": "exif_oriented_original"},
                    "pages": [{"id": "page_0", "bbox": [0, 0, 1, 1], "side": "unknown",
@@ -542,33 +516,6 @@ def test_physical_note_uses_weread_layout_and_upgrades_unchanged_legacy(tmp_path
     with pytest.raises(LibrarianError) as error:
         _refresh_generated_note(tmp_path, batch, "社会理论二十讲", [trace], [trace], received)
     assert error.value.code == "REVIEW_EDIT_CONFLICT"
-
-
-def test_second_photo_can_supply_epub_identity(tmp_path: Path, monkeypatch) -> None:
-    from agents.librarian.runtime import worker
-
-    state = tmp_path / "state"
-    epub = state / "source-books" / "9787208171411.epub"
-    epub.parent.mkdir(parents=True)
-    _epub(epub)
-    stream = BytesIO()
-    Image.new("RGB", (100, 100), "white").save(stream, "PNG")
-    with Library(state) as lib:
-        receipt = lib.ingest("owner", transport="feishu", account_id="librarian",
-                             conversation_id="chat", source_event_id="two-photos",
-                             attachments=[{"source_item_id": str(index), "mime_type": "image/png",
-                                           "data": stream.getvalue()} for index in (1, 2)],
-                             idempotency_key="two-photos-command")
-        batch = _current(lib, "owner", "CaptureBatch")[0]
-        seen = []
-        monkeypatch.setattr(worker, "_book_for_cover",
-                            lambda *_: seen.append(1) or ((epub.stem, epub) if len(seen) == 2 else None))
-        monkeypatch.setattr(worker, "bookscan_extractor", lambda _epub, **_kwargs: lambda _raw: b"{}")
-        monkeypatch.setattr(worker, "process_capture", lambda *_args, **_kwargs: [])
-        result = worker._process_batch(lib, state, None, "owner", batch, "fixture/vision")
-        assert len(seen) == 2
-        assert result["status"] == "partial"
-        assert len(_current(lib, "owner", "ReadingSession")) == 1
 
 
 def test_legacy_worker_selected_session_becomes_expiring_affinity(tmp_path: Path) -> None:

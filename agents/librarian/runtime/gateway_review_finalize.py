@@ -9,7 +9,7 @@ import sys
 from pathlib import Path
 
 from .gateway_review import pending_extractions
-from .ocr import EpubGroundTruth, _compact
+from bookscan.epub import EpubIndex, normalized as normalize_epub_text
 from .pipeline import reconcile_extraction
 from .store import Library, LibrarianError
 from .gateway_errors import write_error
@@ -27,12 +27,13 @@ def _verify_printed_boundaries(lib: Library, owner: str, run: dict,
     if observation is None:
         raise LibrarianError("RECONCILIATION_REQUIRED", "pending observation missing")
     raw = json.loads(lib._read_object(observation["raw_output_asset"]))
-    lines = {line["id"]: line["ocr_text"] for line in raw.get("lines", [])
-             if isinstance(line, dict) and isinstance(line.get("id"), int) and
-             isinstance(line.get("ocr_text"), str)}
-    isbn = re.search(r"^rapidocr-epub-notes-[^:]+:(\d{13}):", run["extractor_version"])
+    groups = {f"bookscan_{index}_mark": group for index, group in
+              enumerate(raw.get("groups", []))}
+    isbn = re.search(r"^bookscan-segment-v1:[^:]+:(\d{13}):", run["extractor_version"])
     epub_path = lib.root / "source-books" / f"{isbn.group(1)}.epub" if isbn else None
-    groundtruth = EpubGroundTruth(epub_path) if epub_path and epub_path.is_file() else None
+    groundtruth = EpubIndex(epub_path) if epub_path and epub_path.is_file() else None
+    def compact(value: str) -> str:
+        return normalize_epub_text(value)[0]
     for item in proposed:
         candidate = item["candidate_id"]
         if candidate not in accepted:
@@ -40,20 +41,22 @@ def _verify_printed_boundaries(lib: Library, owner: str, run: dict,
         if set(item["types"]) == {"margin_note"}:
             # Handwriting has no printed OCR/EPUB sentence boundary. Its
             # accepted text is the user's reviewed transcription instead.
-            if not _compact(accepted[candidate] or item["annotation"]):
+            if not compact(accepted[candidate] or item["annotation"]):
                 raise LibrarianError("RECONCILIATION_REQUIRED", "accepted annotation incomplete")
             continue
         text = accepted[candidate] or item["printed_text"]
-        normalized = _compact(text)
+        normalized = compact(text)
         if len(normalized) < 12:
             raise LibrarianError("RECONCILIATION_REQUIRED", "accepted text incomplete")
-        line_ids = sorted({int(identifier.split("_", 1)[1]) for identifier in
-                           item["detection_ids"] if re.fullmatch(r"underline_\d+", identifier)})
-        if line_ids and all(index in lines for index in line_ids):
-            photographed = _compact("".join(lines[index] for index in line_ids))
+        marked = [groups[identifier] for identifier in item["detection_ids"]
+                  if identifier in groups]
+        if marked:
+            photographed = compact("".join(group.get("ocr_raw", "") for group in marked))
             if normalized[:6] not in photographed or normalized[-6:] not in photographed:
                 raise LibrarianError("RECONCILIATION_REQUIRED", "text boundary absent from photo OCR")
-        if groundtruth and groundtruth.match(text)[1] < .95:
+        if groundtruth and not any(
+                candidate["similarity"] >= .95 and candidate["query_coverage"] >= .95
+                for candidate in groundtruth.candidates(text)):
             raise LibrarianError("RECONCILIATION_REQUIRED", "accepted text disagrees with EPUB")
 
 

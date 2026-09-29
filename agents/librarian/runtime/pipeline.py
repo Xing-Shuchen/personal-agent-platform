@@ -630,23 +630,6 @@ def reconcile_extraction(lib: Library, owner_id: str, capture_id: str,
     old_groups = [set(group) for group in groups(old_traces, old_mark_ids)]
     new_groups = [set(group) for group in groups(traces, new_mark_ids)]
     rotation_upgrade = False
-    if allow_rotation_upgrade and extractor_version.startswith(("rapidocr-epub-notes-v6:",
-                                                                 "rapidocr-epub-notes-v7:",
-                                                                 "rapidocr-epub-notes-v8:")):
-        try:
-            raw = json.loads(lib._read_object(observation["raw_output_asset"]))
-            source_versions = {lib.get(owner_id, "PageObservation",
-                                       trace["source"]["observation_id"])["extractor"]
-                               for trace in old_traces}
-            rotation_upgrade = (raw.get("analysis_rotation_degrees") == 180 and
-                                len(new_mark_ids) >= 1 and
-                                sum(line.get("epub_match", 0) >= .85
-                                    for line in raw.get("lines", [])) >= 3 and
-                                all(version.startswith(("openclaw-physical-v1:",
-                                                        "rapidocr-epub-notes-v5:"))
-                                    for version in source_versions))
-        except (KeyError, ValueError, TypeError, LibrarianError):
-            rotation_upgrade = False
     # A single group may gain newly detected ink. A split, merge, loss, or
     # replacement cannot be mapped without a person's review.
     if reviewed_candidates is None and not rotation_upgrade and (len(old_groups) != len(new_groups) or
