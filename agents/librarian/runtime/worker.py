@@ -369,7 +369,7 @@ def _render_batch_note_legacy(batch: dict, title: str, traces: list[dict], *,
 
 def _render_batch_note(batch: dict, title: str, traces: list[dict], *,
                        created: str, spatial_order: bool = True,
-                       presentation_version: int = 6,
+                       presentation_version: int = 8,
                        received_at_by_capture: dict[str, str] | None = None) -> str:
     if not traces:
         raise LibrarianError("NO_MARKS", "no reading marks found in batch")
@@ -420,14 +420,16 @@ def _render_batch_note(batch: dict, title: str, traces: list[dict], *,
                 else:
                     if presentation_version >= 4:
                         flattened = re.sub(r"\s*\n\s*", "", printed.strip())
-                    lines.append(f"> 📌 {flattened} ^{trace['id']}")
+                    anchor = f" ^{trace['id']}" if presentation_version < 7 else ""
+                    lines.append(f"> 📌 {flattened}{anchor}")
                 if presentation_version != 1 and not flattened.rstrip().endswith(("。", "！", "？", "!", "?")):
                     lines.append("> ⚠️ 转录可能不完整，待核对")
             if annotation:
                 rendered_note = annotation if presentation_version == 1 else annotation.replace("\n", " / ")
                 lines.append(f"> 💭 {rendered_note}（手写待核对）")
             if not printed and not annotation and presentation_version >= 5:
-                lines.append(f"> ⚠️ 检测到标记，文字尚未辨认 ^{trace['id']}")
+                anchor = f" ^{trace['id']}" if presentation_version < 7 else ""
+                lines.append(f"> ⚠️ 检测到标记，文字尚未辨认{anchor}")
             source_time = (received_at_by_capture or {}).get(trace["source"]["capture_id"])
             try:
                 stamp = datetime.fromisoformat(
@@ -436,8 +438,9 @@ def _render_batch_note(batch: dict, title: str, traces: list[dict], *,
             except (TypeError, KeyError, ValueError):
                 stamp = "未知" if presentation_version >= 6 else created
             time_label = f"收图：{stamp}" if presentation_version >= 6 else stamp
-            lines.extend([f"> ⏱ {time_label}",
-                          f"> 原图证据：`{trace['source']['capture_id']}`",
+            image_label = ("> 📷 原图：可向图书专员索取" if presentation_version >= 8
+                           else f"> 原图证据：`{trace['source']['capture_id']}`")
+            lines.extend([f"> ⏱ {time_label}", image_label,
                           _trace_marker(trace["id"], trace["revision"]), ""])
 
     render_section("高亮划线", highlights)
@@ -488,6 +491,12 @@ def _refresh_generated_note(vault: Path, batch: dict, title: str,
                                received_at_by_capture=received_at_by_capture),
             _render_batch_note(batch, title, old_traces, created=match.group(1),
                                presentation_version=5),
+            _render_batch_note(batch, title, old_traces, created=match.group(1),
+                               presentation_version=6,
+                               received_at_by_capture=received_at_by_capture),
+            _render_batch_note(batch, title, old_traces, created=match.group(1),
+                               presentation_version=7,
+                               received_at_by_capture=received_at_by_capture),
             _render_batch_note(batch, title, old_traces, created=match.group(1),
                                presentation_version=1),
             _render_batch_note(batch, title, old_traces, created=match.group(1),
@@ -563,7 +572,7 @@ def _consolidate_generated_note(lib: Library, owner: str, title: str,
         variants = [_render_batch_note(batch, title, traces, created=stamp.group(1),
                                        presentation_version=version,
                                        received_at_by_capture=received).strip()
-                    for version in (1, 2, 3, 4, 5, 6)]
+                    for version in (1, 2, 3, 4, 5, 6, 7, 8)]
         variants.extend([_render_batch_note_legacy(batch, title, traces,
                                                    created=stamp.group(1)).strip(),
                          _render_batch_note_legacy(batch, title, traces,
