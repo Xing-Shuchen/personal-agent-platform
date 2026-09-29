@@ -71,6 +71,31 @@ def _epub_metadata(path: Path) -> dict:
     return values
 
 
+def _isbn_metadata(root: Path, isbn: str | None) -> dict:
+    """Read an ISBN-keyed, source-attributed bibliographic record."""
+    if not isbn or not re.fullmatch(r"\d{13}", isbn):
+        return {}
+    path = root / "source-books" / f"{isbn}.metadata.json"
+    if not path.is_file():
+        return {}
+    try:
+        record = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    if (not isinstance(record, dict) or record.get("isbn13") != isbn or
+            not isinstance(record.get("source_url"), str) or
+            not record["source_url"].startswith("https://") or
+            not isinstance(record.get("authors"), list) or
+            not all(isinstance(name, str) and "\n" not in name
+                    for name in record["authors"]) or
+            not all(isinstance(record.get(key), str) and
+                    "\n" not in record[key] and "\r" not in record[key]
+                    for key in ("translator", "publisher", "publication_date",
+                                "original_title"))):
+        return {}
+    return record
+
+
 def _book_for_assigned_context(lib: Library, root: Path, owner: str,
                                capture_ids: list[str]) -> tuple[str, Path] | None:
     """Reuse an existing capture-to-session assignment during a processor rebuild."""
@@ -369,7 +394,7 @@ def _render_batch_note_legacy(batch: dict, title: str, traces: list[dict], *,
 
 def _render_batch_note(batch: dict, title: str, traces: list[dict], *,
                        created: str, spatial_order: bool = True,
-                       presentation_version: int = 9,
+                       presentation_version: int = 10,
                        received_at_by_capture: dict[str, str] | None = None) -> str:
     if not traces:
         raise LibrarianError("NO_MARKS", "no reading marks found in batch")
@@ -390,6 +415,22 @@ def _render_batch_note(batch: dict, title: str, traces: list[dict], *,
              f"> - 书名： {title}", f"> - ISBN： {batch.get('isbn', '待核对')}",
              "> - 来源： 飞书图书专员 · 纸质书照片",
              "> - 状态： 待人工 review", ""]
+    bibliography = batch.get("bibliography", {}) if presentation_version >= 10 else {}
+    if bibliography:
+        lines[7:7] = [f"authors: {json.dumps(bibliography.get('authors', []), ensure_ascii=False)}",
+                       f"translator: {json.dumps(bibliography.get('translator'), ensure_ascii=False)}",
+                       f"publisher: {json.dumps(bibliography.get('publisher'), ensure_ascii=False)}",
+                       f"publication_date: {json.dumps(bibliography.get('publication_date'), ensure_ascii=False)}",
+                       f"original_title: {json.dumps(bibliography.get('original_title'), ensure_ascii=False)}",
+                       f"bibliography_source: {json.dumps(bibliography.get('source_url'), ensure_ascii=False)}"]
+        insert_at = lines.index("> - ISBN： " + batch.get("isbn", "待核对")) + 1
+        lines[insert_at:insert_at] = [
+            "> - 作者： " + "、".join(bibliography.get("authors", [])),
+            "> - 译者： " + bibliography.get("translator", ""),
+            "> - 出版社： " + bibliography.get("publisher", ""),
+            "> - 出版日期： " + bibliography.get("publication_date", ""),
+            "> - 原作名： " + bibliography.get("original_title", ""),
+            "> - 书目来源： [ISBN 书目](" + bibliography["source_url"] + ")"]
 
     def render_section(heading: str, entries: list[dict]) -> None:
         if not entries:
@@ -503,6 +544,9 @@ def _refresh_generated_note(vault: Path, batch: dict, title: str,
                                presentation_version=8,
                                received_at_by_capture=received_at_by_capture),
             _render_batch_note(batch, title, old_traces, created=match.group(1),
+                               presentation_version=9,
+                               received_at_by_capture=received_at_by_capture),
+            _render_batch_note(batch, title, old_traces, created=match.group(1),
                                presentation_version=1),
             _render_batch_note(batch, title, old_traces, created=match.group(1),
                                presentation_version=2),
@@ -560,6 +604,7 @@ def _consolidate_generated_note(lib: Library, owner: str, title: str,
         if marker.group(1) != aggregate_id and marker.group(1) not in batches:
             raise LibrarianError("REVIEW_EDIT_CONFLICT", "review note batch is unknown")
         batch["isbn"] = isbn
+        batch["bibliography"] = _isbn_metadata(lib.root, isbn)
         refs = re.findall(r'data-librarian-trace="([^"]+)" data-revision="(\d+)"', block)
         traces = []
         for trace_id, revision in refs:
@@ -577,7 +622,7 @@ def _consolidate_generated_note(lib: Library, owner: str, title: str,
         variants = [_render_batch_note(batch, title, traces, created=stamp.group(1),
                                        presentation_version=version,
                                        received_at_by_capture=received).strip()
-                    for version in (1, 2, 3, 4, 5, 6, 7, 8, 9)]
+                    for version in (1, 2, 3, 4, 5, 6, 7, 8, 9, 10)]
         variants.extend([_render_batch_note_legacy(batch, title, traces,
                                                    created=stamp.group(1)).strip(),
                          _render_batch_note_legacy(batch, title, traces,
@@ -595,7 +640,8 @@ def _consolidate_generated_note(lib: Library, owner: str, title: str,
                trace["source"].get("capture_id") in related_captures]
     if not current:
         return note
-    rendered = _render_batch_note({"id": aggregate_id, "isbn": isbn},
+    rendered = _render_batch_note({"id": aggregate_id, "isbn": isbn,
+                                   "bibliography": _isbn_metadata(lib.root, isbn)},
                                   title, current, created=date,
                                   received_at_by_capture=_capture_received_times(
                                       lib, owner,
@@ -754,6 +800,7 @@ def _process_batch(lib: Library, root: Path, vault: Path | None, owner: str,
             match = None
     if match:
         batch["isbn"] = isbn
+        batch["bibliography"] = _isbn_metadata(root, isbn)
         epub_hash = hashlib.sha256(epub.read_bytes()).hexdigest()[:16]
         version = f"bookscan-segment-v1:{processor_fingerprint()}:{isbn}:{epub_hash}"
         work_root = root / "bookscan-runs" / hashlib.sha256(owner.encode()).hexdigest()[:16]

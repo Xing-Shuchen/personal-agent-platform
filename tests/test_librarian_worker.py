@@ -9,6 +9,7 @@ from PIL import Image
 
 from agents.librarian.runtime.store import Library, LibrarianError, _now, _unknown_time
 from agents.librarian.runtime.worker import (_catalog, _current, _hide_vault_markers,
+                                             _isbn_metadata,
                                              _latest_pending_review_ids,
                                              _notified_batch_is_current,
                                              _remove_vault_images, _sync_digital,
@@ -542,6 +543,41 @@ def test_physical_note_uses_weread_layout_and_upgrades_unchanged_legacy(tmp_path
     with pytest.raises(LibrarianError) as error:
         _refresh_generated_note(tmp_path, batch, "社会理论二十讲", [trace], [trace], received)
     assert error.value.code == "REVIEW_EDIT_CONFLICT"
+
+
+def test_isbn_metadata_fills_note_and_upgrades_unchanged_v9(tmp_path: Path) -> None:
+    isbn = "9787208171411"
+    source = tmp_path / "source-books"
+    source.mkdir()
+    (source / f"{isbn}.metadata.json").write_text(json.dumps({
+        "isbn13": isbn, "authors": ["汉斯·约阿斯", "沃尔夫冈·克诺伯"],
+        "translator": "郑作彧", "publisher": "上海人民出版社",
+        "publication_date": "2021-09-01",
+        "original_title": "Sozialtheorie. Zwanzig einführende Vorlesungen",
+        "source_url": "https://book.douban.com/subject/35596074/",
+    }, ensure_ascii=False), encoding="utf-8")
+    batch = {"id": "batch_fixture", "isbn": isbn,
+             "bibliography": _isbn_metadata(tmp_path, isbn)}
+    trace = {"id": "rt_fixture", "revision": 1,
+             "created_at": "2026-09-28T12:00:00+00:00", "trace_types": ["underline"],
+             "location": {"page": {"label": "39", "number": 39},
+                          "bbox": [.1, .2, .8, .3]},
+             "content": {"printed_text": {"text": "正是帕森斯，完成整合。"},
+                         "annotation": {"text": None}},
+             "source": {"capture_id": "capture_fixture"}}
+    folder = tmp_path / "2Area" / "40 学习与阅读" / "阅读笔记"
+    folder.mkdir(parents=True)
+    note = folder / "社会理论二十讲.md"
+    note.write_text(_render_batch_note(batch, "社会理论二十讲", [trace],
+                                       created="2026-09-28", presentation_version=9),
+                    encoding="utf-8")
+    _refresh_generated_note(tmp_path, batch, "社会理论二十讲", [trace], [trace])
+    rendered = note.read_text(encoding="utf-8")
+    assert 'authors: ["汉斯·约阿斯", "沃尔夫冈·克诺伯"]' in rendered
+    assert "> - 译者： 郑作彧" in rendered
+    assert "> - 出版日期： 2021-09-01" in rendered
+    assert "> - 书目来源： [ISBN 书目](https://book.douban.com/subject/35596074/)" in rendered
+    assert rendered.count('data-librarian-trace="rt_fixture"') == 1
 
 
 def test_legacy_worker_selected_session_becomes_expiring_affinity(tmp_path: Path) -> None:
