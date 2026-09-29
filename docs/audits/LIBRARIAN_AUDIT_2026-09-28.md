@@ -408,6 +408,8 @@ A 阶段审核入口现场只读复核：`pending_extractions` 当前列出第 2
 
 D 阶段三来源当前态只读验证：最近一轮数字同步 Koodo 的 118 条与 WeRead 的 4 条均为 unchanged/success；另有 83 条活跃纸书 trace。分别以每种来源的一条现有 trace 正文前 12 字作词面查询，`search` 均命中该 trace，来源 kind 分别为 physical、koodo、weread。生产 `trace_index` 205 条对 205 条活跃 trace，缺失或版本落后的投影为 0。这证明当前单 owner 的三来源可检索与索引就绪，不证明真实上游增改删周期、断网恢复或多 owner 隔离已端到端通过。
 
+R2 历史引文与空间关系首轮只读清点：以正式 Library 的 `records.current=1` 且 trace `status=active, medium=physical` 为范围，共 83 条，关联 25 个 observation。70 条有印刷文字、13 条无印刷文字。按 trace 的 `detection_ids` 取到 146 个印刷文字区，逐个回读各 observation 的不可变 raw OCR 对应行；146 段文字均为各自 OCR 行去空白后的子串，没有发现当前活跃引文直接使用 OCR 范围外的 EPUB 扩文。70 条中有 1 条 trace 文字不等于 observation 的印刷区拼接，字段明确标记 `basis=user_statement`，是人工更正，不能当作 OCR 一致性错误。另检查 83 条 trace 的 305 个关联 detection：ID 均存在、页区一致，detection bbox 位于 trace bbox 与页区 bbox 内，未发现结构性空间越界。本项只证明文字来源和几何包含关系；**不证明墨线确实覆盖该文字、OCR 字词准确或所有历史 superseded 版本正确**。第 23、29、39 页待审扫描仍按 A 逐项核对，尤其第 39 页候选的过宽文字不得因本项计数而自动接受。
+
 ## 9. 现行实现计划（2026-09-29）
 
 第 1–7 节仍是对 `d111ace` 的初审，不能用其中的旧行号和测试数量描述当前 HEAD。本节把整改转为可执行批次；每批结束时在第 8 节记录实际提交、测试、生产状态和未验项。除明确列出的真实用户审核外，调试与迁移均通过 Librarian 的 worker、领域命令或受信 Gateway 工具执行，不手改生产数据库或 Vault 生成块。
