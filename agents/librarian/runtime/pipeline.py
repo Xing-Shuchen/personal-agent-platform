@@ -24,9 +24,9 @@ TRACE_KINDS = {"highlight", "underline", "circle", "bracket", "margin_note",
 @dataclass(frozen=True)
 class ExtractionOutput:
     raw: bytes
-    derivative: bytes
-    derivative_width: int
-    derivative_height: int
+    derivative: bytes | None
+    derivative_width: int | None
+    derivative_height: int | None
     operations: tuple[str, ...]
     observation: bytes | None = None
 
@@ -163,24 +163,28 @@ def process_capture(lib: Library, owner_id: str, capture_id: str,
     derivative = None
     if isinstance(extracted, ExtractionOutput):
         raw = extracted.raw
-        try:
-            with Image.open(io.BytesIO(extracted.derivative)) as image:
-                image.load()
-                if image.format != "PNG" or image.size != (
-                        extracted.derivative_width, extracted.derivative_height):
-                    raise ValueError("derivative must be PNG with declared dimensions")
-            if not extracted.operations or any(operation not in
-                    {"exif_transpose", "uniform_resize"} for operation in extracted.operations):
-                raise ValueError("invalid derivative operations")
-            derivative = {"asset": lib._save_object(extracted.derivative, "image/png"),
-                          "width": extracted.derivative_width,
-                          "height": extracted.derivative_height,
-                          "operations": list(extracted.operations),
-                          "coordinate_mapping": "normalized_same_origin"}
-        except (OSError, ValueError) as error:
-            _failed_run(lib, owner_id, capture_id, run_id, extractor_version,
-                        normalizer_version, "EXTRACTION_SCHEMA_INVALID", **vocabulary_metadata)
-            raise LibrarianError("EXTRACTION_SCHEMA_INVALID", "invalid extraction derivative") from error
+        if extracted.derivative is not None:
+            try:
+                with Image.open(io.BytesIO(extracted.derivative)) as image:
+                    image.load()
+                    if image.format != "PNG" or image.size != (
+                            extracted.derivative_width, extracted.derivative_height):
+                        raise ValueError("derivative must be PNG with declared dimensions")
+                if not extracted.operations or any(operation not in
+                        {"exif_transpose", "uniform_resize"} for operation in extracted.operations):
+                    raise ValueError("invalid derivative operations")
+                derivative = {"asset": lib._save_object(extracted.derivative, "image/png"),
+                              "width": extracted.derivative_width,
+                              "height": extracted.derivative_height,
+                              "operations": list(extracted.operations),
+                              "coordinate_mapping": "normalized_same_origin"}
+            except (OSError, ValueError) as error:
+                _failed_run(lib, owner_id, capture_id, run_id, extractor_version,
+                            normalizer_version, "EXTRACTION_SCHEMA_INVALID", **vocabulary_metadata)
+                raise LibrarianError("EXTRACTION_SCHEMA_INVALID", "invalid extraction derivative") from error
+        elif (extracted.derivative_width is not None or
+              extracted.derivative_height is not None or extracted.operations):
+            raise LibrarianError("EXTRACTION_SCHEMA_INVALID", "derivative metadata without image")
     else:
         raw = extracted
     if not isinstance(raw, bytes):
@@ -542,6 +546,10 @@ def dismiss_identical_pending(lib: Library, owner_id: str, capture_id: str,
                         "RECONCILIATION_REQUIRED" in run["issues"]), None)
         if pending is None:
             return None
+        if pending["extractor_version"].startswith("bookscan-human-review-v1:"):
+            # A human-reviewed run may carry different decisions and text in
+            # its immutable raw bundle even when its geometry is identical.
+            return None
         observations = {item["processing_run_id"]: item for row in lib.db.execute(
             "SELECT body FROM records WHERE owner_id=? AND model='PageObservation' "
             "AND current=1", (owner_id,))
@@ -579,6 +587,8 @@ def reconcile_extraction(lib: Library, owner_id: str, capture_id: str,
                          extractor_version: str, *,
                          allow_rotation_upgrade: bool = False,
                          reviewed_candidates: dict[str, str | None] | None = None,
+                         reviewed_page_number: int | None = None,
+                         expected_current_refs: set[tuple[str, int]] | None = None,
                          expected_run_id: str | None = None) -> list[dict[str, Any]]:
     """Accept a pending new extraction when no trace has a user correction.
 
@@ -604,10 +614,14 @@ def reconcile_extraction(lib: Library, owner_id: str, capture_id: str,
         raise LibrarianError("RECONCILIATION_REQUIRED", "pending observation missing")
     observation = candidates[0]
     old_traces = _traces_for_capture(lib, owner_id, capture_id)
+    old_refs = {(trace["id"], trace["revision"]) for trace in old_traces}
+    if expected_current_refs is not None and old_refs != expected_current_refs:
+        raise LibrarianError("REVISION_CONFLICT", "reviewed trace snapshot changed")
     if any(trace["status"] != "active" or
            (reviewed_candidates is None and trace["revision"] != 1) or
-           trace["content"]["printed_text"]["basis"] == "user_statement" or
-           trace["content"]["annotation"]["basis"] == "user_statement"
+           ((trace["content"]["printed_text"]["basis"] == "user_statement" or
+             trace["content"]["annotation"]["basis"] == "user_statement") and
+            (reviewed_candidates is None or expected_current_refs is None))
            for trace in old_traces):
         raise LibrarianError("RECONCILIATION_REQUIRED", "corrected traces require user reconciliation")
     row = lib.db.execute("SELECT body FROM records WHERE owner_id=? AND model='CaptureResolution' "
@@ -644,6 +658,14 @@ def reconcile_extraction(lib: Library, owner_id: str, capture_id: str,
     resolution.update({"created_at": _now(), "pages": observation["pages"],
                        "revision": prior["revision"] + 1,
                        "supersedes_revision": prior["revision"]})
+    if reviewed_page_number is not None:
+        if (reviewed_candidates is None or type(reviewed_page_number) is not int or
+                reviewed_page_number <= 0 or len(resolution["pages"]) != 1):
+            raise LibrarianError("VALIDATION_FAILED", "reviewed page number requires one reviewed page")
+        resolution["pages"][0]["page"] = {
+            "value": {"label": str(reviewed_page_number), "number": reviewed_page_number,
+                      "scheme": "arabic"},
+            "confidence": None, "basis": "user_statement", "status": "resolved"}
     validate("CaptureResolution", resolution)
     state = "resolved" if all(resolution[key]["value"] for key in
                               ("session", "work", "edition", "book_instance")) else "unresolved"
@@ -669,7 +691,9 @@ def reconcile_extraction(lib: Library, owner_id: str, capture_id: str,
                 trace["content"][field] = {"text": correction,
                                            "confidence": None,
                                            "basis": "user_statement"}
-                validate("ReadingTrace", trace)
+            trace["review"] = {"required": True, "state": "resolved",
+                               "reason": "complete human review"}
+            validate("ReadingTrace", trace)
     def groups(items: list[dict[str, Any]], mark_ids: set[str]) -> list[tuple[str, ...]]:
         return sorted(tuple(sorted(set(item["source"]["detection_ids"]) & mark_ids))
                       for item in items)

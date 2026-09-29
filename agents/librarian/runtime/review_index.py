@@ -19,6 +19,9 @@ def build_index(root: Path, owner: str) -> Path:
         runs = {run["id"]: run for row in lib.db.execute(
             "SELECT body FROM records WHERE owner_id=? AND model='ProcessingRun' "
             "AND current=1", (owner,)) if (run := json.loads(row["body"]))}
+        reviewed = {run["capture_id"] for run in runs.values()
+                    if run["extractor_version"].startswith("bookscan-human-review-v1:")
+                    and run["outcome"] in {"success", "partial"}}
         rows = lib.db.execute("SELECT body FROM records WHERE owner_id=? AND "
                               "model='PageObservation' AND current=1", (owner,))
         for row in rows:
@@ -43,6 +46,8 @@ def build_index(root: Path, owner: str) -> Path:
                          "candidates": len(report["review_candidates"]),
                          "failures": len(report["failures"]),
                          "run_active": processing["outcome"] in {"success", "partial"},
+                         "review_status": "已入库" if observation["capture_id"] in reviewed
+                                          else "待复核",
                          "run_created_at": processing["created_at"],
                          "url": os.path.relpath(review, target.parent)}
                 previous = entries_by_capture.get(observation["capture_id"])
@@ -61,15 +66,16 @@ def build_index(root: Path, owner: str) -> Path:
              "background:#fff}th,td{text-align:left;padding:10px;border-bottom:1px solid #ddd}"
              "a{color:#175b77}small{color:#666}</style>",
              "<h1>纸书扫描复核</h1>",
-             f"<p>当前 Bookscan 结果：{len(entries)} 张。逐页核对划线、批注和漏检；"
-             "页面草稿保存在本机浏览器，可导出 JSON。</p>",
-             "<table><thead><tr><th>页码</th><th>划线/角括号组</th>"
+             f"<p>当前 Bookscan 结果：{len(entries)} 张；"
+             f"已入库复核：{sum(item['review_status'] == '已入库' for item in entries)} 张。"
+             "逐页核对划线、批注和漏检；页面草稿保存在本机浏览器。</p>",
+             "<table><thead><tr><th>页码</th><th>状态</th><th>划线/角括号组</th>"
              "<th>批注</th><th>待核对候选</th><th>失败</th><th>操作</th></tr></thead><tbody>"]
     for entry in entries:
         escape = lambda value: html.escape(str(value), quote=True)
         parts.append("<tr>" + "".join(
             f"<td>{escape(entry[key])}</td>" for key in
-            ("page", "groups", "annotations", "candidates", "failures")) +
+            ("page", "review_status", "groups", "annotations", "candidates", "failures")) +
             f"<td><a href='{escape(entry['url'])}'>打开复核页</a><br>"
             f"<small>{escape(entry['capture_id'])}</small></td></tr>")
     parts.extend(["</tbody></table>", "</html>"])

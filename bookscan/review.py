@@ -45,6 +45,7 @@ let saved = {};
 try { saved = JSON.parse(localStorage.getItem(key) || '{}'); } catch (_) {}
 const pages = [...document.querySelectorAll('.page-review')];
 const notes = [...document.querySelectorAll('textarea[data-annotation-id]')];
+let reviewContext = null;
 const persist = () => localStorage.setItem(key, JSON.stringify(saved));
 function download(name, content, type) {
   const blob = new Blob([content], {type});
@@ -215,11 +216,12 @@ document.getElementById('download-annotations').onclick = () => {
     review_status:saved.annotations[field.dataset.annotationId]?.decision || 'needs_review'}));
   download('annotation-review.json', JSON.stringify(rows,null,2), 'application/json');
 };
-document.getElementById('download-reviewed').onclick = () => {
+function completeBundle() {
   const missingPage = pages.find(page => {
     const state = saved[page.dataset.pageId];
     return !state.complete || [...page.querySelectorAll('.review-row[data-line-id]')]
-      .some(row => !state.lines[row.dataset.lineId]?.decision) ||
+      .some(row => !['accepted','rejected'].includes(
+        state.lines[row.dataset.lineId]?.decision)) ||
       state.missing.some(item => !item.text?.trim()) ||
       (state.pageNumber !== '' && (!Number.isInteger(Number(state.pageNumber)) ||
                                    Number(state.pageNumber) <= 0));
@@ -228,19 +230,57 @@ document.getElementById('download-reviewed').onclick = () => {
     .find(article => {
       const verdict = saved.groups[article.dataset.groupId];
       return !verdict?.decision ||
-        (['wrong_span','wrong_epub'].includes(verdict.decision) && !verdict.text?.trim());
+        (['wrong_span','wrong_epub'].includes(verdict.decision) && !verdict.text?.trim()) ||
+        (verdict.decision !== 'rejected' && !verdict.text?.trim() &&
+         JSON.parse(article.dataset.lineIds).some(id =>
+           saved[article.dataset.pageId]?.lines[id]?.text?.trim())) ||
+        (verdict.decision !== 'rejected' && verdict.decision !== 'wrong_span' &&
+         JSON.parse(article.dataset.lineIds).some(id =>
+           saved[article.dataset.pageId]?.lines[id]?.decision === 'rejected'));
     });
   const missingAnnotation = notes.find(field => {
     const verdict = saved.annotations[field.dataset.annotationId];
-    return !verdict || typeof verdict !== 'object' || !verdict.decision ||
+    return !verdict || typeof verdict !== 'object' ||
+      !['accepted','rejected'].includes(verdict.decision) ||
       (verdict.decision === 'accepted' && !verdict.text?.trim());
   });
   if (missingPage || missingGroup || missingAnnotation) {
-    alert('仍有页面、标记组或手写批注未核验，或修订文字未填写。'); return;
+    throw new Error('仍有页面、标记组或手写批注未核验，或修订文字未填写。');
   }
-  download('reviewed-decisions.json', JSON.stringify({run_id:runId,
-    completed_at:new Date().toISOString(),pages:saved},null,2), 'application/json');
+  return {run_id:runId, completed_at:new Date().toISOString(), pages:saved,
+          ...(reviewContext || {})};
+}
+document.getElementById('download-reviewed').onclick = () => {
+  try {
+    download('reviewed-decisions.json', JSON.stringify(completeBundle(),null,2),
+             'application/json');
+  } catch (error) { alert(error.message); }
 };
+const submit = document.getElementById('submit-reviewed');
+if (location.protocol === 'http:' && location.hostname === '127.0.0.1') {
+  submit.hidden = false;
+  const contextUrl = '/api/review-context?run_id=' + encodeURIComponent(runId);
+  fetch(contextUrl, {credentials:'same-origin'}).then(response => response.json())
+    .then(value => { if (value.expected_current) reviewContext = value; });
+  submit.onclick = async () => {
+    try {
+      if (!reviewContext) throw new Error('正在读取当前版本，请稍后重试。');
+      const bundle = completeBundle();
+      submit.disabled = true;
+      const response = await fetch('/api/review', {method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify(bundle), credentials:'same-origin'});
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.message || result.code || '提交失败');
+      document.getElementById('submit-result').textContent =
+        `已入库：${result.traces ?? 0} 条；Vault：${result.vault_status}`;
+      const contextResponse = await fetch(contextUrl, {credentials:'same-origin'});
+      if (contextResponse.ok) reviewContext = await contextResponse.json();
+    } catch (error) {
+      document.getElementById('submit-result').textContent = error.message;
+    } finally { submit.disabled = false; }
+  };
+}
 document.getElementById('download-truth').onclick = () => {
   const incomplete = pages.filter(page => {
     const state = saved[page.dataset.pageId];
@@ -397,7 +437,9 @@ def build_review(run: Path) -> None:
             match = group.get("epub_candidate") or {}
             bracket = group.get("mark_type") == "corner_bracket"
             mark_label = "角括号「」" if bracket else "下划线"
-            parts.append(f"<article data-group-id='{_e(group['group_id'])}'><h3>"
+            parts.append(f"<article data-group-id='{_e(group['group_id'])}' "
+                         f"data-page-id='{_e(page['page_id'])}' "
+                         f"data-line-ids='{_e(json.dumps(group['line_ids']))}'><h3>"
                          f"{_e(group['group_id'])} · "
                          f"{mark_label} · {_e(group['match_status'])} · "
                          f"{len(group['line_ids'])} 行</h3>"
@@ -461,6 +503,8 @@ def build_review(run: Path) -> None:
                  "accept='application/json,.json'></label> "
                  "<button id='download-truth'>下载完整 ground-truth.jsonl</button> "
                  "<button id='download-reviewed'>下载完成审核包</button> "
+                 "<button id='submit-reviewed' hidden>提交复核并入库</button> "
+                 "<span id='submit-result' role='status'></span> "
                  "<button id='download-annotations'>下载手写批注核对结果</button></p>")
     parts.append("<script>const runId=" + json.dumps(meta["run_id"]) + ";</script>")
     parts.append("<script>" + REVIEW_SCRIPT + "</script>")

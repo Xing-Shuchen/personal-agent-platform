@@ -198,6 +198,16 @@ def test_identical_reextract_reuses_original_traces_without_ocr_retry(tmp_path: 
             lib, "owner_a", capture_id,
             lambda _: pytest.fail("duplicate observation reran extractor"),
             extractor_version="v2")] == [trace["id"] for trace in original]
+        with pytest.raises(LibrarianError, match="awaits reconciliation"):
+            process_capture(lib, "owner_a", capture_id, lambda _: _output(),
+                            extractor_version="bookscan-human-review-v1:manual")
+        reviewed = next(json.loads(row[0]) for row in lib.db.execute(
+            "SELECT body FROM records WHERE model='ProcessingRun' AND current=1")
+            if json.loads(row[0])["extractor_version"] ==
+            "bookscan-human-review-v1:manual")
+        assert dismiss_identical_pending(lib, "owner_a", capture_id,
+                                         reviewed["id"]) is None
+        assert lib.get("owner_a", "ProcessingRun", reviewed["id"])["outcome"] == "pending"
 
 
 def test_bookscan_review_candidates_have_distinct_ids() -> None:

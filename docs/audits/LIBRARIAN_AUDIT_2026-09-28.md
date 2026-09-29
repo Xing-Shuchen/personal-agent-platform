@@ -537,3 +537,9 @@ B 的后续清单：现有 11 张旧版多页区照片与笔记时间来源已�
 私有审核总览已生成在 `var/librarian/review/index.html`，按当前已入库的 27 张 capture 各列一条，连接原始 Bookscan 审核页。**审核页目前仍只在浏览器 localStorage 保存草稿或导出 JSON；尚未把逐页判断、校正、漏检框接入 Librarian 的版本化写入和 Vault 刷新。** 所以 A/R2 的人工内容审核仍未开始结项，不能把新总览或 `duplicate` 状态当作人工确认。下一步先实现审核提交的身份/快照校验与领域写入，再由用户在网页逐页复核；其余 R1–R4/AC 边界沿用 §10。
 
 后续入口检查又发现 Bookscan 的 `bookscan_N_mark`/`bookscan_note_N` 不在旧 `candidate_id()` 的标记前缀集合中，同一 capture 的多个候选会得到相同 ID。现已补入这两类检测 ID 并覆盖唯一性测试。审核页也补了批注的接受/误收/无法判定判断和完成审核包导出校验；该导出仍只是离线文件，尚无提交端，不能称为入库。
+
+## 12. Bookscan 网页复核写入路径（2026-09-29）
+
+新增 `bookscan_review_apply.py` 和仅绑定 `127.0.0.1` 的 `bookscan_review_server.py`。审核包须与 owner 下唯一的已入库 Bookscan run 对应，逐页、逐行、逐标记组和逐批注给出确定判断；漏检框必须落在原图内并有人工转录，人工页码必须为正整数。网页从本地服务取得当前 trace 引用和最新人工审核 run 快照，提交时再核对版本；旧审核包不能覆盖后来的人工作业。对同一页可再次复核，新的提交建立新 run、observation、resolution 和 trace 版本，前一版保持可读。用户认可的引文/手写字记为 `user_statement`，trace 的 review 状态记为 `resolved`；误检旧 trace 退出活跃集，漏检框形成新的有原图坐标的标记。审核包和来源 run ID 存于新 observation 的私有 raw 对象，原图仍只在 Librarian 对象库。提交后物理 worker 刷新 Vault 笔记，网页分别显示入库与 Vault 状态。
+
+验证边界：新测试覆盖完整审核、修订、误检、漏检、页码、幂等、过期快照、残缺审核拒绝、localhost cookie/同源限制和路径越界拒绝。27/27 份正式 Bookscan 报告仅做内存中的审核包预校验，均通过；另在**正式库和对象的隔离副本**中以一条测试文字完成 `apply_review`→worker→副本 Vault 笔记更新，正式库及正式 Vault 未写入测试内容。客户端真实人工审阅仍为 0/27，因此内容正确性、漏检率和首书 A/R2 不能签收。§9.1 的 R1–R4、数字来源 D 与 AC-01–26 仍保留未验项。服务是本机私有审核入口，不是公开 Gateway 路由。

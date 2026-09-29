@@ -263,8 +263,17 @@ The physical worker refreshes a private Bookscan review index at
 `var/librarian/review/index.html`. It can also be regenerated without OCR:
 `python3 -m agents.librarian.runtime.review_index --root var/librarian --owner <trusted-owner-id>`.
 Each link opens the current capture's original `review.html`. Browser decisions
-remain local drafts or downloadable JSON until the reviewed correction import
-is connected to the versioned Librarian domain path.
+remain local drafts until submitted. Start the private loopback UI with
+`python3 -m agents.librarian.runtime.bookscan_review_server --root var/librarian --owner <trusted-owner-id> --vault <vault-path>`.
+Open the printed tokenized local URL. Complete all page, line, group and handwriting
+decisions, then use **提交复核并入库**. The server checks the immutable Bookscan run,
+versions replaced traces and confirmed page numbers, and runs the physical
+worker to refresh the Vault note. The original photo and reviewed decision
+bundle remain in Librarian's private object store. The CLI
+`python3 -m agents.librarian.runtime.bookscan_review_apply --root var/librarian --owner <trusted-owner-id> --bundle reviewed-decisions.json --dry-run`
+can preflight an exported review without writes. The localhost page fetches a
+current trace snapshot before each submission; a later correction creates a
+new version only if that snapshot remains current.
 
 Remaining work includes broader semantic checks; stronger
 batch book/page conflict resolution; actual image extraction with annotated-photo tests;
