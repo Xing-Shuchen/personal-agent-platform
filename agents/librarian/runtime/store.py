@@ -305,7 +305,7 @@ class Library:
         elif model == "ReadingTrace" and record["medium"] == "physical":
             source = record["source"]
             capture_id = source["capture_id"]
-            self._record_version(owner, "PageCapture", capture_id, 1)
+            capture = self._record_version(owner, "PageCapture", capture_id, 1)
             observation = self._record_version(owner, "PageObservation",
                                                source["observation_id"], 1)
             resolution = self._record_version(owner, "CaptureResolution",
@@ -313,6 +313,12 @@ class Library:
                                               source["resolution_revision"])
             if observation["capture_id"] != capture_id or resolution["capture_id"] != capture_id:
                 raise LibrarianError("VALIDATION_FAILED", "physical trace capture references disagree")
+            expected_evidence = [capture["asset"]]
+            if observation.get("derivative"):
+                expected_evidence.append(observation["derivative"]["asset"])
+            expected_evidence.append(observation["raw_output_asset"])
+            if record["provenance"] != expected_evidence:
+                raise LibrarianError("VALIDATION_FAILED", "physical trace provenance disagrees with source")
             for field, identity in (("session_id", "session"), ("work_id", "work"),
                                     ("edition_id", "edition"),
                                     ("book_instance_id", "book_instance")):
@@ -323,6 +329,8 @@ class Library:
             if (page is None or record["location"]["page"] != page["page"]["value"] or
                     record["location"]["page_bbox"] != page["bbox"]):
                 raise LibrarianError("VALIDATION_FAILED", "trace page disagrees with resolution")
+            if record["confidence"]["page_number"] != page["page"]["confidence"]:
+                raise LibrarianError("VALIDATION_FAILED", "trace page confidence disagrees with resolution")
             location = record["location"]
             box = location["bbox"]
             page_box = page["bbox"]

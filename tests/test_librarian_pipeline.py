@@ -90,6 +90,30 @@ def test_storage_rejects_capture_run_observation_cross_links(tmp_path: Path) -> 
             assert lib.db.execute("SELECT 1 FROM records WHERE id=?", (record["id"],)).fetchone() is None
 
 
+def test_storage_rejects_physical_trace_evidence_or_page_confidence_drift(tmp_path: Path) -> None:
+    with Library(tmp_path) as lib:
+        receipt = lib.ingest("owner_a", transport="gateway", account_id="account",
+                             conversation_id="chat", source_event_id="message-1",
+                             idempotency_key="command-1", attachments=[{
+                                 "source_item_id": "image-1", "mime_type": "image/png",
+                                 "data": _photo()}])
+        trace = process_capture(lib, "owner_a", receipt["capture_ids"][0],
+                                lambda _: _output())[0]
+        for field in ("provenance", "page_confidence"):
+            forged = json.loads(json.dumps(trace))
+            forged["revision"] = 2
+            forged["supersedes_revision"] = 1
+            if field == "provenance":
+                forged["provenance"] = list(reversed(forged["provenance"]))
+            else:
+                forged["confidence"]["page_number"] = .2
+            with pytest.raises(LibrarianError) as rejected:
+                with lib.transaction():
+                    lib._put(forged)
+            assert rejected.value.code == "VALIDATION_FAILED"
+            assert lib.get("owner_a", "ReadingTrace", trace["id"])["revision"] == 1
+
+
 def test_vision_page_resolution_revises_only_unknown_page(tmp_path: Path) -> None:
     observation = json.loads(_output())
     observation["pages"][0]["page"] = {"value": None, "confidence": None,
