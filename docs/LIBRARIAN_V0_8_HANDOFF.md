@@ -48,6 +48,11 @@ checks the owner deferred to formal use. The current production read-only
 count remains 73 active physical traces, 15 handwritten notes and zero user
 confirmed handwritten notes.
 
+Audit §26 maps each of the ten mandatory spec §30 invariants to the current
+write boundary and named regression checks. It keeps image truth, upstream
+payload authenticity, older migration databases and live delivery separate
+from local structural evidence.
+
 Latest scope change: printed underline text is accepted with its current EPUB
 punctuation expansion. The private review site now offers a handwriting-only
 page with 15 note crops and versioned confirm/edit/reject actions; actual user

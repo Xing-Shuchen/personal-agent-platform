@@ -16,7 +16,7 @@
 | 用户明确延期 | 普通新图旁注/角括号发现和严格墨线与 EPUB 扩句边界本轮跳过；§38.1 四图与底稿暂缓 | §14–15、spec 末尾首书决策；不记为能力通过 |
 | 正式运行核验 | 真人手写判断、真实飞书错误/附件重放/平台投送与客户端显示、数字上游变化和慢源恢复留待现场 | §§9、15、19；当前 Gateway active，插件上轮检查 loaded，无上述新现场结论 |
 
-上表只标识已交付的功能与待运行证据，不把本地测试升级为 `release-v0.8` 全部 AC 通过。第 1–10 节出现的旧 RapidOCR 路径、旧 trace 数量和旧待审 run 均是历史记录；现行入口及数据以 §§10–25 的较新状态为准，原始 F01–F08 的当前判定见 §25。
+上表只标识已交付的功能与待运行证据，不把本地测试升级为 `release-v0.8` 全部 AC 通过。第 1–10 节出现的旧 RapidOCR 路径、旧 trace 数量和旧待审 run 均是历史记录；现行入口及数据以 §§10–26 的较新状态为准，原始 F01–F08 的当前判定见 §25，R3 条款映射见 §26。
 
 ## 1. 审计边界与方法
 
@@ -722,3 +722,22 @@ Gateway 在提交 `c49cfa8` 后重启，服务 active；运行时插件 `loaded/
 | F08 索引失败回滚领域事实 | trace/outbox 先提交，索引失败报告 lagging 并可从已存 trace 重建；本地故障注入验证不重识别，当前正式索引 ready | 真实 Gateway 崩溃、外部 publisher 与长期恢复仍待正式运行 |
 
 因此旧 F01–F08 不再作为当前代码的原样缺陷清单使用；F01/F03 的通用视觉真值和 F02 的人工页码事实仍受用户延期决定约束。R1–R4/AC 的本地与现场证据界限继续按 §§9、15–24 管理。
+
+## 26. R3 §30 条款→最终写入层→反例矩阵（2026-09-29）
+
+下表覆盖 spec §30 明列的十条必须落实的不变量。测试名称是实际运行过的反例入口；结构、事务和外部事实的边界分别写明，不以 Schema 通过推断照片文字真实。
+
+| §30 条款 | 最终执行层 / 字段 | 本地反例与当前记录证据 | 仍需外部证据 |
+|---|---|---|---|
+| 全引用链同 owner | `Library._validate_record_links`、`_check_catalog_chain`、受信桥接 owner；关联对象 `owner_id` | `test_storage_rejects_cross_owner_and_inconsistent_catalog_links`、`test_foreign_ids_cannot_read_or_mutate_owner_records`、`test_storage_rejects_digital_trace_with_foreign_or_missing_catalog`；当前 498 版本只读校验通过 | 双真实账号、chat 与数字源凭证的现场授权 |
+| Edition→Work、Instance→Edition、resolved physical trace 完整上下文 | `_check_catalog_chain`；`ReadingTrace.context_state` 与四个目录/会话 ID；`CaptureResolution` 快照 | `test_catalog_owner_chain_and_session_progress`、`test_storage_rejects_resolution_with_missing_catalog_context`、`test_trace_semantics_reject_fake_resolved_context_and_review` | 书名/ISBN 与用户所持实体的事实判断 |
+| `(owner,id,revision)` 唯一且 current 合法 | `records` 主键、`records_current` 索引、`Library._put` 相邻 revision/`supersedes_revision` 校验 | `test_correction_adds_revision_and_keeps_evidence`、`test_command_key_ignores_tracking_fields_but_rejects_business_change`；当前 442 逻辑对象、498 版本为连续链且唯一 current | 旧迁移库的完整升级与进程崩溃恢复 |
+| 源附件身份唯一 | `source_items` 复合主键；`Library.ingest` 的来源和对象指纹 | `test_capture_durability_retry_conflict_and_same_bytes_new_message`、`test_concurrent_identical_capture_command_returns_one_receipt` | 真实飞书同消息重放、变更附件 |
+| 同命令键不同 payload 冲突 | `idempotency` / `command_receipts` 业务指纹及事务 | `test_command_key_ignores_tracking_fields_but_rejects_business_change`、`test_session_and_capture_receipts_are_atomic_and_replayable` | Gateway 真实重复、乱序和重启重放 |
+| trace 与 capture/observation/resolution/detection 一致 | `_validate_record_links` 对历史 revision、capture、页区、检测 ID、provenance 与页码 confidence 核对 | `test_storage_rejects_capture_run_observation_cross_links`、`test_storage_rejects_forged_physical_detection_and_capture_links`、`test_storage_rejects_physical_trace_evidence_or_page_confidence_drift`；当前 498 版本引用校验 0 错 | 墨线与 OCR 文字的图像真实性 |
+| observation 内 ID 唯一、link 有效 | `validate_observation` 同时用于提取和最终 `_put` | `test_storage_rejects_capture_run_observation_cross_links`、`test_missing_text_link_target_is_rejected`、`test_cross_page_text_link_is_rejected_and_observation_link_keeps_traces_separate` | 标记分组及链接是否符合原图 |
+| trace 与事件同时提交 | `Library.transaction` + `outbox`，修订入口同一事务；索引异步投影 | `test_trace_event_failure_rolls_back_physical_processing_and_retries`、`test_trace_event_failure_rolls_back_digital_export_and_retries`、`test_correction_event_failure_rolls_back_trace_and_candidate`、`test_resolution_event_failure_rolls_back_all_revisions`、`test_review_reconciliation_event_failure_keeps_old_traces_and_retries`；当前 195/195 trace 版本有事件 | 外部 publisher 崩溃和消息平台送达 |
+| bbox、方向、空间标签合法 | Schema 范围；`validate_observation`、`spatial_zone` 和 `_validate_record_links` 页内几何；EXIF 定向裁片 | `test_storage_rejects_resolution_with_missing_catalog_context` 的零面积反例、`test_storage_rejects_forged_physical_detection_and_capture_links` 的越页反例、`test_observation_dimensions_follow_exif_oriented_original`、`test_trace_crop_uses_oriented_original_and_stays_within_page` | 照片里真实笔迹是否覆盖文字；用户已延期新图质量核验 |
+| 原始 evidence 不可普通 UPDATE | `evidence_immutable/evidence_undeletable` SQLite triggers；对象先持久化后接收回执 | `test_capture_durability_retry_conflict_and_same_bytes_new_message` 的 SQL UPDATE 反例、`test_object_write_failure_does_not_acknowledge_capture_and_retry_succeeds`；当前对象完整性与 §17 的迁移副本恢复 | 真实磁盘故障、删除生命周期和整机恢复 |
+
+§13/§27 的字段与状态组合另由 JSON Schema、`store.validate`、`_validate_semantics` 及领域入口分层：`test_unknown_field_basis_cannot_claim_a_value_or_score` 覆盖 Text/Time/Identity/Page 四类 `unknown` 值与 confidence 组合；`test_storage_enforces_candidate_state_machine_and_immutable_interpretation` 与 `test_storage_rejects_new_active_candidate_with_stale_source` 覆盖候选跨 revision 状态及当前来源；`test_local_review_requires_bootstrap_cookie_and_same_origin`、插件 owner 工具测试覆盖本机/受信入口。77 定义、18 入口、42 正例、43 反例是契约包规模，**不是**每个字段都有独立反例的证明。当前正式库 498 个记录版本及 442 个 current 对象只读结构一致；用户手写真值、数字上游原始 payload、平台送达和历史旧库迁移仍不由此矩阵证明。
