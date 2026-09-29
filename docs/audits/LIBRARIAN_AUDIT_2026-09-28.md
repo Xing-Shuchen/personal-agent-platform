@@ -398,6 +398,8 @@ F05 领域边界增量复核：现行 OpenClaw 插件只允许配置一个 owner
 
 12:46 定时 Gateway worker 在正式库自行执行新迁移；只读确认 `digital_source_owners` 中 Koodo 的 `local_koodo`、WeRead 的 `personal_weread` 均绑定到现有唯一 owner。随后 `digital-sync-status.json` 本轮 Koodo 与 WeRead 均为 success，Gateway 状态 active；本次未创建第二 owner 或接入第二套真实上游，现场证据不能替代未来的多用户验收。
 
+F06 状态文件清点：目录中 7 个 `error` 文件来自旧版逐张照片批次，当前 `_processing_batches` 已将 23 个接收 batch 归入 2 个实际处理组；这 7 个文件不再是调度输入，不能当作 7 个正在失败的任务。现行两组状态均为 `partial`、`retry_attempts=0`，其中 22 图组的最新 run 有 3 张 `RECONCILIATION_REQUIRED`。但 5 图组状态仍显示 3 条页码未知，当前 trace 已修订，说明 `unchanged` 快速返回未刷新状态；快速返回也未明确排除更新的待审或失败 run。修复在独立检出中增加最新 run/待审判据，并在 `unchanged` 时按活跃 trace 更新状态文件，不触发重复提取或通知。测试覆盖较新待审/失败 run 和陈旧 `partial` 状态；正式 worker 运行后的状态仍须只读核验。
+
 ## 9. 现行实现计划（2026-09-29）
 
 第 1–7 节仍是对 `d111ace` 的初审，不能用其中的旧行号和测试数量描述当前 HEAD。本节把整改转为可执行批次；每批结束时在第 8 节记录实际提交、测试、生产状态和未验项。除明确列出的真实用户审核外，调试与迁移均通过 Librarian 的 worker、领域命令或受信 Gateway 工具执行，不手改生产数据库或 Vault 生成块。

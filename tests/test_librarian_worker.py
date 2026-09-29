@@ -10,6 +10,7 @@ from PIL import Image
 from agents.librarian.runtime.store import Library, LibrarianError, _now, _unknown_time
 from agents.librarian.runtime.worker import (_catalog, _current, _hide_vault_markers,
                                              _latest_pending_review_ids,
+                                             _notified_batch_is_current,
                                              _remove_vault_images, _sync_digital,
                                              _render_batch_note, _render_batch_note_legacy,
                                              _refresh_generated_note, _review_digest,
@@ -27,6 +28,48 @@ def test_only_latest_pending_run_reopens_a_capture() -> None:
         {"capture_id": "resolved", "outcome": "success", "issues": []},
     ]
     assert _latest_pending_review_ids(runs) == {"still_pending"}
+
+
+def test_notified_batch_does_not_hide_a_newer_pending_or_failed_run() -> None:
+    batch = {"capture_ids": ["capture_one"]}
+    matching = [{"capture_id": "capture_one", "outcome": "success"}]
+    args = {"notified": True, "revised_notice": True, "unbound": False,
+            "matching_runs": matching, "latest_runs": {"capture_one": matching[0]},
+            "pending_review_ids": set()}
+    assert _notified_batch_is_current(batch, **args)
+    assert not _notified_batch_is_current(batch, **{**args,
+        "latest_runs": {"capture_one": {"outcome": "pending"}},
+        "pending_review_ids": {"capture_one"}})
+    assert not _notified_batch_is_current(batch, **{**args,
+        "latest_runs": {"capture_one": {"outcome": "failed"}}})
+
+
+def test_worker_refreshes_stale_partial_status_after_unchanged_batch(tmp_path: Path,
+                                                                       monkeypatch) -> None:
+    from agents.librarian.runtime import worker
+    from datetime import datetime, timedelta, timezone
+
+    state = tmp_path / "state"
+    stream = BytesIO()
+    Image.new("RGB", (10, 10), "white").save(stream, "PNG")
+    with Library(state) as lib:
+        receipt = lib.ingest("owner", transport="feishu", account_id="librarian",
+                             conversation_id="chat", source_event_id="status-fixture",
+                             attachments=[{"source_item_id": "image", "mime_type": "image/png",
+                                           "data": stream.getvalue()}],
+                             idempotency_key="status-command")
+    future = (datetime.now(timezone.utc) + timedelta(minutes=2)).isoformat()
+    monkeypatch.setattr(worker, "_now", lambda: future)
+    monkeypatch.setattr(worker, "_process_batch", lambda *_args: {
+        "batch_id": receipt["batch_id"], "status": "unchanged"})
+    status = state / "batch-status" / f"{receipt['batch_id']}.json"
+    status.parent.mkdir()
+    status.write_text(json.dumps({"batch_id": receipt["batch_id"], "status": "partial",
+                                  "unresolved_pages": 3, "traces": 0}))
+    assert worker.run(state, None, "owner", physical_only=True) == []
+    updated = json.loads(status.read_text())
+    assert updated["status"] == "processed" and updated["unresolved_pages"] == 0
+    assert updated["traces"] == 0 and updated["retry_attempts"] == 0
 
 
 def test_legacy_vertical_regions_need_same_page_geometry_and_distinct_header(monkeypatch) -> None:

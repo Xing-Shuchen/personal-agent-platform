@@ -50,6 +50,19 @@ def _latest_pending_review_ids(runs: list[dict]) -> set[str]:
             "RECONCILIATION_REQUIRED" in run["issues"]}
 
 
+def _notified_batch_is_current(batch: dict, *, notified: bool,
+                               revised_notice: bool, unbound: bool,
+                               matching_runs: list[dict],
+                               latest_runs: dict[str, dict],
+                               pending_review_ids: set[str]) -> bool:
+    captures = set(batch["capture_ids"])
+    return (notified and revised_notice and not unbound and
+            captures.isdisjoint(pending_review_ids) and
+            {run["capture_id"] for run in matching_runs} == captures and
+            all(latest_runs.get(capture_id, {}).get("outcome") in {"success", "partial"}
+                for capture_id in captures))
+
+
 def _header_for_legacy_regions(resolution: dict, observation: dict,
                                raw: dict) -> tuple[int, float] | None:
     """Reject margin paragraph numbers misread as vertical page boundaries."""
@@ -881,8 +894,7 @@ def _process_batch(lib: Library, root: Path, vault: Path | None, owner: str,
         _repair_visible_header_pages(lib, owner, batch["capture_ids"])
     latest_runs = {run["capture_id"]: run for run in
                    _current(lib, owner, "ProcessingRun")}
-    if match:
-        pending_review_ids = _latest_pending_review_ids(list(latest_runs.values()))
+    pending_review_ids = _latest_pending_review_ids(list(latest_runs.values()))
     runs = [run for run in _current(lib, owner, "ProcessingRun")
             if run["capture_id"] in batch["capture_ids"] and
             run["extractor_version"] == version and
@@ -891,7 +903,10 @@ def _process_batch(lib: Library, root: Path, vault: Path | None, owner: str,
     unbound = any(trace["work_id"] is None for trace in _current(lib, owner, "ReadingTrace")
                   if trace["status"] == "active" and
                   trace["source"].get("capture_id") in batch["capture_ids"])
-    if notified and revised_notice and not unbound and len({run["capture_id"] for run in runs}) == len(batch["capture_ids"]):
+    if _notified_batch_is_current(batch, notified=notified,
+                                 revised_notice=revised_notice, unbound=unbound,
+                                 matching_runs=runs, latest_runs=latest_runs,
+                                 pending_review_ids=pending_review_ids):
         existing = [trace for trace in _current(lib, owner, "ReadingTrace")
                     if trace["status"] == "active" and
                     trace["source"].get("capture_id") in batch["capture_ids"]]
@@ -1040,7 +1055,24 @@ def run(root: Path, vault: Path | None, owner: str, *,
                             continue
                         try:
                             outcome = _process_batch(lib, root, vault, owner, batch, vision_model)
-                            if outcome["status"] != "unchanged":
+                            if outcome["status"] == "unchanged":
+                                traces = [trace for trace in _current(lib, owner, "ReadingTrace")
+                                          if trace["status"] == "active" and
+                                          trace["source"].get("capture_id") in batch["capture_ids"]]
+                                current = {"batch_id": batch["id"], "status": "processed",
+                                           "traces": len(traces), "unresolved_pages": 0,
+                                           "issues": []}
+                                try:
+                                    previous = json.loads(status_file.read_text(encoding="utf-8"))
+                                except (OSError, ValueError, TypeError):
+                                    previous = {}
+                                if previous.get("note"):
+                                    current["note"] = previous["note"]
+                                if any(previous.get(key) != value for key, value in current.items()):
+                                    _atomic_write(status_file, json.dumps(
+                                        _status_with_retry(current, 0, _now(),
+                                                           retry_fingerprint)).encode())
+                            else:
                                 _atomic_write(status_file, json.dumps(
                                     _status_with_retry(outcome, previous_attempts, _now(),
                                                        retry_fingerprint)).encode())
