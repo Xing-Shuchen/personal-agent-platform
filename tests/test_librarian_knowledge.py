@@ -129,6 +129,26 @@ def test_storage_enforces_candidate_state_machine_and_immutable_interpretation(t
         assert decide_candidate(lib, "owner_a", legacy["id"], 1, approve=True)["status"] == "approved"
 
 
+def test_storage_rejects_new_active_candidate_with_stale_source(tmp_path):
+    with Library(tmp_path) as lib:
+        trace = ingest_export(lib, "owner_a", "weread", "synthetic.md", EXPORT)[0]
+        correct_trace(lib, "owner_a", trace["id"], 1,
+                      annotation="New interpretation", reason="source changed")
+        stale = {"object_type": "KnowledgeCandidate", "schema_version": "0.1.0",
+                 "id": "candidate_stale", "owner_id": "owner_a",
+                 "created_at": "2026-09-29T00:00:00+00:00", "revision": 1,
+                 "supersedes_revision": None,
+                 "source_trace_refs": [{"trace_id": trace["id"], "revision": 1}],
+                 "candidate_type": "concept",
+                 "content": {"text": None, "confidence": None, "basis": "unknown"},
+                 "status": "pending", "knowledge_id": None}
+        with pytest.raises(LibrarianError) as rejected:
+            with lib.transaction():
+                lib._put(stale)
+        assert rejected.value.code == "REVISION_CONFLICT"
+        assert lib.db.execute("SELECT 1 FROM records WHERE id=?", (stale["id"],)).fetchone() is None
+
+
 def test_rejection_reason_and_changed_trace_prevent_stale_approval(tmp_path):
     with Library(tmp_path) as lib:
         trace = ingest_export(lib, "owner_a", "weread", "synthetic.md", EXPORT)[0]

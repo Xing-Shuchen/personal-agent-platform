@@ -19,6 +19,11 @@ new candidates begin pending; a pending candidate cannot jump directly to
 promoted, and source interpretation cannot silently change across revisions.
 The full Python suite passes 522 tests. See audit §21.
 
+The final storage write now also rejects a new pending/approved/promoted
+candidate when any source trace revision is stale or inactive. Terminal
+candidate history keeps its old source references. Full Python regression:
+523 passed. See audit §22.
+
 Latest scope change: printed underline text is accepted with its current EPUB
 punctuation expansion. The private review site now offers a handwriting-only
 page with 15 note crops and versioned confirm/edit/reject actions; actual user

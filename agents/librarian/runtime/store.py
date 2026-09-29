@@ -285,6 +285,10 @@ class Library:
         elif model == "KnowledgeCandidate":
             for ref in record["source_trace_refs"]:
                 self._record_version(owner, "ReadingTrace", ref["trace_id"], ref["revision"])
+                if record["status"] in {"pending", "approved", "promoted"}:
+                    current = self._current_link(owner, "ReadingTrace", ref["trace_id"])
+                    if current["revision"] != ref["revision"] or current["status"] != "active":
+                        raise LibrarianError("REVISION_CONFLICT", "candidate source is not active and current")
         elif model == "TraceRelation":
             source = record["source_trace_ref"]
             self._record_version(owner, "ReadingTrace", source["trace_id"], source["revision"])
