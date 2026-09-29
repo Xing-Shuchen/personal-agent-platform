@@ -438,6 +438,8 @@ R1 数字 trace 目录归属增补：最终 `_put` 原只对纸书 trace 校验 
 
 R1 trace/event 事务复核：当前生产库只读对照 `records` 的全部 800 个 ReadingTrace 历史版本与 outbox 的 `reading.trace.created/corrected` 聚合引用，得到 466 条创建、334 条修订事件，版本匹配 800/800，缺失、孤儿及重复版本事件均为 0。静态逐入口检查了纸书初提取、重提取对账、文字/页码更正、数字导出及 Koodo/WeRead 的创建、更新、删除、待审来源对账；这些领域路径均在同一个 `Library.transaction` 内写 trace 与事件。`b3fa5df` 另以 SQLite outbox 插入故障验证初次纸书提取和数字导出：trace、run/observation 或 Work、来源导出记录均回滚；移除故障后同输入可成功重试。Python Librarian 143 项及契约离线校验通过。`_put` 是内部方法，本身不强制调用者写事件；这些证据不证明外部消费者已收到事件，也不覆盖每一种修订入口的故障注入。
 
+R1 原始对象恢复性只读审计：`df93ce6` 新增 `librarian_object_integrity.py`，遍历正式库 `records` 及 extractor/数字待审 sidecar 的 ObjectRef，检查私有路径、文件可读性、字节长度和 SHA-256，并列出未引用对象。正式库本轮共有 2,891 处引用、290 个独立对象；290 个散列及长度均匹配，缺失路径、孤儿文件和无效 sidecar JSON 均为 0。临时 Library 中将已接收照片文件改坏后，脚本从 `ok` 变为 `corrupt`，证明该检查能检测散列错误。运行命令：`.venv/bin/python docs/audits/librarian_object_integrity.py --root var/librarian`。此结论只覆盖本机当前快照；没有执行备份还原、断电恢复或未来孤儿回收，不以零孤儿证明回收流程已经完善。
+
 ## 9. 现行实现计划（2026-09-29）
 
 第 1–7 节仍是对 `d111ace` 的初审，不能用其中的旧行号和测试数量描述当前 HEAD。本节把整改转为可执行批次；每批结束时在第 8 节记录实际提交、测试、生产状态和未验项。除明确列出的真实用户审核外，调试与迁移均通过 Librarian 的 worker、领域命令或受信 Gateway 工具执行，不手改生产数据库或 Vault 生成块。
@@ -460,7 +462,7 @@ B 的后续清单：现有 11 张旧版多页区照片与笔记时间来源已�
 
 | 任务 / 对应批次 | 实施步骤 | 验证与交付物 | 当前边界 |
 |---|---|---|---|
-| R1 · 领域引用与事务（C，F07/F08） | 按规范 §30 逐项列出 `store.py`、`pipeline.py`、知识晋升、review/finalize、数字 adapter 的写入口；检查 owner 链、引用存在性、revision/current 指针、detection/observation/resolution 关联、事件与 trace 同事务、原始 evidence 只增不改。用旧库迁移样本复核新约束 | 每条不变量对应执行位置和正反例；跨 owner、悬空引用、旧 revision、知识依赖及人工修正的失败均无部分提交；注入索引故障后从已存 trace 恢复，extractor 调用次数不增加 | `48099cd`、`399c3f5`、`0880d5c`、`d029cc1`、`686fb10`、`4fb048c`、`498512e`、`aa39e57`、`b3fa5df` 已测试索引边界、领域引用、捕获链、空间标签、数字归属、并发摄取及两条事件失败回滚路径；正式库 800/800 trace 版本有对应 outbox 事件。仍须完成其余修订入口故障注入、知识晋升及旧迁移链复核 |
+| R1 · 领域引用与事务（C，F07/F08） | 按规范 §30 逐项列出 `store.py`、`pipeline.py`、知识晋升、review/finalize、数字 adapter 的写入口；检查 owner 链、引用存在性、revision/current 指针、detection/observation/resolution 关联、事件与 trace 同事务、原始 evidence 只增不改。用旧库迁移样本复核新约束 | 每条不变量对应执行位置和正反例；跨 owner、悬空引用、旧 revision、知识依赖及人工修正的失败均无部分提交；注入索引故障后从已存 trace 恢复，extractor 调用次数不增加 | `48099cd`、`399c3f5`、`0880d5c`、`d029cc1`、`686fb10`、`4fb048c`、`498512e`、`aa39e57`、`b3fa5df`、`df93ce6` 已测试索引边界、领域引用、捕获链、空间标签、数字归属、并发摄取、事件失败回滚及对象完整性；正式库 800/800 trace 版本有对应 outbox 事件、290/290 私有对象可读取且散列匹配。仍须完成其余修订入口故障注入、知识晋升、旧迁移链和备份恢复复核 |
 | R2 · 历史元数据与证据边界（B，F02/F03/F04） | 只读枚举活跃及受影响历史 trace，将页码、身份、时间、作者、basis、confidence、locator、bbox、provenance、配置版本逐字段追溯到本图、原始返回、EPUB、用户决议或规则；重点核对早期 OCR/EPUB 扩文、自动会话及 bbox 对应的可见文字 | 受影响记录清单与字段来源表；照片局部、raw、EPUB 对齐和旧/新 revision 对照；无照片证据的文字不进入照片原文，未知字段保持 unknown；经确认的更正走领域修订并保持历史可读 | 11 张页码和笔记时间已版本化修订；83 条活跃纸书 trace 的 146 段印刷区、305 个 detection 引用有首轮只读核对。仍须查历史 superseded 版本、墨线覆盖与 OCR 真值；第 29 页 4 条 unknown 和三张待审扫描依赖 A |
 | R3 · Schema 与语义校验（C） | 对规范正文 MUST 和 `schemas/` 的字段、枚举、null/unknown、状态组合逐项比对；把结构校验、跨对象事务校验、外部证据真实性分配到明确执行层；检查旧版对象读取和迁移 | 条款→字段→校验函数/事务→测试矩阵；合法 JSON 但错误 owner、虚假页码 basis、单行 bbox 对应整段文字、失效 revision 等反例由应用层拒绝或进入待审；无法程序验证的真实性标明人工证据 | 契约测试只证明覆盖的结构和语义样本；尚无逐字段完整结论 |
 | R4 · Gateway 与投送边界（C/D，F05/F06） | 清点图片、session、search、evidence、review/decision/finalize、digital sync 的每个入口；核对受信身份、account/chat→owner、source→owner、幂等键及 payload 冲突、`ErrorResult`、重启恢复；把“已排队”“平台发送成功”“用户端已显示”分成独立状态 | 插件替身和真实消息分别留证；双 owner/account/chat、重复消息与变更附件、坏批次、慢上游、投送失败重试均有正反例；错误可查询且不会伪报送达或阻塞其他照片 | `3a47e89` 补齐七个 Python bridge 的错误字段，`07f99f3` 将其传过插件，`55d61e7` 修复裁片排队后文件过早删除，物理/数字 worker 已分锁；只证明本地与指定真实入口。仍须核对入站 hook 错误查询、跨账户授权、真实重复/变更附件、平台投送及慢源恢复 |
@@ -484,4 +486,4 @@ B 的后续清单：现有 11 张旧版多页区照片与笔记时间来源已�
 | observation ID 唯一且 link 有效 | `validate_observation` 在提取和最终写入共用；正式库 142 个版本只读校验通过 | 检测语义和 OCR 真值只能由照片及用户审核确认，不能以结构校验宣称准确 |
 | trace 与领域事件同事务 | 已逐入口静态核对 `process_capture`、`reconcile_extraction`、`correct_trace`、`resolve_capture`、数字导出及 Koodo/WeRead 创建/修订/删除/来源对账；正式库 800 个版本各有 1 条对应 outbox 事件。`b3fa5df` 注入初提取和数字导出事件失败，领域记录回滚后可重试；索引投影已移出领域事务 | 其余修订入口逐项故障注入、外部消费者投递与旧迁移链；`_put` 自身不强制事件 |
 | bbox、方向和空间标签有效 | observation 共用语义检查；`498512e` 在纸书 trace 写入时验证 bbox/页区/side/方位，正式库 678 个纸书版本兼容；`97998ee` 拒绝 resolution 页区重复 ID 与零面积，137 个旧版本兼容 | 页码依据和照片中墨线是否对应引文仍需人工审阅；更多图像方向、跨页链接与旧迁移反例归 R2/R3 |
-| 原始 evidence 无普通 UPDATE | `evidence_immutable` 和 `evidence_undeletable` 触发器保护 PageCapture/PageObservation 的 `records` 行；对象先写后引用 | 对象文件丢失、孤儿回收和备份恢复的现场演练，确认已接受回执始终可重新打开原图 |
+| 原始 evidence 无普通 UPDATE | `evidence_immutable` 和 `evidence_undeletable` 触发器保护 PageCapture/PageObservation 的 `records` 行；对象先写后引用。`df93ce6` 只读核对 2,891 处引用、290 个对象均可读取且散列匹配，无当前孤儿 | 对象文件丢失后的恢复、未来孤儿回收和备份还原演练，确认已接受回执仍可重新打开原图 |
