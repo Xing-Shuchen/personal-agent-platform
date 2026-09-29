@@ -507,7 +507,11 @@ export function rememberInboundSession(config, recent, event, ctx, now = Date.no
   }
   recent.set(ctx.sessionKey, { ownerId, senderId: event.senderId,
     channelId: ctx.channelId, accountId: ctx.accountId,
-    conversationId: ctx.sessionKey, messageId: event.messageId, at: now });
+    conversationId: ctx.sessionKey,
+    captureConversationId: ctx.conversationId ?? ctx.sessionKey,
+    legacyConversationId: ctx.conversationId && ctx.conversationId !== ctx.sessionKey
+      ? ctx.sessionKey : undefined,
+    messageId: event.messageId, at: now });
 }
 
 export function librarianSessionTool(config, ctx, recent, bridge = runSessionBridge,
@@ -536,7 +540,9 @@ export function librarianSessionTool(config, ctx, recent, bridge = runSessionBri
       const result = await bridge(config, { owner_id: entry.ownerId,
         actor_id: entry.senderId,
         source: { transport: entry.channelId, account_id: entry.accountId,
-          conversation_id: entry.conversationId, source_event_id: entry.messageId },
+          conversation_id: entry.captureConversationId, source_event_id: entry.messageId },
+        ...(entry.legacyConversationId
+          ? { legacy_conversation_id: entry.legacyConversationId } : {}),
         action: params.action, book: params.book, page: params.page });
       return { content: [{ type: "text", text: JSON.stringify(result) }], details: result };
     },
@@ -565,6 +571,8 @@ export async function acceptMessage(config, event, ctx, bridge = runBridge) {
   return bridge(config, { owner_id: ownerId, actor_id: event.senderId,
     source: { transport: ctx.channelId, account_id: ctx.accountId,
       conversation_id: conversationId, source_event_id: event.messageId },
+    ...(ctx.conversationId && ctx.sessionKey && ctx.conversationId !== ctx.sessionKey
+      ? { legacy_conversation_id: ctx.sessionKey } : {}),
     attachments });
 }
 

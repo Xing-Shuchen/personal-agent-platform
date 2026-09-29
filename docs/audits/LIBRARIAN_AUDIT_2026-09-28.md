@@ -781,3 +781,11 @@ OpenClaw 插件当前注册七个 `librarian_*` 工具、一个 `message_receive
 本机手写网页另用 localhost token/cookie/Origin 与固定 owner 参数，不属于上述 Gateway 工具；其版本化提交、投影失败状态和人工延期见 §§14、23。R4 仍须把“工具排队”“平台接收”“客户端显示”分开取证；没有平台消息 ID 的 `queued` 不能作为交付成功。跨真实账号、真实附件变更和慢上游仍留正式运行。插件新增无 `conversationId` 图片回退测试后 **20/20** 通过；本轮没有为这份入口清单重跑 Python 全套，最近一次完整结果仍为 526 passed。
 
 提交 `dc68c9d` 后 Gateway 重启，服务 active、插件 `loaded/enabled`、`message_received` hook 可见、diagnostics 为空；本机手写复核端口仍监听。实际飞书无 `conversationId` 的新图片入站尚未发生，本项运行检查只证明新插件已加载，不将合成回退测试写成真实消息验收。
+
+## 29. 飞书图片与阅读会话的 scope 一致性（2026-09-29）
+
+核对生产库发现，历史图片批次使用 `user:ou_…` 或 `oc_…` 的会话范围，而 `/lib read` 的明确选中会话留在 `agent:librarian:feishu:…` 范围。27 张捕获与 73 条活跃纸书 trace 已存在；这些历史事实不能为了消除范围差异而重绑到后来的明确会话。此为 F04/R4 的真实缺口，先前的 `/lib read` 与图片分别成功并不证明二者关联成功。
+
+插件现让会话命令和图片都优先使用受信 `conversationId`，缺失时使用 `sessionKey`。只在下一条真实入站上，桥接会把旧 `sessionKey` 范围唯一、仍 active/paused 的明确选择复制到 canonical 范围；如果 canonical 已有明确选择则不覆盖。图片接收与选择复制共用数据库事务，命令旧回执按旧源身份回放并保留冲突检测。该修复不改历史 capture、trace、阅读进度，也不伪造飞书消息。隔离反例覆盖旧回执重放、冲突、未来图片关联与已有 canonical 选择；真实新入站的关联仍待现场验证。
+
+完整 Python 回归 **530 passed**（4 条弃用警告），插件 **21/21**。同一图片源消息改变会话范围返回 `IDEMPOTENCY_CONFLICT`。这些是代码与隔离库证据；Gateway 加载与真实入站须另行记录。

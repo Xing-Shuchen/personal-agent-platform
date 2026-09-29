@@ -201,6 +201,41 @@ class Library:
         if bound["owner_id"] != owner_id:
             raise LibrarianError("UNAUTHORIZED", "digital source is bound to another owner")
 
+    def adopt_selected_session_scope(self, owner_id: str, transport: str,
+                                     account_id: str, conversation_id: str,
+                                     legacy_conversation_id: str | None) -> None:
+        """Copy one trusted legacy selection to its canonical conversation scope.
+
+        This only changes the interaction projection. It never revises old
+        captures or a ReadingSession fact and never replaces a canonical
+        selection already made by the user.
+        """
+        if (not legacy_conversation_id or legacy_conversation_id == conversation_id):
+            return
+        if not all((owner_id, transport, account_id, conversation_id)):
+            raise LibrarianError("VALIDATION_FAILED", "session scope identity required")
+        canonical = self.db.execute(
+            "SELECT session_id FROM session_scope WHERE owner_id=? AND transport=? "
+            "AND account_id=? AND conversation_id=? AND selected=1",
+            (owner_id, transport, account_id, conversation_id)).fetchall()
+        if canonical:
+            return
+        legacy = self.db.execute(
+            "SELECT session_id FROM session_scope WHERE owner_id=? AND transport=? "
+            "AND account_id=? AND conversation_id=? AND selected=1",
+            (owner_id, transport, account_id, legacy_conversation_id)).fetchall()
+        if len(legacy) != 1:
+            return
+        session = self._get(owner_id, "ReadingSession", legacy[0]["session_id"])
+        if session["status"] not in {"active", "paused"}:
+            return
+        self.db.execute(
+            "INSERT INTO session_scope(owner_id,transport,account_id,conversation_id,"
+            "session_id,selected,last_assigned_at) VALUES(?,?,?,?,?,1,NULL) "
+            "ON CONFLICT(owner_id,transport,account_id,conversation_id,session_id) "
+            "DO UPDATE SET selected=1",
+            (owner_id, transport, account_id, conversation_id, session["id"]))
+
     def _get(self, owner_id: str, model: str, object_id: str) -> dict[str, Any]:
         row = self.db.execute("SELECT body FROM records WHERE owner_id=? AND model=? AND id=? AND current=1",
                               (owner_id, model, object_id)).fetchone()

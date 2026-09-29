@@ -95,3 +95,39 @@ def test_gateway_bridge_accepts_staged_paths_as_one_replayable_batch(tmp_path):
         with pytest.raises(LibrarianError) as error:
             accept_inbound(lib, message)
         assert error.value.code == "IDEMPOTENCY_CONFLICT"
+
+
+def test_gateway_bridge_adopts_trusted_legacy_selection_for_future_images(tmp_path):
+    image = _image()
+    with Library(tmp_path) as lib:
+        session = lib.start_session("owner_a", scope=("telegram", "account_a", "agent:legacy"))
+        message = _message(image)
+        message["legacy_conversation_id"] = "agent:legacy"
+        first = accept_inbound(lib, message)
+        capture_id = first["capture_ids"][0]
+        context = lib.db.execute(
+            "SELECT session_id,basis FROM capture_context WHERE owner_id=? AND capture_id=?",
+            ("owner_a", capture_id)).fetchone()
+        assert tuple(context) == (session["id"], "active_session")
+        selected = lib.db.execute(
+            "SELECT session_id FROM session_scope WHERE owner_id=? AND transport=? "
+            "AND account_id=? AND conversation_id=? AND selected=1",
+            ("owner_a", "telegram", "account_a", "chat_a")).fetchone()
+        assert selected["session_id"] == session["id"]
+        assert accept_inbound(lib, message) == first
+        changed = _message(image + b"changed")
+        changed["legacy_conversation_id"] = "agent:legacy"
+        with pytest.raises(LibrarianError) as error:
+            accept_inbound(lib, changed)
+        assert error.value.code == "IDEMPOTENCY_CONFLICT"
+
+
+def test_gateway_bridge_rejects_same_source_when_conversation_scope_changes(tmp_path):
+    with Library(tmp_path) as lib:
+        message = _message(_image())
+        accept_inbound(lib, message)
+        replay = _message(_image())
+        replay["source"]["conversation_id"] = "agent:legacy"
+        with pytest.raises(LibrarianError) as error:
+            accept_inbound(lib, replay)
+        assert error.value.code == "IDEMPOTENCY_CONFLICT"

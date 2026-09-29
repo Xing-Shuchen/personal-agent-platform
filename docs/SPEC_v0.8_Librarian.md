@@ -586,6 +586,10 @@ Gateway 的纸书/数字 worker 启动结果另按 owner 与模式持久记录�
 会话 scope 优先取 Gateway 的 `conversationId`，该可选字段缺失时使用稳定的
 `sessionKey`。同一来源身份的重放交给持久幂等层；若网关对同一消息改变 scope，
 应返回冲突而不是暗中归入另一会话。
+阅读会话命令与图片接收必须使用同一个受信 scope。若旧版本仅在 `sessionKey`
+范围保存了明确选中的会话，新入站可把该选择复制到 `conversationId` 范围；
+不得修改历史 capture、trace 或覆盖该范围内用户已有的明确选择。旧命令回执
+仍按原身份幂等重放。
 
 ## 28. Event Model
 

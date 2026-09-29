@@ -36,6 +36,10 @@ def accept_inbound(lib: Library, message: dict[str, Any]) -> dict[str, Any]:
     if any(not isinstance(source.get(key), str) or not source[key] for key in source_keys):
         raise LibrarianError("VALIDATION_FAILED", "stable source identity required")
     source = {key: source[key] for key in source_keys}
+    legacy_conversation_id = message.get("legacy_conversation_id")
+    if legacy_conversation_id is not None and (not isinstance(legacy_conversation_id, str)
+                                               or not legacy_conversation_id):
+        raise LibrarianError("VALIDATION_FAILED", "invalid legacy conversation identity")
     upload_bytes: dict[str, bytes] = {}
     attachments = []
     batch_bytes = 0
@@ -83,9 +87,22 @@ def accept_inbound(lib: Library, message: dict[str, Any]) -> dict[str, Any]:
                            "submitted_context": message.get("submitted_context") or {
                                "session_id": None, "work_id": None,
                                "edition_id": None, "book_instance_id": None}}}
-    return execute_command(lib, command, trusted_owner_id=owner_id,
-                           trusted_actor_id=actor_id,
-                           resolve_upload=upload_bytes.__getitem__)
+    with lib.transaction():
+        lib.adopt_selected_session_scope(owner_id, source["transport"], source["account_id"],
+                                         source["conversation_id"], legacy_conversation_id)
+        for item in attachments:
+            existing = lib.db.execute(
+                "SELECT capture_id FROM source_items WHERE owner_id=? AND transport=? "
+                "AND account_id=? AND source_event_id=? AND source_item_id=?",
+                (owner_id, source["transport"], source["account_id"],
+                 source["source_event_id"], item["source_item_id"])).fetchone()
+            if existing:
+                capture = lib.get(owner_id, "PageCapture", existing["capture_id"])
+                if capture["origin"]["conversation_id"] != source["conversation_id"]:
+                    raise LibrarianError("IDEMPOTENCY_CONFLICT", "source message changed scope")
+        return execute_command(lib, command, trusted_owner_id=owner_id,
+                               trusted_actor_id=actor_id,
+                               resolve_upload=upload_bytes.__getitem__)
 
 
 def main() -> int:

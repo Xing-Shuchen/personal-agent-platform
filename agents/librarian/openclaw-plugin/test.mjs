@@ -275,6 +275,39 @@ test("session tool carries only trusted inbound source identity", async () => {
     recent, bridge, 1001), null);
 });
 
+test("images and session commands use the same Feishu conversation scope", async () => {
+  const recent = new Map();
+  const inbound = { channelId: "feishu", accountId: "librarian",
+    conversationId: "user:person", sessionKey: "agent:librarian:feishu:person" };
+  const feishuConfig = { ...config, ownerMappings: [{ senderId: "person",
+    channelId: "feishu", accountId: "librarian", ownerId: "owner_fixture" }] };
+  rememberInboundSession(feishuConfig, recent,
+    { senderId: "person", messageId: "msg-78" }, inbound, 1000);
+  const trusted = { agentId: "librarian", sessionKey: inbound.sessionKey,
+    requesterSenderId: "person", messageChannel: "feishu", agentAccountId: "librarian" };
+  let sessionMessage;
+  await librarianSessionTool(feishuConfig, trusted, recent,
+    async (_config, message) => { sessionMessage = message; return {}; }, 1001)
+    .execute("call", { action: "status" });
+  assert.equal(sessionMessage.source.conversation_id, "user:person");
+  assert.equal(sessionMessage.legacy_conversation_id, inbound.sessionKey);
+  const dir = await mkdtemp(join(tmpdir(), "librarian-feishu-scope-"));
+  try {
+    const file = join(dir, "photo.png");
+    await writeFile(file, Buffer.from("synthetic image bytes"));
+    let imageMessage;
+    await acceptMessage(feishuConfig, { senderId: "person", messageId: "msg-79",
+      media: [{ contentType: "image/png", path: file }] }, inbound,
+    async (_config, message) => { imageMessage = message; return {}; });
+    assert.equal(imageMessage.source.conversation_id,
+      sessionMessage.source.conversation_id);
+    assert.equal(imageMessage.legacy_conversation_id,
+      sessionMessage.legacy_conversation_id);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("inbound binding survives separate hook and tool plugin registrations", async () => {
   const registrations = [];
   for (let i = 0; i < 2; i++) {

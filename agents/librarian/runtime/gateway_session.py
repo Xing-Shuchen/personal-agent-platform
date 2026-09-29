@@ -66,6 +66,10 @@ def session_inbound(lib: Library, message: dict) -> dict:
     keys = ("transport", "account_id", "conversation_id", "source_event_id")
     if any(not isinstance(source.get(key), str) or not source[key] for key in keys):
         raise LibrarianError("VALIDATION_FAILED", "stable inbound source identity required")
+    legacy_conversation_id = message.get("legacy_conversation_id")
+    if legacy_conversation_id is not None and (not isinstance(legacy_conversation_id, str)
+                                               or not legacy_conversation_id):
+        raise LibrarianError("VALIDATION_FAILED", "invalid legacy conversation identity")
     scope = tuple(source[key] for key in keys[:3])
     identity = json.dumps([owner, actor, *[source[key] for key in keys]],
                           ensure_ascii=False, separators=(",", ":"))
@@ -79,8 +83,19 @@ def session_inbound(lib: Library, message: dict) -> dict:
                    "fingerprint TEXT NOT NULL, result TEXT NOT NULL, "
                    "PRIMARY KEY(owner_id,source_key))")
     with lib.transaction():
+        lib.adopt_selected_session_scope(owner, source["transport"], source["account_id"],
+                                         source["conversation_id"], legacy_conversation_id)
         previous = lib.db.execute("SELECT fingerprint,result FROM gateway_session_receipts "
                                   "WHERE owner_id=? AND source_key=?", (owner, digest)).fetchone()
+        if not previous and legacy_conversation_id and legacy_conversation_id != source["conversation_id"]:
+            legacy_identity = json.dumps(
+                [owner, actor, source["transport"], source["account_id"],
+                 legacy_conversation_id, source["source_event_id"]],
+                ensure_ascii=False, separators=(",", ":"))
+            legacy_digest = hashlib.sha256(legacy_identity.encode()).hexdigest()
+            previous = lib.db.execute("SELECT fingerprint,result FROM gateway_session_receipts "
+                                      "WHERE owner_id=? AND source_key=?",
+                                      (owner, legacy_digest)).fetchone()
         if previous:
             if previous["fingerprint"] != fingerprint:
                 raise LibrarianError("IDEMPOTENCY_CONFLICT", "source message changed session action")
