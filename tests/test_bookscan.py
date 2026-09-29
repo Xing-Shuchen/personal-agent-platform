@@ -313,10 +313,20 @@ def test_review_contains_full_page_adjudication_and_export(tmp_path: Path):
     from bookscan.review import build_review
     run = tmp_path / "run"
     run.mkdir()
+    epub = tmp_path / "9787208171411.epub"
+    epub.touch()
+    epub.with_suffix(".metadata.json").write_text(json.dumps({
+        "isbn13": "9787208171411", "title": "社会理论二十讲",
+        "authors": ["汉斯·约阿斯"], "translator": "郑作彧",
+        "publisher": "上海人民出版社", "publication_date": "2021-09-01",
+        "original_title": "Sozialtheorie", "source_name": "豆瓣读书 ISBN 书目",
+        "source_url": "https://book.douban.com/subject/35596074/",
+    }, ensure_ascii=False), encoding="utf-8")
     for folder in ("pages", "overlays"):
         (run / folder).mkdir()
     (run / "run.json").write_text(json.dumps({"run_id": "sample", "config": {
-        "root": str(tmp_path)}, "epub": {"epub_sha256": "x"}, "models": {
+        "root": str(tmp_path), "epub": str(epub)},
+        "epub": {"epub_sha256": "x"}, "models": {
         "detection_name": "det", "recognition_name": "rec"},
         "elapsed_seconds": 1}))
     page = {"page_id": "p", "scan_index": 0, "source_file": "one.jpg",
@@ -336,3 +346,18 @@ def test_review_contains_full_page_adjudication_and_export(tmp_path: Path):
     assert "ground-truth.jsonl" in html
     assert "data-source-width='200'" in html
     assert "导入核验草稿" in html
+    assert "社会理论二十讲" in html
+    assert "ISBN：9787208171411" in html
+    assert "出版社：上海人民出版社" in html
+
+
+def test_review_shows_sourced_isbn_metadata(tmp_path: Path):
+    from bookscan.review import _isbn_metadata
+    epub = tmp_path / "9787208171411.epub"
+    epub.touch()
+    epub.with_suffix(".metadata.json").write_text(json.dumps({
+        "isbn13": "9787208171411", "authors": ["汉斯·约阿斯"],
+        "source_url": "https://book.douban.com/subject/35596074/",
+    }, ensure_ascii=False), encoding="utf-8")
+    assert _isbn_metadata({"config": {"epub": str(epub)}})["authors"] == ["汉斯·约阿斯"]
+    assert _isbn_metadata({"config": {"epub": str(tmp_path / "other.epub")}}) == {}

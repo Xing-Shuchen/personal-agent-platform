@@ -4,6 +4,7 @@ from __future__ import annotations
 import html
 import json
 import os
+import re
 from collections import Counter, defaultdict
 from pathlib import Path
 
@@ -14,6 +15,28 @@ def _rows(path: Path) -> list[dict]:
 
 def _e(value: object) -> str:
     return html.escape("" if value is None else str(value))
+
+
+def _isbn_metadata(meta: dict) -> dict:
+    """Use a sourced local ISBN record associated with the run's EPUB."""
+    epub = meta.get("config", {}).get("epub")
+    if not isinstance(epub, str):
+        return {}
+    path = Path(epub)
+    if not re.fullmatch(r"\d{13}", path.stem):
+        return {}
+    source = path.with_suffix(".metadata.json")
+    try:
+        record = json.loads(source.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    if (not isinstance(record, dict) or record.get("isbn13") != path.stem or
+            not isinstance(record.get("source_url"), str) or
+            not record["source_url"].startswith("https://") or
+            not isinstance(record.get("authors"), list) or
+            not all(isinstance(name, str) for name in record["authors"])):
+        return {}
+    return record
 
 
 REVIEW_SCRIPT = r"""
@@ -222,6 +245,7 @@ document.getElementById('download-truth').onclick = () => {
 def build_review(run: Path) -> None:
     run = run.resolve()
     meta = json.loads((run / "run.json").read_text(encoding="utf-8"))
+    bibliography = _isbn_metadata(meta)
     pages = _rows(run / "pages.jsonl")
     lines = _rows(run / "lines.jsonl")
     groups = _rows(run / "groups.jsonl")
@@ -263,6 +287,17 @@ def build_review(run: Path) -> None:
              f"{len(brackets)} 组角括号标记 · "
              f"{len(reviews)} 个待核对候选"
              f" · {len(failures)} 个失败记录</p>",
+             *(["<section><h2>元数据</h2>",
+                 f"<p>书名：{_e(bibliography.get('title'))} · "
+                 f"ISBN：{_e(bibliography.get('isbn13'))}<br>"
+                 f"作者：{_e('、'.join(bibliography.get('authors', [])))}<br>"
+                 f"译者：{_e(bibliography.get('translator'))}<br>"
+                 f"出版社：{_e(bibliography.get('publisher'))} · "
+                 f"出版日期：{_e(bibliography.get('publication_date'))}<br>"
+                 f"原作名：{_e(bibliography.get('original_title'))}</p>",
+                 f"<p>书目来源：<a href='{_e(bibliography.get('source_url'))}'>"
+                 f"{_e(bibliography.get('source_name') or 'ISBN 书目')}</a></p></section>"]
+                 if bibliography else []),
              "<p>叠加图：绿色为已选行，红色为下划线证据，橙色为待核对线条，"
              "蓝色为视觉页码候选，紫色为手写批注区域，青色为角括号范围。</p>",
              "<p class='flag'>人工真值未提供：准确率未评估。请逐页检查，包括零结果页面。"
