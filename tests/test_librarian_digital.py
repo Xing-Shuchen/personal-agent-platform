@@ -90,6 +90,21 @@ def test_export_commit_survives_index_failure(tmp_path: Path, monkeypatch) -> No
         assert len(search(lib, "owner_a", "Weber")) == 1
 
 
+def test_trace_event_failure_rolls_back_digital_export_and_retries(tmp_path: Path) -> None:
+    with Library(tmp_path) as lib:
+        lib.db.execute("CREATE TRIGGER fail_trace_event BEFORE INSERT ON outbox "
+                       "WHEN NEW.event_type='reading.trace.created' "
+                       "BEGIN SELECT RAISE(ABORT, 'event unavailable'); END")
+        with pytest.raises(Exception, match="event unavailable"):
+            ingest_export(lib, "owner_a", "weread", "book.md", WEREAD)
+        assert lib.db.execute("SELECT COUNT(*) FROM records WHERE model IN "
+                              "('Work','ReadingTrace')").fetchone()[0] == 0
+        assert lib.db.execute("SELECT COUNT(*) FROM digital_exports").fetchone()[0] == 0
+        assert lib.db.execute("SELECT COUNT(*) FROM outbox").fetchone()[0] == 0
+        lib.db.execute("DROP TRIGGER fail_trace_event")
+        assert len(ingest_export(lib, "owner_a", "weread", "book.md", WEREAD)) == 2
+
+
 def test_exports_converge_at_trace_and_retry_is_idempotent(tmp_path: Path):
     with Library(tmp_path) as lib:
         weread = ingest_export(lib, "owner_a", "weread", "vault/weread/book.md", WEREAD)

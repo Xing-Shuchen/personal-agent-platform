@@ -469,6 +469,25 @@ def test_search_response_accepts_corrected_trace_revision(tmp_path: Path) -> Non
             (trace["id"], corrected["revision"])]
 
 
+def test_trace_event_failure_rolls_back_physical_processing_and_retries(tmp_path: Path) -> None:
+    with Library(tmp_path) as lib:
+        receipt = lib.ingest("owner_a", transport="gateway", account_id="account",
+                             conversation_id="chat", source_event_id="message",
+                             attachments=[{"source_item_id": "image", "mime_type": "image/png",
+                                           "data": _photo()}], idempotency_key="command")
+        capture_id = receipt["capture_ids"][0]
+        lib.db.execute("CREATE TRIGGER fail_trace_event BEFORE INSERT ON outbox "
+                       "WHEN NEW.event_type='reading.trace.created' "
+                       "BEGIN SELECT RAISE(ABORT, 'event unavailable'); END")
+        with pytest.raises(Exception, match="event unavailable"):
+            process_capture(lib, "owner_a", capture_id, lambda _: _output())
+        assert lib.db.execute("SELECT COUNT(*) FROM records WHERE model IN "
+                              "('ProcessingRun','PageObservation','CaptureResolution','ReadingTrace')").fetchone()[0] == 0
+        assert lib.db.execute("SELECT COUNT(*) FROM outbox WHERE event_type='reading.trace.created'").fetchone()[0] == 0
+        lib.db.execute("DROP TRIGGER fail_trace_event")
+        assert process_capture(lib, "owner_a", capture_id, lambda _: _output())
+
+
 def test_storage_rejects_forged_physical_detection_and_capture_links(tmp_path: Path) -> None:
     with Library(tmp_path) as lib:
         receipt = lib.ingest("owner_a", transport="gateway", account_id="account",
