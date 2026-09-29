@@ -559,3 +559,5 @@ B 的后续清单：现有 11 张旧版多页区照片与笔记时间来源已�
 复核站点逐页 HTTP 冒烟检查：27/27 个审核页返回成功；页面引用的 246/246 张图片均返回 200、`image/*` 类型和非空内容；27/27 个 `/api/review-context` 请求成功，共返回 73 条当前 trace 引用，0 错误。此检查覆盖浏览器取资源的路径与身份会话，但未代替真人视觉判读或最终提交动作。
 
 正式 SQLite 只读 `PRAGMA integrity_check` 返回 `ok`，`foreign_key_check` 返回 0 条违规；这只证明数据库物理完整性和已声明的外键，不代替 §9.1 所列跨记录语义不变量。
+
+R1 故障注入补证：在隔离库对 Bookscan 网页复核对账的 `reading.trace.corrected` outbox 写入注入失败，旧 trace/current 指针与事件保持原状；恢复后重试同一审核包，完成新版本及每条旧 trace 的修订事件。在知识晋升的 `reading.knowledge.promoted` 事件写入注入失败，candidate 保持 `approved` 且无成功事件；恢复后用同一知识服务幂等键重试并只产生一条成功事件。`test_librarian_bookscan_review_apply.py` 与 `test_librarian_knowledge.py` 合计 9/9 通过。此项补齐两条指定入口的事务反例；不表示所有 R1 修订入口、实际知识服务或备份恢复已验收。

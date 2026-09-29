@@ -148,3 +148,39 @@ def test_source_correction_during_external_write_does_not_publish_promotion(tmp_
         assert lib.get("owner_a", "KnowledgeCandidate", candidate["id"])["status"] == "approved"
         assert not any(event["event"] == "reading.knowledge.promoted"
                        for event in lib.pending_events("owner_a"))
+
+
+def test_promotion_event_failure_rolls_back_candidate_and_retries_same_key(tmp_path, monkeypatch):
+    with Library(tmp_path) as lib:
+        trace = ingest_export(lib, "owner_a", "weread", "synthetic.md", EXPORT)[0]
+        candidate = create_candidate(lib, "owner_a",
+            [{"trace_id": trace["id"], "revision": 1}], candidate_type="concept",
+            content={"text": None, "confidence": None, "basis": "unknown"},
+            correlation_id="explicit-review")
+        execute_command(lib,
+            _command("reading.knowledge_candidate.approve",
+                     {"candidate_id": candidate["id"], "expected_revision": 1}, "approve-event"),
+            trusted_owner_id="owner_a", trusted_actor_id="actor_a")
+
+        keys = []
+        def write(_record, key):
+            keys.append(key)
+            return "knowledge_fixture"
+
+        original_event = lib._event
+        def fail_event(*_args, **_kwargs):
+            raise RuntimeError("outbox unavailable")
+        monkeypatch.setattr(lib, "_event", fail_event)
+        with pytest.raises(RuntimeError, match="outbox unavailable"):
+            promote_candidate(lib, "owner_a", candidate["id"], 2, write)
+        assert lib.get("owner_a", "KnowledgeCandidate", candidate["id"])["status"] == "approved"
+        assert not any(event["event"] == "reading.knowledge.promoted"
+                       for event in lib.pending_events("owner_a"))
+
+        monkeypatch.setattr(lib, "_event", original_event)
+        promoted = promote_candidate(lib, "owner_a", candidate["id"], 2, write)
+        assert promoted["status"] == "promoted"
+        assert len(keys) == 2 and keys[0] == keys[1]
+        events = [event for event in lib.pending_events("owner_a")
+                  if event["event"] == "reading.knowledge.promoted"]
+        assert len(events) == 1

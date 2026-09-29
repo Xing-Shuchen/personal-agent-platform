@@ -142,3 +142,37 @@ def test_line_edit_requires_approved_group_quote(tmp_path):
         with pytest.raises(LibrarianError) as error:
             prepare_review(lib, "owner", bundle)
         assert error.value.code == "VALIDATION_FAILED"
+
+
+def test_review_reconciliation_event_failure_keeps_old_traces_and_retries(tmp_path,
+                                                                          monkeypatch):
+    with Library(tmp_path) as lib:
+        capture_id, bundle = _setup(lib)
+        old = [json.loads(row[0]) for row in lib.db.execute(
+            "SELECT body FROM records WHERE owner_id='owner' AND model='ReadingTrace' "
+            "AND current=1")]
+        old_refs = {(trace["id"], trace["revision"]) for trace in old}
+        original_event = lib._event
+
+        def fail_correction(owner_id, kind, *args, **kwargs):
+            if kind == "reading.trace.corrected":
+                raise RuntimeError("outbox unavailable")
+            return original_event(owner_id, kind, *args, **kwargs)
+
+        monkeypatch.setattr(lib, "_event", fail_correction)
+        with pytest.raises(RuntimeError, match="outbox unavailable"):
+            apply_review(lib, "owner", bundle)
+        current = [json.loads(row[0]) for row in lib.db.execute(
+            "SELECT body FROM records WHERE owner_id='owner' AND model='ReadingTrace' "
+            "AND current=1")]
+        assert {(trace["id"], trace["revision"]) for trace in current} == old_refs
+        assert all(trace["status"] == "active" for trace in current)
+        assert not any(event["event"] == "reading.trace.corrected"
+                       for event in lib.pending_events("owner"))
+
+        monkeypatch.setattr(lib, "_event", original_event)
+        applied = apply_review(lib, "owner", bundle)
+        assert applied["status"] == "applied" and applied["capture_id"] == capture_id
+        corrected = [event for event in lib.pending_events("owner")
+                     if event["event"] == "reading.trace.corrected"]
+        assert len(corrected) == len(old)
