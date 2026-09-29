@@ -602,3 +602,31 @@ def test_legacy_worker_selected_session_becomes_expiring_affinity(tmp_path: Path
         assert scope["selected"] == 0 and scope["last_assigned_at"] is not None
         lib.db.execute("UPDATE session_scope SET last_assigned_at='2000-01-01T00:00:00+00:00'")
         assert lib._choose_session(("owner", "feishu", "librarian", "chat"), None) == (None, "unknown")
+
+
+def test_chapter_note_layout_uses_epub_order_without_page_grouping() -> None:
+    batch = {"id": "batch_fixture", "isbn": "9787208171411"}
+    def trace(identifier, page, printed, annotation=None):
+        return {"id": identifier, "revision": 1,
+                "created_at": "2026-09-28T12:00:00+00:00",
+                "location": {"page": {"label": str(page), "number": page},
+                             "bbox": [0, 10, 100, 20]},
+                "content": {"printed_text": {"text": printed},
+                            "annotation": {"text": annotation}},
+                "review": {"state": "none"},
+                "source": {"capture_id": identifier}}
+    later = trace("rt_later", 23, "下一章的句子。")
+    second = trace("rt_second", 39, "第二段的句子。")
+    first = trace("rt_first", 40, "第一段的句子。")
+    note = trace("rt_note", 39, None, "手写内容")
+    layout = ({8: "第一讲 什么是理论？", 9: "第二讲 帕森斯"},
+              {"rt_later": (8, 10), "rt_first": (9, 20),
+               "rt_note": (9, 20.5), "rt_second": (9, 30)})
+    rendered = _render_batch_note(batch, "社会理论二十讲",
+                                  [second, later, note, first], created="2026-09-28",
+                                  presentation_version=11, chapter_layout=layout)
+    assert rendered.index("## 第一讲") < rendered.index("## 第二讲")
+    assert rendered.index("第一段的句子") < rendered.index("手写内容") < rendered.index("第二段的句子")
+    assert "## 第 39 页" not in rendered
+    assert "> 📖 第 39 页" in rendered
+    assert rendered.count('data-librarian-trace=') == 4

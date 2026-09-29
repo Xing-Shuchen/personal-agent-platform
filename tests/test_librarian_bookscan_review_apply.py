@@ -10,6 +10,7 @@ from PIL import Image
 from agents.librarian.runtime.bookscan_adapter import adapt_report
 from agents.librarian.runtime.bookscan_review_apply import (apply_review,
                                                              prepare_review, review_context)
+from agents.librarian.runtime.handwriting_review import review_handwriting
 from agents.librarian.runtime.pipeline import ExtractionOutput, process_capture
 from agents.librarian.runtime.store import Library, LibrarianError
 
@@ -176,3 +177,59 @@ def test_review_reconciliation_event_failure_keeps_old_traces_and_retries(tmp_pa
         corrected = [event for event in lib.pending_events("owner")
                      if event["event"] == "reading.trace.corrected"]
         assert len(corrected) == len(old)
+
+
+def _note_trace(lib: Library) -> dict:
+    return next(json.loads(row[0]) for row in lib.db.execute(
+        "SELECT body FROM records WHERE owner_id='owner' AND model='ReadingTrace' "
+        "AND current=1") if "margin_note" in json.loads(row[0])["trace_types"])
+
+
+def test_handwriting_only_confirmation_preserves_printed_traces(tmp_path):
+    with Library(tmp_path) as lib:
+        _setup(lib)
+        note = _note_trace(lib)
+        printed_before = {json.loads(row[0])["id"]: json.loads(row[0])["revision"]
+                          for row in lib.db.execute(
+                              "SELECT body FROM records WHERE model='ReadingTrace' AND current=1")
+                          if "margin_note" not in json.loads(row[0])["trace_types"]}
+        decision = {"trace_id": note["id"], "expected_revision": 1,
+                    "decision": "accepted", "text": "人工核对的手写内容"}
+        assert review_handwriting(lib, "owner", decision)["status"] == "applied"
+        confirmed = lib.get("owner", "ReadingTrace", note["id"])
+        assert confirmed["revision"] == 2 and confirmed["review"]["state"] == "resolved"
+        assert confirmed["content"]["annotation"] == {
+            "text": "人工核对的手写内容", "confidence": None, "basis": "user_statement"}
+        assert review_handwriting(lib, "owner", decision)["status"] == "already_applied"
+        edited = review_handwriting(lib, "owner", {**decision, "expected_revision": 2,
+                                                   "text": "再校正的手写内容"})
+        assert edited["revision"] == 3
+        printed_after = {json.loads(row[0])["id"]: json.loads(row[0])["revision"]
+                         for row in lib.db.execute(
+                             "SELECT body FROM records WHERE model='ReadingTrace' AND current=1")
+                         if "margin_note" not in json.loads(row[0])["trace_types"]}
+        assert printed_after == printed_before
+
+
+def test_handwriting_only_rejection_removes_note_without_touching_printed_marks(tmp_path):
+    with Library(tmp_path) as lib:
+        _setup(lib)
+        note = _note_trace(lib)
+        decision = {"trace_id": note["id"], "expected_revision": 1,
+                    "decision": "rejected", "text": ""}
+        review_handwriting(lib, "owner", decision)
+        rejected = lib.get("owner", "ReadingTrace", note["id"])
+        assert rejected["status"] == "superseded"
+        assert rejected["review"]["state"] == "resolved"
+        assert review_handwriting(lib, "owner", decision)["status"] == "already_applied"
+        with pytest.raises(LibrarianError) as conflict:
+            review_handwriting(lib, "owner", {**decision, "decision": "accepted", "text": "反悔"})
+        assert conflict.value.code == "REVISION_CONFLICT"
+        active = [json.loads(row[0]) for row in lib.db.execute(
+            "SELECT body FROM records WHERE model='ReadingTrace' AND current=1")
+                  if json.loads(row[0])["status"] == "active"]
+        assert len(active) == 2 and all("margin_note" not in row["trace_types"] for row in active)
+        restored = review_handwriting(lib, "owner", {"trace_id": note["id"],
+            "expected_revision": 2, "decision": "accepted", "text": "重新确认的手写笔记"})
+        assert restored["revision"] == 3
+        assert lib.get("owner", "ReadingTrace", note["id"])["status"] == "active"

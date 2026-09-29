@@ -2,6 +2,16 @@
 
 ## Current update — 2026-09-29
 
+Latest scope change: printed underline text is accepted with its current EPUB
+punctuation expansion. The private review site now offers a handwriting-only
+page with 15 note crops and versioned confirm/edit/reject actions; actual user
+decisions are deferred to formal use. The production Vault note is grouped by
+EPUB chapter and ordered by matched text offset, with page numbers shown only
+as source locators. The current book renders under its second chapter, with
+73 hidden trace anchors and no embedded photos or page-group headings. Broad
+regression checks now pass 516 Python tests, 16 plugin tests and the offline
+contracts. See the audit §14 for exact evidence and remaining gates.
+
 The older first-book counts and RapidOCR path below describe the 2026-09-28
 state, not the current runtime. The user authorized clearing all old physical
 image-derived results and replacing that path with Bookscan. The 27 retained

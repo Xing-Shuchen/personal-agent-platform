@@ -14,6 +14,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlsplit
 
 from .bookscan_review_apply import MAX_BUNDLE_BYTES, apply_review, review_context
+from .handwriting_review import review_handwriting
 from .review_index import build_index
 from .store import Library, LibrarianError
 from .worker import run as run_worker
@@ -103,7 +104,8 @@ def create_server(root: Path, owner: str, vault: Path | None,
                 self._json(HTTPStatus.FORBIDDEN, {"code": "FORBIDDEN",
                                                   "message": "review session required"})
                 return
-            if urlsplit(self.path).path != "/api/review":
+            route = urlsplit(self.path).path
+            if route not in {"/api/review", "/api/handwriting-review"}:
                 self._json(HTTPStatus.NOT_FOUND, {"code": "NOT_FOUND"})
                 return
             try:
@@ -119,7 +121,11 @@ def create_server(root: Path, owner: str, vault: Path | None,
                 bundle = json.loads(self.rfile.read(size))
                 with apply_lock:
                     with Library(root) as lib:
-                        result = apply_review(lib, owner, bundle)
+                        result = (review_handwriting(lib, owner, bundle)
+                                  if route == "/api/handwriting-review" else
+                                  apply_review(lib, owner, bundle))
+                    if route == "/api/handwriting-review":
+                        build_index(root, owner)
                     try:
                         worker = run_worker(root, vault, owner, physical_only=True)
                     except Exception:

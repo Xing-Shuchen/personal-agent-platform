@@ -21,6 +21,8 @@ from zoneinfo import ZoneInfo
 from zipfile import ZipFile
 from xml.etree import ElementTree as ET
 
+from bookscan.epub import EpubIndex
+
 from .bookscan_adapter import bookscan_extractor, processor_fingerprint
 from .review_index import build_index as build_review_index
 from .gateway_review_finalize import auto_reconcile_fully_reviewed
@@ -394,10 +396,55 @@ def _render_batch_note_legacy(batch: dict, title: str, traces: list[dict], *,
     return "\n".join(lines).rstrip() + "\n\n" + _batch_marker(batch["id"]) + "\n"
 
 
+def _chapter_layout(root: Path, isbn: str, traces: list[dict]) -> tuple[dict[int, str], dict[str, tuple[int, float]]]:
+    """Locate quotations in EPUB text; place handwritten notes near page anchors."""
+    path = root / "source-books" / f"{isbn}.epub"
+    if not path.is_file():
+        return {}, {}
+    index = EpubIndex(path)
+    titles = {chapter["spine_index"]: next(
+        (line.strip() for line in chapter["text"].splitlines() if line.strip()),
+        "章节待核对") for chapter in index.chapters}
+    positions: dict[str, tuple[int, float]] = {}
+    anchored = []
+    for trace in traces:
+        printed = trace["content"]["printed_text"]["text"]
+        if not printed:
+            continue
+        candidates = index.candidates(printed, limit=5)
+        if not candidates or candidates[0]["similarity"] * candidates[0]["query_coverage"] < .55:
+            continue
+        candidate = candidates[0]
+        key = (candidate["spine_index"], float(candidate["start"]))
+        positions[trace["id"]] = key
+        anchored.append(trace)
+    for trace in traces:
+        if trace["id"] in positions or not anchored:
+            continue
+        page = (trace["location"]["page"] or {}).get("number")
+        region = trace["location"]["page_region_id"]
+        y = trace["location"]["bbox"][1]
+        same_page = [item for item in anchored if
+                     item["source"]["capture_id"] == trace["source"]["capture_id"] and
+                     item["location"]["page_region_id"] == region]
+        if not same_page and page is not None:
+            same_page = [item for item in anchored if
+                         (item["location"]["page"] or {}).get("number") == page]
+        choices = same_page or anchored
+        nearest = min(choices, key=lambda item: (
+            0 if item in same_page else abs(
+                ((item["location"]["page"] or {}).get("number") or page or 0) - (page or 0)),
+            abs(item["location"]["bbox"][1] - y)))
+        spine, start = positions[nearest["id"]]
+        positions[trace["id"]] = (spine, start + (-.5 if y < nearest["location"]["bbox"][1] else .5))
+    return titles, positions
+
+
 def _render_batch_note(batch: dict, title: str, traces: list[dict], *,
                        created: str, spatial_order: bool = True,
                        presentation_version: int = 10,
-                       received_at_by_capture: dict[str, str] | None = None) -> str:
+                       received_at_by_capture: dict[str, str] | None = None,
+                       chapter_layout: tuple[dict[int, str], dict[str, tuple[int, float]]] | None = None) -> str:
     if not traces:
         raise LibrarianError("NO_MARKS", "no reading marks found in batch")
     traces = sorted(traces, key=lambda item: (
@@ -433,6 +480,42 @@ def _render_batch_note(batch: dict, title: str, traces: list[dict], *,
             "> - 出版日期： " + bibliography.get("publication_date", ""),
             "> - 原作名： " + bibliography.get("original_title", ""),
             "> - 书目来源： [ISBN 书目](" + bibliography["source_url"] + ")"]
+
+    if presentation_version >= 11:
+        chapter_titles, positions = chapter_layout or ({}, {})
+        ordered = sorted(traces, key=lambda trace: (
+            positions.get(trace["id"], (10**9, float("inf"))),
+            (trace["location"]["page"] or {}).get("number") or 10**9,
+            trace["location"]["bbox"][1], trace["id"]))
+        lines.extend(["# 划线与笔记", ""])
+        last_chapter = None
+        for trace in ordered:
+            spine = positions.get(trace["id"], (None, 0))[0]
+            heading = chapter_titles.get(spine, "章节待核对")
+            if heading != last_chapter:
+                lines.extend([f"## {heading}", ""])
+                last_chapter = heading
+            printed = trace["content"]["printed_text"]["text"]
+            annotation = trace["content"]["annotation"]["text"]
+            if printed:
+                lines.append("> 📌 " + re.sub(r"\s*\n\s*", "", printed.strip()))
+            if annotation:
+                suffix = "" if trace["review"]["state"] == "resolved" else "（手写待核对）"
+                lines.append("> 💭 " + annotation.replace("\n", " / ") + suffix)
+            if not printed and not annotation:
+                lines.append("> ⚠️ 检测到标记，文字尚未辨认")
+            page = trace["location"]["page"]
+            if page:
+                lines.append(f"> 📖 第 {page['label']} 页")
+            source_time = (received_at_by_capture or {}).get(trace["source"]["capture_id"])
+            try:
+                stamp = datetime.fromisoformat(source_time).astimezone(
+                    ZoneInfo("Asia/Shanghai")).strftime("%Y-%m-%d %H:%M:%S")
+            except (TypeError, ValueError):
+                stamp = "未知"
+            lines.extend([f"> ⏱ 收图：{stamp}", _trace_marker(trace["id"], trace["revision"]), ""])
+        lines.append(_batch_marker(batch["id"]))
+        return "\n".join(lines).rstrip() + "\n"
 
     def render_section(heading: str, entries: list[dict]) -> None:
         if not entries:
@@ -625,6 +708,10 @@ def _consolidate_generated_note(lib: Library, owner: str, title: str,
                                        presentation_version=version,
                                        received_at_by_capture=received).strip()
                     for version in (1, 2, 3, 4, 5, 6, 7, 8, 9, 10)]
+        variants.append(_render_batch_note(
+            batch, title, traces, created=stamp.group(1), presentation_version=11,
+            received_at_by_capture=received,
+            chapter_layout=_chapter_layout(lib.root, isbn, traces)).strip())
         variants.extend([_render_batch_note_legacy(batch, title, traces,
                                                    created=stamp.group(1)).strip(),
                          _render_batch_note_legacy(batch, title, traces,
@@ -645,6 +732,8 @@ def _consolidate_generated_note(lib: Library, owner: str, title: str,
     rendered = _render_batch_note({"id": aggregate_id, "isbn": isbn,
                                    "bibliography": _isbn_metadata(lib.root, isbn)},
                                   title, current, created=date,
+                                  presentation_version=11,
+                                  chapter_layout=_chapter_layout(lib.root, isbn, current),
                                   received_at_by_capture=_capture_received_times(
                                       lib, owner,
                                       {trace["source"]["capture_id"] for trace in current}))
