@@ -791,3 +791,19 @@ OpenClaw 插件当前注册七个 `librarian_*` 工具、一个 `message_receive
 完整 Python 回归 **530 passed**（4 条弃用警告），插件 **21/21**。同一图片源消息改变会话范围返回 `IDEMPOTENCY_CONFLICT`。这些是代码与隔离库证据；Gateway 加载与真实入站须另行记录。
 
 `7ce5e6d` 后重启 Gateway：systemd 为 active，启动日志列出 `pap-librarian-intake`，飞书 `librarian` WebSocket 已启动。正式库只读再次检查仍只有旧 `agent:` 范围的一个明确选择，23 个图片 batch 的范围为 22 个 `user:`、1 个其他，73 条纸书活跃 trace 未变；修复尚未遇到新的真实入站。随后复核发现，同一消息换会话范围且同时改变 `source_item_id` 时，原检查可能因仅按附件项查重而漏判；`ae662fc` 改为按消息级来源查询，隔离反例用改变后的附件项 ID 验证返回 `IDEMPOTENCY_CONFLICT`（桥接专项 8/8）。该提交后 Gateway 再次重启为 active，`librarian` 飞书 WebSocket 已启动；真实重放仍未发生。
+
+## 30. R2 元数据字段来源与当前正式数据（2026-09-29）
+
+下表按当前写入代码追溯来源，区别程序能验证的链与照片/上游事实。早期 §9 的 4 条未知页码、83 条活跃纸书 trace 是清除旧派生结果前的历史快照；本节为 BookScan 重建后的只读统计。
+
+| 字段 | 当前生成与修订入口 | 程序约束及事实边界 |
+|---|---|---|
+| 纸书页码及 `basis/confidence` | `bookscan_adapter.adapt_report` 只把当前照片 BookScan 报告的 observed 页码写为 `vision`；未观察到则 unknown。`pipeline.build_resolution` 保存页区，`resolve_capture` 以新 revision 修订；trace 从指定 resolution 复制页码/置信度 | `store._validate_record_links` 核对 trace 与页区一致，不能证明 OCR 看对页眉。73 条活跃纸书 trace 中 54 条有页码、19 条 unknown（涉及 7 张 capture，其中划线 16 条、手写 3 条）；全部 `page_number.confidence=null`。这 19 条的 `context_state=resolved` 仅表示书籍上下文已定，页码仍未知；不因邻图补号 |
+| 书籍/会话身份及 basis | 捕获时的可信提交上下文、`capture_context` 的明确选中或时限内 affinity；`pipeline.build_resolution` 校验 Session→Copy→Edition→Work；`resolve_capture` 可由受信用户确认或版本化指纹补齐 | 引用链与 owner 可程序核对；身份来自用户/ISBN/指纹的现实正确性须看来源。历史图片与晚近 `/lib read` 范围差异见 §29，旧 trace 不静默重绑 |
+| 印刷引文及 `basis/confidence` | BookScan OCR 行生成原文；EPUB 匹配后使用用户接受的扩展到标点正文，`basis=source_payload`，分数为可用 OCR 分数与 EPUB 相似度的较小值；`normalize` 继承区域 basis 和分数；`correct_trace` 的用户更正写 `user_statement` 新 revision | 73 条中 53 条 `source_payload`、5 条 `vision`、15 条无印刷文本。`basis` 指明来源，不表示墨线逐字覆盖 EPUB 全句；该视觉终点本轮按用户决定跳过 |
+| 手写内容及 `basis/confidence` | BookScan annotation OCR 形成 vision 候选；`review_handwriting` 或 `correct_trace` 在用户提交后形成 `user_statement` 修订，误检可退出活跃 | 当前 15 条有 vision 手写文本，58 条 annotation unknown，尚无正式用户确认。图像字形真值只由网页人工复核，不能以 OCR 分数证明 |
+| `marked_at` 与作者归属 | 纸书 `normalize` 默认时间 unknown、`mark_author=unknown`；Koodo 同样 unknown；WeRead 有有效 `createTime` 时为 `source_payload`，无效则 unknown | 当前活跃纸书 73/73 时间与作者均 unknown；Koodo 118/118 时间 unknown；WeRead 4/4 时间来自上游。旧书批注不能据图片或账号默认归为用户本人 |
+| 位置、locator、bbox、provenance | 纸书坐标由 BookScan 以 EXIF 转正原图尺寸归一化，再由 `normalize` 合并 mark 与关联文字 bbox；原图、转正派生图和 raw 报告形成 provenance。Koodo locator 取原始 CFI，WeRead 取 chapter/range 上游字段，均保留 raw payload 引用 | 页内 bbox、检测 ID、asset hash 可程序检查；53 条 EPUB 扩文对应的 bbox 仍是照片 mark/文字区域，不宣称覆盖扩展全文。当前 73 条纸书均有 bbox 与 3 个 provenance asset，118 条 Koodo/4 条 WeRead 均有 source locator |
+| 配置与版本 | `process_capture` 存 `extractor_version`、`normalizer_version`；仅启用符号词表时保存不可变 `vocabulary_config_ref` 及版本，重提取/对账按摘要比较 | 正式库当前 81 个 ProcessingRun 无启用词表的配置引用；73 条纸书 trace 的 `vocabulary_version` 均为空。版本链存在不等于可还原外部 OCR 模型权重与服务环境 |
+
+这些计数由 `.venv/bin/python docs/audits/librarian_metadata_scope.py var/librarian/librarian.sqlite` 对正式 SQLite 只读重算；脚本只输出聚合数，不输出阅读文字或个人 ID。它们证明字段分布与写入代码的可追溯关系，不能替代照片局部核对、15 条手写真值、EPUB 与纸本异文判断或真实飞书投送。重建前已清除的旧图像处理结果不在当前库，本节不推断其丢失记录的完整修订史。
