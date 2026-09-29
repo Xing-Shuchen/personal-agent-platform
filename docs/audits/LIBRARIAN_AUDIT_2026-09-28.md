@@ -12,11 +12,11 @@
 |---|---|---|
 | 首书纸书数据与笔记 | BookScan 重建了 27 张保留照片对应的 73 条活跃纸书 trace；Vault 按 EPUB 章节与正文顺序呈现，原图不进入 Vault | §§10、14、17；私有原图与派生数据恢复测试 |
 | 手写复核工具 | 15 条手写裁片网页、版本化确认/校正/误检排除及 Vault 刷新已交付；本机 `127.0.0.1:8765` 在监听，带 cookie 的登录跳转返回 HTTP 200 | §§14、17；本轮只读现库为 73 条活跃纸书 trace、15 条 margin note、0 条用户确认手写，人工逐条判断留正式运行 |
-| 本地约束与回归 | R1 修订事件回滚、R3 候选状态与当前来源约束及旧可选字段兼容、R4 入站/worker 启动失败查询及网页投影失败回报已补；最近完整 Python 回归 526 passed，插件 19/19 | §§19–24；`ab27186`、`634a68e`、`cf2b4f7` |
+| 本地约束与回归 | R1 修订事件回滚、R3 候选状态与当前来源约束及旧可选字段兼容、R4 入站/worker 启动失败查询及网页投影失败回报已补；最近完整 Python 回归 526 passed，插件 20/20 | §§19–28；`ab27186`、`634a68e`、`cf2b4f7` |
 | 用户明确延期 | 普通新图旁注/角括号发现和严格墨线与 EPUB 扩句边界本轮跳过；§38.1 四图与底稿暂缓 | §14–15、spec 末尾首书决策；不记为能力通过 |
 | 正式运行核验 | 真人手写判断、真实飞书错误/附件重放/平台投送与客户端显示、数字上游变化和慢源恢复留待现场 | §§9、15、19；当前 Gateway active，插件上轮检查 loaded，无上述新现场结论 |
 
-上表只标识已交付的功能与待运行证据，不把本地测试升级为 `release-v0.8` 全部 AC 通过。第 1–10 节出现的旧 RapidOCR 路径、旧 trace 数量和旧待审 run 均是历史记录；现行入口及数据以 §§10–27 的较新状态为准，原始 F01–F08 的当前判定见 §25，R3 条款映射见 §26，R1 写入口清单见 §27。
+上表只标识已交付的功能与待运行证据，不把本地测试升级为 `release-v0.8` 全部 AC 通过。第 1–10 节出现的旧 RapidOCR 路径、旧 trace 数量和旧待审 run 均是历史记录；现行入口及数据以 §§10–28 的较新状态为准，原始 F01–F08 的当前判定见 §25，R3 条款映射见 §26，R1 写入口清单见 §27，R4 Gateway 入口清单见 §28。
 
 ## 1. 审计边界与方法
 
@@ -502,7 +502,7 @@ B 的后续清单：现有 11 张旧版多页区照片与笔记时间来源已�
 | R1 · 领域引用与事务（C，F07/F08） | 按规范 §30 逐项列出 `store.py`、`pipeline.py`、知识晋升、review/finalize、数字 adapter 的写入口；检查 owner 链、引用存在性、revision/current 指针、detection/observation/resolution 关联、事件与 trace 同事务、原始 evidence 只增不改。用旧库迁移样本复核新约束 | 每条不变量对应执行位置和正反例；跨 owner、悬空引用、旧 revision、知识依赖及人工修正的失败均无部分提交；注入索引故障后从已存 trace 恢复，extractor 调用次数不增加 | §27 已清点 11 组主要写入口与具名测试，§26 对应 §30 十条不变量；§17 完整私有数据目录迁移副本复核通过，当前 195/195 个 trace 版本有事件。仍缺旧候选/旧迁移库样本、全部入口逐项故障注入及真实进程崩溃；早期 800/800 与 290/290 数字属于开发重建前历史样本 |
 | R2 · 历史元数据与证据边界（B，F02/F03/F04） | 只读枚举活跃及受影响历史 trace，将页码、身份、时间、作者、basis、confidence、locator、bbox、provenance、配置版本逐字段追溯到本图、原始返回、EPUB、用户决议或规则；重点核对早期 OCR/EPUB 扩文、自动会话及 bbox 对应的可见文字 | 受影响记录清单与字段来源表；照片局部、raw、EPUB 对齐和旧/新 revision 对照；无照片证据的文字不进入照片原文，未知字段保持 unknown；经确认的更正走领域修订并保持历史可读 | 11 张页码和笔记时间已版本化修订；83 条活跃纸书 trace 的 146 段印刷区、305 个 detection 引用有首轮只读核对。678 个纸书历史版本的页码/身份与其指定 resolution 一致，旧邻图页码的 3 个逻辑 trace 已退出活跃集。历史 677 个 OCR 印刷区中 11 个旧 v2/v3 跨行扩文，涉及 22 个历史 trace 版本、0 个当前活跃 trace。仍须查墨线覆盖、OCR 真值及其余字段；第 29 页 4 条 unknown 和三张待审扫描依赖 A |
 | R3 · Schema 与语义校验（C） | 对规范正文 MUST 和 `schemas/` 的字段、枚举、null/unknown、状态组合逐项比对；把结构校验、跨对象事务校验、外部证据真实性分配到明确执行层；检查旧版对象读取和迁移 | 条款→字段→校验函数/事务→测试矩阵；合法 JSON 但错误 owner、虚假页码 basis、单行 bbox 对应整段文字、失效 revision 等反例由应用层拒绝或进入待审；无法程序验证的真实性标明人工证据 | §26 已将 §30 十条必须落实的不变量映射到最终写入层和 28 个具名测试；四类字段 unknown/value/confidence、候选状态与来源已补。每个字段/状态组合的穷尽反例、旧迁移库和外部事实仍未由此证明 |
-| R4 · Gateway 与投送边界（C/D，F05/F06） | 清点图片、session、search、evidence、review/decision/finalize、digital sync 的每个入口；核对受信身份、account/chat→owner、source→owner、幂等键及 payload 冲突、`ErrorResult`、重启恢复；把“已排队”“平台发送成功”“用户端已显示”分成独立状态 | 插件替身和真实消息分别留证；双 owner/account/chat、重复消息与变更附件、坏批次、慢上游、投送失败重试均有正反例；错误可查询且不会伪报送达或阻塞其他照片 | `3a47e89` 补齐七个 Python bridge 的错误字段，`07f99f3` 将其传过插件，`55d61e7` 修复裁片排队后文件过早删除，`0fd6a2b` 补 hook 错误持久查询，物理/数字 worker 已分锁；只证明本地与指定真实入口。跨账户、真实重复/变更附件、平台投送及慢源恢复留正式运行核验 |
+| R4 · Gateway 与投送边界（C/D，F05/F06） | 清点图片、session、search、evidence、review/decision/finalize、digital sync 的每个入口；核对受信身份、account/chat→owner、source→owner、幂等键及 payload 冲突、`ErrorResult`、重启恢复；把“已排队”“平台发送成功”“用户端已显示”分成独立状态 | 插件替身和真实消息分别留证；双 owner/account/chat、重复消息与变更附件、坏批次、慢上游、投送失败重试均有正反例；错误可查询且不会伪报送达或阻塞其他照片 | §28 已清点 hook、七个工具与 worker 的身份/结果边界；桥接错误契约、媒体寿命、入站及启动故障查询、独立 worker 锁均有本地反例。跨真实账号、真实重复/变更附件、平台投送及慢源恢复留正式运行核验 |
 
 实施顺序：R2 的只读清单与 R1/R3/R4 的入口清单先行；发现违反不变量时先在隔离库复现并修复写入口，再经正式 worker 或受信工具形成版本化结果。A 的三张扫描继续等待用户逐项审核；不能用专项复核代替用户对画线和手写文字的判断。R1–R4 完成后，才在 E 中更新 AC-01–26、handoff 与模块结论。
 
@@ -761,3 +761,21 @@ Gateway 在提交 `c49cfa8` 后重启，服务 active；运行时插件 `loaded/
 | `ingest_export`、`sync_koodo_sqlite`、`sync_weread_book`、`bind_digital_source` | 来源 owner 绑定；数字 trace 创建/修订/删除与事件、导出幂等键在来源事务内；索引事后投影 | `test_trace_event_failure_rolls_back_digital_export_and_retries`、`test_native_koodo_sync_replays_updates_deletes_and_reconciles_user_correction`、`test_weread_native_replay_update_reconcile_and_delete`、双 owner 来源拒绝测试 | 真实上游增改删、慢源/断网与双凭证现场仍待验 |
 
 本清单与 §26 的不变量表互补：§26 说明最终写入层应拒绝什么，本节说明哪些应用入口经过了何种事务测试。正式库当前 195/195 个 ReadingTrace 历史版本各有同 owner/revision 的 trace 事件；该快照只证明已保留记录，不证明未发生过的崩溃路径。当前实际部署的纸书/数字 worker 启动记录见 §24。
+
+## 28. R4 Gateway 入口与投送状态清单（2026-09-29）
+
+OpenClaw 插件当前注册七个 `librarian_*` 工具、一个 `message_received` hook 和一个 worker 服务。所有工具 factory 要求 `agentId=librarian`、受信发送者、channel/account 与配置的精确 owner 映射；session、decision、finalize 三个写工具还要求十分钟内同一真实入站消息的 sessionKey/source 绑定。Python 桥接的五字段脱敏 `ErrorResult` 经插件保留；各入口的业务结果与消息平台投送是不同层级。
+
+| 入口 | 受信身份与实际效果 | 当前证据及结果边界 |
+|---|---|---|
+| `message_received` → `gateway_bridge` | 映射 sender/account/channel、消息 ID、staged 图片与会话 scope 后按源身份幂等接受；`conversationId` 缺失时取 `sessionKey` | 插件 staged 顺序、未映射拒绝、无 conversationId 回退及桥接重试测试；正式图片接收有历史样本。`accepted`/失败可按 owner 查；不代表 BookScan 完成。两字段在同一消息重放中改变的真实情形待验 |
+| `librarian_session` → `gateway_session` | 绑定当前真实入站 source/actor/owner，写 start/progress/pause/resume/close/status；回执不由模型自报 owner | 历史飞书 `/lib read` 与 p.39 进度真实调用、插件绑定测试；其余状态与长间隔现场未全验 |
+| `librarian_search` → `gateway_search` | 工具 factory 限定 owner，按书/页/文字查统一 SearchHit；只读 | 本地跨 owner 拒绝与正式三来源直接检索；BookScan 重建后的真实飞书问答仍待验 |
+| `librarian_evidence` → `gateway_evidence` | owner 内当前 trace/待审候选/缺口裁片，经受控媒体目录向绑定对话送图；不写 Vault | 本地转向/路径/媒体寿命测试；历史一次用户确认收到 12 张。工具结果仅 `queued`，不等于平台消息 ID 或本次客户端显示 |
+| `librarian_source_book` → `gateway_source_book` | 只从 owner 书目解析当前 ISBN EPUB，经受控目录向绑定对话发送 | owner 范围、路径逃逸与排队测试；客户端实际接收仍未验，工具只报 `queued` |
+| `librarian_review` → `gateway_review` | owner 只读待对账、入站失败及 physical/digital 最近启动状态 | 真实飞书历史待审查询、本地双 owner 故障状态反例；`spawned` 只表示进程创建 |
+| `librarian_review_decision` → `gateway_review_decision` | 十分钟内当前入站绑定 actor/source，按当前 run 与 candidate ID 记 accept/reject，尚不入库 trace | 本地来源绑定、幂等与不提升 trace 测试；首书真人候选决定未由此替代 |
+| `librarian_review_finalize` → `gateway_review_finalize` | 同一绑定中要求完整候选决定、当前 run、旧 trace revisions 和 `replace_all_current=true`；经领域对账形成版本 | 画线/旁注混合审核本地成功与冲突反例；正式首书本轮只交手写网页，原扫描页全集真人判断延期 |
+| `pap-librarian-worker` 定时/图片触发 | 单 owner 配置启动 physical/digital 独立子进程，启动结果 owner 可查 | Gateway 重启后两种模式均见 `spawned`；批次/数字实际结果另看 `batch-status` 和同步状态。慢源与进程崩溃现场未验 |
+
+本机手写网页另用 localhost token/cookie/Origin 与固定 owner 参数，不属于上述 Gateway 工具；其版本化提交、投影失败状态和人工延期见 §§14、23。R4 仍须把“工具排队”“平台接收”“客户端显示”分开取证；没有平台消息 ID 的 `queued` 不能作为交付成功。跨真实账号、真实附件变更和慢上游仍留正式运行。插件新增无 `conversationId` 图片回退测试后 **20/20** 通过；本轮没有为这份入口清单重跑 Python 全套，最近一次完整结果仍为 526 passed。

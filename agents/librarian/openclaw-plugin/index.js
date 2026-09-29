@@ -545,7 +545,8 @@ export function librarianSessionTool(config, ctx, recent, bridge = runSessionBri
 
 export async function acceptMessage(config, event, ctx, bridge = runBridge) {
   const ownerId = ownerFor(config, event, ctx);
-  if (!ownerId || event.mediaStagingPending || !event.messageId || !ctx.conversationId ||
+  const conversationId = ctx.conversationId ?? ctx.sessionKey;
+  if (!ownerId || event.mediaStagingPending || !event.messageId || !conversationId ||
       !Array.isArray(event.media)) return null;
   const attachments = [];
   let total = 0;
@@ -563,7 +564,7 @@ export async function acceptMessage(config, event, ctx, bridge = runBridge) {
   if (!attachments.length) return null;
   return bridge(config, { owner_id: ownerId, actor_id: event.senderId,
     source: { transport: ctx.channelId, account_id: ctx.accountId,
-      conversation_id: ctx.conversationId, source_event_id: event.messageId },
+      conversation_id: conversationId, source_event_id: event.messageId },
     attachments });
 }
 

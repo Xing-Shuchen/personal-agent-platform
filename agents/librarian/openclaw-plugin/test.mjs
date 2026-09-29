@@ -158,6 +158,31 @@ test("staged images use trusted sender mapping and source order", async () => {
   }
 });
 
+test("staged image identity uses stable session key when conversation ID is absent", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "librarian-sessionkey-image-"));
+  try {
+    const file = join(dir, "photo.png");
+    await writeFile(file, Buffer.from("synthetic image bytes"));
+    const event = { senderId: "person", messageId: "msg-43",
+      media: [{ contentType: "image/png", path: file }] };
+    const context = { channelId: "telegram", accountId: "bot",
+      sessionKey: "agent:librarian:telegram:chat-1" };
+    const seen = [];
+    const bridge = async (_config, message) => {
+      seen.push(message);
+      return { capture_ids: ["capture_fixture"] };
+    };
+    assert.deepEqual(await acceptMessage(config, event, context, bridge),
+      { capture_ids: ["capture_fixture"] });
+    assert.deepEqual(await acceptMessage(config, event, context, bridge),
+      { capture_ids: ["capture_fixture"] });
+    assert.deepEqual(seen[0], seen[1]);
+    assert.equal(seen[0].source.conversation_id, context.sessionKey);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("unmapped or unstaged media is not ingested", async () => {
   const bridge = () => { throw new Error("bridge should not run"); };
   const event = { senderId: "stranger", messageId: "msg-1",

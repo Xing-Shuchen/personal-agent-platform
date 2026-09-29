@@ -582,6 +582,10 @@ Gateway 的纸书/数字 worker 启动结果另按 owner 与模式持久记录�
 `failed`，由同一个 owner 受限查询返回。`spawned` 只证明子进程创建成功；批次处理、
 索引和 Vault 的实际结果仍以各自运行状态为准。启动错误不得包含进程参数、密钥或
 私有路径，下一次同模式成功启动应覆盖旧启动失败。
+图片入站仍要求受信 sender/account/channel 映射、稳定消息 ID 和 staged 本地附件；
+会话 scope 优先取 Gateway 的 `conversationId`，该可选字段缺失时使用稳定的
+`sessionKey`。同一来源身份的重放交给持久幂等层；若网关对同一消息改变 scope，
+应返回冲突而不是暗中归入另一会话。
 
 ## 28. Event Model
 

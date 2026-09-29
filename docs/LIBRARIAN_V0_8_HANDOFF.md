@@ -57,6 +57,12 @@ Audit §27 now lists 11 application write-entry groups across catalog,
 session, capture, extraction, review, correction, knowledge and digital sync,
 with named transaction tests and the remaining migration/crash limits.
 
+Audit §28 inventories the Gateway image hook, seven Librarian tools and the
+worker service with their trusted identity and receipt semantics. Image intake
+now falls back to the authenticated sessionKey when the optional
+conversationId is absent; staged-media plugin tests pass 20/20. Platform
+delivery remains a distinct live check.
+
 Latest scope change: printed underline text is accepted with its current EPUB
 punctuation expansion. The private review site now offers a handwriting-only
 page with 15 note crops and versioned confirm/edit/reject actions; actual user
