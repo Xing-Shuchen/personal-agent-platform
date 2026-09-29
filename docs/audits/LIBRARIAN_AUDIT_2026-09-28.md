@@ -685,3 +685,5 @@ Gateway 已重启，`systemctl --user` 返回 active；运行时插件检查为 
 `create_candidate` 和批准入口原先检查来源 revision，但内部最终 `_put` 只要求该历史版本存在；结构合法的旧 trace revision 可以直接写成新的 pending 候选。现对 `pending/approved/promoted` 候选在最终写入时核对每个来源为同 owner、当前且 `active` 的 trace；`rejected/superseded` 保留合法历史引用，以免来源更正后抹去旧解释的审计链。隔离反例在 trace 从 revision 1 更正到 2 后尝试以 revision 1 直接新建 pending candidate，返回 `REVISION_CONFLICT` 且未留下记录；知识与 pipeline 专项 53/53、完整 Python 回归 **523 passed**（4 条弃用警告）。
 
 后续复核进一步处理已批准候选的来源更正：`supersede_pending_for_trace` 现将受影响的 `pending` **及** `approved` 候选转为 `superseded`，保留原 trace revision；只有仍 pending 的符号提示会为新 trace 生成新候选。知识 writer 与来源更正竞争时，候选从 approved revision 2 转为 superseded revision 3，晋升返回 `REVISION_CONFLICT` 且不发布 `reading.knowledge.promoted`。相关知识、pipeline、Koodo 与手写复核专项 **64/64** 通过；已 promoted 的外部知识仍保留旧来源，后续知识纠错不由本项自动完成。
+
+提交 `9244b81` 后完整 Python 回归 **523 passed**（4 条弃用警告）。本机手写复核服务已重启加载当前模块，受限登录跳转至 `/review/handwriting.html` 返回 HTTP 200、页面 15,778 字节；旧一次性登录 token 已失效，最新入口须使用本次重启输出的新链接。该检查只证明页面可访问，不替代用户提交手写判断。
