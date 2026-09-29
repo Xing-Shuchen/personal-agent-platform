@@ -792,6 +792,8 @@ OpenClaw 插件当前注册七个 `librarian_*` 工具、一个 `message_receive
 
 `7ce5e6d` 后重启 Gateway：systemd 为 active，启动日志列出 `pap-librarian-intake`，飞书 `librarian` WebSocket 已启动。正式库只读再次检查仍只有旧 `agent:` 范围的一个明确选择，23 个图片 batch 的范围为 22 个 `user:`、1 个其他，73 条纸书活跃 trace 未变；修复尚未遇到新的真实入站。随后复核发现，同一消息换会话范围且同时改变 `source_item_id` 时，原检查可能因仅按附件项查重而漏判；`ae662fc` 改为按消息级来源查询，隔离反例用改变后的附件项 ID 验证返回 `IDEMPOTENCY_CONFLICT`（桥接专项 8/8）。该提交后 Gateway 再次重启为 active，`librarian` 飞书 WebSocket 已启动；真实重放仍未发生。
 
+并发反例补证：隔离库用两个独立 `Library` 连接同时重放同一条带旧 `sessionKey` 选择的 canonical 图片入站，得到相同 capture 回执、1 个 `source_items` 来源项、1 个 canonical 明确选择及同一 `active_session` 捕获关联；同时重放同一页码报告，得到相同 session 回执、revision 只从 1 到 2、1 条 `gateway_session_receipts`。Gateway 桥接专项 **10/10**，离线契约验证仍为 77 定义、18 入口、42 正例、43 反例。事务使用 `BEGIN IMMEDIATE` 序列化写入；上述隔离反例不替代真实平台并发重发。
+
 ## 30. R2 元数据字段来源与当前正式数据（2026-09-29）
 
 下表按当前写入代码追溯来源，区别程序能验证的链与照片/上游事实。早期 §9 的 4 条未知页码、83 条活跃纸书 trace 是清除旧派生结果前的历史快照；本节为 BookScan 重建后的只读统计。

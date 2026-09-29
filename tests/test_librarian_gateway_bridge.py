@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+from concurrent.futures import ThreadPoolExecutor
 import io
 import json
 import subprocess
@@ -132,3 +133,25 @@ def test_gateway_bridge_rejects_same_source_when_conversation_scope_changes(tmp_
         with pytest.raises(LibrarianError) as error:
             accept_inbound(lib, replay)
         assert error.value.code == "IDEMPOTENCY_CONFLICT"
+
+
+def test_concurrent_image_replay_adopts_one_selected_session(tmp_path):
+    with Library(tmp_path) as lib:
+        session = lib.start_session("owner_a", scope=("telegram", "account_a", "agent:legacy"))
+    message = _message(_image())
+    message["legacy_conversation_id"] = "agent:legacy"
+
+    def ingest() -> dict:
+        with Library(tmp_path) as lib:
+            return accept_inbound(lib, message)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        receipts = list(pool.map(lambda _: ingest(), range(2)))
+    assert receipts[0] == receipts[1]
+    with Library(tmp_path) as lib:
+        assert lib.db.execute("SELECT COUNT(*) FROM source_items").fetchone()[0] == 1
+        context = lib.db.execute("SELECT session_id,basis FROM capture_context").fetchone()
+        assert tuple(context) == (session["id"], "active_session")
+        assert lib.db.execute(
+            "SELECT COUNT(*) FROM session_scope WHERE owner_id=? AND conversation_id=? "
+            "AND selected=1", ("owner_a", "chat_a")).fetchone()[0] == 1

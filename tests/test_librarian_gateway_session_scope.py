@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
+
 import pytest
 
 from agents.librarian.runtime.gateway_session import session_inbound
@@ -36,3 +38,27 @@ def test_legacy_selection_does_not_override_canonical_selection(tmp_path):
         message = _message("chat_a", "new-event")
         message["legacy_conversation_id"] = "agent:legacy"
         assert session_inbound(lib, message)["session_id"] == canonical["id"]
+
+
+def test_concurrent_canonical_progress_replay_adopts_once(tmp_path):
+    with Library(tmp_path) as lib:
+        session = lib.start_session("owner_a", scope=("telegram", "account_a", "agent:legacy"))
+    message = _message("chat_a", "progress-event")
+    message.update(action="progress", page=39, legacy_conversation_id="agent:legacy")
+
+    def report() -> dict:
+        with Library(tmp_path) as lib:
+            return session_inbound(lib, message)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(lambda _: report(), range(2)))
+    assert results[0] == results[1]
+    assert results[0]["revision"] == 2
+    with Library(tmp_path) as lib:
+        current = lib.get("owner_a", "ReadingSession", session["id"])
+        assert current["progress"]["end_page"]["number"] == 39
+        assert current["revision"] == 2
+        assert lib.db.execute("SELECT COUNT(*) FROM gateway_session_receipts").fetchone()[0] == 1
+        assert lib.db.execute(
+            "SELECT COUNT(*) FROM session_scope WHERE owner_id=? AND conversation_id=? "
+            "AND selected=1", ("owner_a", "chat_a")).fetchone()[0] == 1
