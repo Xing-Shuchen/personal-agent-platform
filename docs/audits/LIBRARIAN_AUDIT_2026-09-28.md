@@ -424,7 +424,9 @@ R1 目录与会话上下文追加检查：`register`、`start_session` 等公开
 
 R1/AC-01 并发摄取幂等修复：两个独立 Library 连接在首次查询后同时接受同一来源消息、附件字节和幂等键，旧代码让先提交者返回 `accepted`，后到者因 `source_items`/`idempotency` 唯一约束得到 `IDEMPOTENCY_CONFLICT`，违反同一命令重试返回同一凭据的要求。`d029cc1` 在唯一约束竞争回滚后重查已提交命令；仅当业务指纹完全相同且原图对象仍可读取时返回胜出者 receipt。并发隔离测试得到相同 `batch_id`，只生成一个 capture、一个幂等记录和一条接收事件；同一来源身份改用不同幂等键仍明确冲突。Python 139 项和契约校验通过。此为受控并发反例，不替代真实 Gateway 重复消息、附件变化和进程重启的全链路验收。
 
-R1/§30 捕获链写入边界增补：`PageCapture`、`ProcessingRun`、`PageObservation` 此前经正常流程创建时关系一致，但最终 `_put` 未核对 capture 是否属于同 owner 的 batch、run 是否指向存在的 capture、observation 的 run/capture 是否一致。`686fb10` 增加这些写入校验；同 owner 下伪造未列入 batch 的 capture、悬空 run、跨 capture observation 和悬空 processing run 均在事务内拒绝，且不留下记录。正式库只读核对 23 个 CaptureBatch、27 个 PageCapture、241 个 ProcessingRun 版本、142 个 PageObservation 版本，无对应关系违例。Python Librarian 140 项及契约离线校验通过。此项不证明 observation 内检测 ID 与链接的语义校验在所有写入口均执行，也不关闭 R1 全项。
+R1/§30 捕获链写入边界增补：`PageCapture`、`ProcessingRun`、`PageObservation` 此前经正常流程创建时关系一致，但最终 `_put` 未核对 capture 是否属于同 owner 的 batch、run 是否指向存在的 capture、observation 的 run/capture 是否一致。`686fb10` 增加这些写入校验；同 owner 下伪造未列入 batch 的 capture、悬空 run、跨 capture observation 和悬空 processing run 均在事务内拒绝，且不留下记录。正式库只读核对 23 个 CaptureBatch、27 个 PageCapture、241 个 ProcessingRun 版本、142 个 PageObservation 版本，无对应关系违例。Python Librarian 140 项及契约离线校验通过。该次未覆盖 observation 内检测 ID 与链接的最终写入校验；后续验证见下一段，R1 全项仍开放。
+
+R1/§30 observation 内部约束增补：原 `_check_observation` 只由 `process_capture` 调用，直接走最终 `_put` 时可保存重复页区/检测 ID、失效文字链接或页区外 bbox。`4fb048c` 将该语义检查提为提取与存储共用的验证函数，保持提取失败归类为 `EXTRACTION_SCHEMA_INVALID`，存储边界拒绝为 `VALIDATION_FAILED`。同一 run 的伪造重复检测 ID、悬空文字链接在事务内被拒绝；正式库 142 个 PageObservation 历史版本只读校验为 0 违例。Python Librarian 140 项和契约离线校验通过。检查只证明几何包含与引用结构，不证明墨迹与引文的视觉真实性。
 
 ## 9. 现行实现计划（2026-09-29）
 
@@ -448,7 +450,7 @@ B 的后续清单：现有 11 张旧版多页区照片与笔记时间来源已�
 
 | 任务 / 对应批次 | 实施步骤 | 验证与交付物 | 当前边界 |
 |---|---|---|---|
-| R1 · 领域引用与事务（C，F07/F08） | 按规范 §30 逐项列出 `store.py`、`pipeline.py`、知识晋升、review/finalize、数字 adapter 的写入口；检查 owner 链、引用存在性、revision/current 指针、detection/observation/resolution 关联、事件与 trace 同事务、原始 evidence 只增不改。用旧库迁移样本复核新约束 | 每条不变量对应执行位置和正反例；跨 owner、悬空引用、旧 revision、知识依赖及人工修正的失败均无部分提交；注入索引故障后从已存 trace 恢复，extractor 调用次数不增加 | `48099cd`、`399c3f5`、`0880d5c`、`d029cc1`、`686fb10` 已修复并测试索引提交边界、部分领域引用、捕获链及并发摄取；正式库旧版本样本只读兼容。仍须完成 §30 全写入口清单、observation 内部语义校验、知识晋升及旧迁移链的故障反例 |
+| R1 · 领域引用与事务（C，F07/F08） | 按规范 §30 逐项列出 `store.py`、`pipeline.py`、知识晋升、review/finalize、数字 adapter 的写入口；检查 owner 链、引用存在性、revision/current 指针、detection/observation/resolution 关联、事件与 trace 同事务、原始 evidence 只增不改。用旧库迁移样本复核新约束 | 每条不变量对应执行位置和正反例；跨 owner、悬空引用、旧 revision、知识依赖及人工修正的失败均无部分提交；注入索引故障后从已存 trace 恢复，extractor 调用次数不增加 | `48099cd`、`399c3f5`、`0880d5c`、`d029cc1`、`686fb10`、`4fb048c` 已修复并测试索引提交边界、部分领域引用、捕获链、observation 内部关系及并发摄取；正式库旧版本样本只读兼容。仍须完成 §30 全写入口清单、知识晋升及旧迁移链的故障反例 |
 | R2 · 历史元数据与证据边界（B，F02/F03/F04） | 只读枚举活跃及受影响历史 trace，将页码、身份、时间、作者、basis、confidence、locator、bbox、provenance、配置版本逐字段追溯到本图、原始返回、EPUB、用户决议或规则；重点核对早期 OCR/EPUB 扩文、自动会话及 bbox 对应的可见文字 | 受影响记录清单与字段来源表；照片局部、raw、EPUB 对齐和旧/新 revision 对照；无照片证据的文字不进入照片原文，未知字段保持 unknown；经确认的更正走领域修订并保持历史可读 | 11 张页码和笔记时间已版本化修订；83 条活跃纸书 trace 的 146 段印刷区、305 个 detection 引用有首轮只读核对。仍须查历史 superseded 版本、墨线覆盖与 OCR 真值；第 29 页 4 条 unknown 和三张待审扫描依赖 A |
 | R3 · Schema 与语义校验（C） | 对规范正文 MUST 和 `schemas/` 的字段、枚举、null/unknown、状态组合逐项比对；把结构校验、跨对象事务校验、外部证据真实性分配到明确执行层；检查旧版对象读取和迁移 | 条款→字段→校验函数/事务→测试矩阵；合法 JSON 但错误 owner、虚假页码 basis、单行 bbox 对应整段文字、失效 revision 等反例由应用层拒绝或进入待审；无法程序验证的真实性标明人工证据 | 契约测试只证明覆盖的结构和语义样本；尚无逐字段完整结论 |
 | R4 · Gateway 与投送边界（C/D，F05/F06） | 清点图片、session、search、evidence、review/decision/finalize、digital sync 的每个入口；核对受信身份、account/chat→owner、source→owner、幂等键及 payload 冲突、`ErrorResult`、重启恢复；把“已排队”“平台发送成功”“用户端已显示”分成独立状态 | 插件替身和真实消息分别留证；双 owner/account/chat、重复消息与变更附件、坏批次、慢上游、投送失败重试均有正反例；错误可查询且不会伪报送达或阻塞其他照片 | `3a47e89` 补齐七个 Python bridge 的错误字段，`55d61e7` 修复裁片排队后文件过早删除，物理/数字 worker 已分锁；只证明本地与指定真实入口。仍须核对插件层错误表达、跨账户授权、真实重复/变更附件、平台投送及慢源恢复 |
