@@ -178,15 +178,22 @@ document.querySelectorAll('article[data-group-id]').forEach(article => {
 });
 saved.annotations ||= {};
 for (const field of notes) {
-  field.value = saved.annotations[field.dataset.annotationId] || '';
-  field.addEventListener('input', () => {
-    saved.annotations[field.dataset.annotationId] = field.value; persist();
-  });
+  const id = field.dataset.annotationId;
+  const decision = field.closest('article').querySelector('.annotation-decision');
+  const prior = saved.annotations[id];
+  field.value = typeof prior === 'string' ? prior : (prior?.text || '');
+  decision.value = typeof prior === 'object' ? (prior?.decision || '') : '';
+  const saveAnnotation = () => {
+    saved.annotations[id] = {decision:decision.value, text:field.value};
+    persist(); updateProgress();
+  };
+  field.addEventListener('input', saveAnnotation);
+  decision.addEventListener('change', saveAnnotation);
 }
 function updateProgress() {
   const completed = pages.filter(page => saved[page.dataset.pageId].complete).length;
   document.getElementById('review-progress').textContent =
-    `已核验 ${completed}/${pages.length} 页；完整真值仅在所有页面和行均确认后导出。`;
+    `已核验 ${completed}/${pages.length} 页；正式审核包需确认页面、行、标记组和批注。`;
 }
 updateProgress();
 document.getElementById('download-decisions').onclick = () =>
@@ -205,8 +212,34 @@ document.getElementById('import-decisions').addEventListener('change', async eve
 document.getElementById('download-annotations').onclick = () => {
   const rows = notes.map(field => ({annotation_id:field.dataset.annotationId,
     transcription:field.value,
-    review_status:field.value.trim()?'transcribed':'needs_review'}));
+    review_status:saved.annotations[field.dataset.annotationId]?.decision || 'needs_review'}));
   download('annotation-review.json', JSON.stringify(rows,null,2), 'application/json');
+};
+document.getElementById('download-reviewed').onclick = () => {
+  const missingPage = pages.find(page => {
+    const state = saved[page.dataset.pageId];
+    return !state.complete || [...page.querySelectorAll('.review-row[data-line-id]')]
+      .some(row => !state.lines[row.dataset.lineId]?.decision) ||
+      state.missing.some(item => !item.text?.trim()) ||
+      (state.pageNumber !== '' && (!Number.isInteger(Number(state.pageNumber)) ||
+                                   Number(state.pageNumber) <= 0));
+  });
+  const missingGroup = [...document.querySelectorAll('article[data-group-id]')]
+    .find(article => {
+      const verdict = saved.groups[article.dataset.groupId];
+      return !verdict?.decision ||
+        (['wrong_span','wrong_epub'].includes(verdict.decision) && !verdict.text?.trim());
+    });
+  const missingAnnotation = notes.find(field => {
+    const verdict = saved.annotations[field.dataset.annotationId];
+    return !verdict || typeof verdict !== 'object' || !verdict.decision ||
+      (verdict.decision === 'accepted' && !verdict.text?.trim());
+  });
+  if (missingPage || missingGroup || missingAnnotation) {
+    alert('仍有页面、标记组或手写批注未核验，或修订文字未填写。'); return;
+  }
+  download('reviewed-decisions.json', JSON.stringify({run_id:runId,
+    completed_at:new Date().toISOString(),pages:saved},null,2), 'application/json');
 };
 document.getElementById('download-truth').onclick = () => {
   const incomplete = pages.filter(page => {
@@ -398,7 +431,8 @@ def build_review(run: Path) -> None:
                          "<p>可在下方修订手写转录；浏览器会在本机保存草稿，"
                          "点击页面底部按钮下载核对结果。</p>")
         for note in by_annotation[page["page_id"]]:
-            parts.append(f"<article><h4>{_e(note['annotation_id'])}</h4>"
+            parts.append(f"<article data-annotation-id='{_e(note['annotation_id'])}'>"
+                         f"<h4>{_e(note['annotation_id'])}</h4>"
                          f"<a href='{_e(note['evidence_crop'])}'>"
                          f"<img src='{_e(note['evidence_crop'])}' alt='手写批注裁图'></a>"
                          "<table><tr><th>机器 OCR 猜测</th><td>" +
@@ -406,8 +440,12 @@ def build_review(run: Path) -> None:
                          "</td></tr><tr><th>人工转录</th><td><textarea "
                          f"data-annotation-id='{_e(note['annotation_id'])}' "
                          "rows='3' style='width:100%' placeholder='逐字核对后填写'></textarea>"
-                         "</td></tr><tr><th>状态</th><td>需人工核对或转录"
-                         "</td></tr></table></article>")
+                         "</td></tr><tr><th>判断</th><td><select class='annotation-decision'>"
+                         "<option value=''>待核验</option>"
+                         "<option value='accepted'>批注，转录正确</option>"
+                         "<option value='rejected'>误收，不是批注</option>"
+                         "<option value='ambiguous'>字迹无法判定</option>"
+                         "</select></td></tr></table></article>")
         if by_review[page["page_id"]]:
             parts.append("<details><summary>被拒绝或无法关联的候选 " +
                          str(len(by_review[page["page_id"]])) + "</summary><pre>" +
@@ -422,6 +460,7 @@ def build_review(run: Path) -> None:
                  "<label>导入核验草稿 JSON <input id='import-decisions' type='file' "
                  "accept='application/json,.json'></label> "
                  "<button id='download-truth'>下载完整 ground-truth.jsonl</button> "
+                 "<button id='download-reviewed'>下载完成审核包</button> "
                  "<button id='download-annotations'>下载手写批注核对结果</button></p>")
     parts.append("<script>const runId=" + json.dumps(meta["run_id"]) + ";</script>")
     parts.append("<script>" + REVIEW_SCRIPT + "</script>")

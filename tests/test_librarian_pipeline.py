@@ -200,6 +200,15 @@ def test_identical_reextract_reuses_original_traces_without_ocr_retry(tmp_path: 
             extractor_version="v2")] == [trace["id"] for trace in original]
 
 
+def test_bookscan_review_candidates_have_distinct_ids() -> None:
+    from agents.librarian.runtime.gateway_review import candidate_id
+    ids = [candidate_id("capture_one", [f"bookscan_{index}_mark",
+                                        f"bookscan_{index}_text"])
+           for index in range(3)]
+    ids.append(candidate_id("capture_one", ["bookscan_note_0"]))
+    assert len(set(ids)) == 4
+
+
 def test_late_edition_fingerprint_binds_unknown_capture_without_reextracting(tmp_path: Path) -> None:
     from zipfile import ZipFile
     from agents.librarian.runtime.gateway_search import search_inbound

@@ -346,6 +346,8 @@ def test_review_contains_full_page_adjudication_and_export(tmp_path: Path):
     assert "ground-truth.jsonl" in html
     assert "data-source-width='200'" in html
     assert "导入核验草稿" in html
+    assert "下载完成审核包" in html
+    assert "missingAnnotation" in html
     assert "社会理论二十讲" in html
     assert "ISBN：9787208171411" in html
     assert "出版社：上海人民出版社" in html

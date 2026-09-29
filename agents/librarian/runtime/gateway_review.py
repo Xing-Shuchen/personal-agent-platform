@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -17,7 +18,8 @@ MAX_INPUT_BYTES = 8192
 def candidate_id(capture_id: str, detection_ids: list[str]) -> str:
     """Stable within a capture while the same detected ink group survives reruns."""
     marks = sorted(identifier for identifier in detection_ids
-                   if identifier.startswith(("underline_", "highlight_", "note_", "symbol_")))
+                   if identifier.startswith(("underline_", "highlight_", "note_", "symbol_"))
+                   or re.fullmatch(r"bookscan_(?:\d+_mark|note_\d+)", identifier))
     payload = json.dumps([capture_id, marks], separators=(",", ":"))
     return "candidate_" + hashlib.sha256(payload.encode()).hexdigest()[:24]
 
