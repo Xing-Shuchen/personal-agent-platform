@@ -160,6 +160,7 @@ export function workerArgs(config, ownerId) {
 }
 
 function startWorker(config, ownerId, mode = "physical") {
+  if (mode === "physical" && config.physicalWorkerEnabled === false) return;
   const args = workerArgs(config, ownerId);
   if (!args) return;
   args.push(mode === "digital" ? "--digital-only" : "--physical-only");

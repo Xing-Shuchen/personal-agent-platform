@@ -12,6 +12,7 @@
       "deliveryMediaRoot": {"type": "string", "minLength": 1},
       "vaultRoot": {"type": "string", "minLength": 1},
       "visionModel": {"type": "string", "minLength": 1},
+      "physicalWorkerEnabled": {"type": "boolean"},
       "python": {"type": "string", "minLength": 1},
       "digitalSources": {
         "type": "object",
