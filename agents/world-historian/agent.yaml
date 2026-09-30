@@ -54,7 +54,7 @@ spec:
         # 故暂停本任务；重新指向新落点时把 enabled 改回 true 即可。
         enabled: false
       - name: world-follow-normal
-        schedule: "43 3,13,21 * * *"
+        schedule: "43 3,13,22 * * *"
         skill: news-follow
         args:
           priority: normal
@@ -63,7 +63,7 @@ spec:
       - name: world-follow-low
         schedule: "43 20 * * *"
         skill: news-follow
-        model: zai/glm-5.2
+        model: zai/glm-5.3
         args:
           priority: low
         attach_to_session: false
@@ -71,6 +71,7 @@ spec:
       - name: world-follow-background
         schedule: "every 14d from 2026-09-12 20:43 tz Asia/Shanghai"
         skill: news-follow
+        model: zai/glm-5.3
         args:
           priority: background
         attach_to_session: false
