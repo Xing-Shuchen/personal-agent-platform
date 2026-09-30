@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: sync-gitcode
@@ -21,12 +21,16 @@ jobs:
       - name: Sync GitCode to GitHub
         env:
           GITCODE_TOKEN: ${{ secrets.GITCODE_TOKEN }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_MIRROR_TOKEN: ${{ secrets.GH_MIRROR_TOKEN }}
           GIT_TERMINAL_PROMPT: '0'
         run: |
           set -euo pipefail
           if [ -z "$GITCODE_TOKEN" ]; then
             echo 'Missing repository secret: GITCODE_TOKEN' >&2
+            exit 1
+          fi
+          if [ -z "$GH_MIRROR_TOKEN" ]; then
+            echo 'Missing repository secret: GH_MIRROR_TOKEN' >&2
             exit 1
           fi
 
@@ -40,7 +44,7 @@ jobs:
 
           git remote add github "https://github.com/${{ github.repository }}.git"
           git config "http.https://github.com/${{ github.repository }}.git.extraheader" \
-            "Authorization: Basic $(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
+            "Authorization: Basic $(printf 'x-access-token:%s' "$GH_MIRROR_TOKEN" | base64 -w0)"
 
           # GitCode 删除的分支和标签也从 GitHub 镜像中删除。
           git push --prune --force github 'refs/heads/*:refs/heads/*'
