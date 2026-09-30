@@ -810,7 +810,8 @@ def rebuild_index(lib: Library, owner_id: str) -> int:
 
 
 def render_trace_crop(lib: Library, owner_id: str, trace_id: str,
-                      *, context: float = .05) -> bytes:
+                      *, context: float = .05,
+                      clip_to: list[float] | None = None) -> bytes:
     """Render the current physical trace bbox in original display coordinates.
 
     Context is a fraction of the trace width/height. The padded box is clipped
@@ -830,6 +831,13 @@ def render_trace_crop(lib: Library, owner_id: str, trace_id: str,
               max(page[1], box[1] - (box[3] - box[1]) * context),
               min(page[2], box[2] + (box[2] - box[0]) * context),
               min(page[3], box[3] + (box[3] - box[1]) * context)]
+    if clip_to is not None:
+        if (len(clip_to) != 4 or not all(isinstance(value, (int, float))
+                and math.isfinite(value) for value in clip_to) or
+                not _inside(clip_to, [0, 0, 1, 1])):
+            raise LibrarianError("VALIDATION_FAILED", "invalid page clip")
+        padded = [max(padded[0], clip_to[0]), max(padded[1], clip_to[1]),
+                  min(padded[2], clip_to[2]), min(padded[3], clip_to[3])]
     original = lib.read_original(owner_id, trace["source"]["capture_id"])
     try:
         with Image.open(io.BytesIO(original)) as source:

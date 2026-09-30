@@ -74,6 +74,37 @@ def worker_launch_status(root: Path, owner: str) -> list[dict]:
     return found
 
 
+def capture_intake_status(lib: Library, owner: str) -> dict:
+    """Summarize durable captures separately from extraction review candidates."""
+    batches = [json.loads(row[0]) for row in lib.db.execute(
+        "SELECT body FROM records WHERE owner_id=? AND model='CaptureBatch' AND current=1",
+        (owner,))]
+    active = [item for item in batches if item["status"] != "discarded"]
+    discarded = [item for item in batches if item["status"] == "discarded"]
+    processed = {json.loads(row[0])["capture_id"] for row in lib.db.execute(
+        "SELECT body FROM records WHERE owner_id=? AND model='ProcessingRun' AND current=1",
+        (owner,))}
+    active_ids = {capture_id for batch in active for capture_id in batch["capture_ids"]}
+    key = hashlib.sha256(owner.encode()).hexdigest()
+    control = lib.root / "worker-control" / f"{key}.json"
+    held = False
+    try:
+        if control.is_file() and not control.is_symlink() and control.stat().st_size < 8192:
+            record = json.loads(control.read_text(encoding="utf-8"))
+            held = record.get("owner_id") == owner and record.get("held") is True
+    except (OSError, ValueError):
+        pass
+    latest = max(active, key=lambda item: item["received_at"], default=None)
+    return {"physical_processing_held": held,
+            "active_capture_count": len(active_ids),
+            "discarded_capture_count": sum(len(item["capture_ids"]) for item in discarded),
+            "processed_capture_count": len(processed & active_ids),
+            "latest_active_batch": ({"batch_id": latest["id"],
+                                     "capture_count": len(latest["capture_ids"]),
+                                     "received_at": latest["received_at"]}
+                                    if latest else None)}
+
+
 def candidate_id(capture_id: str, detection_ids: list[str]) -> str:
     """Stable within a capture while the same detected ink group survives reruns."""
     marks = sorted(identifier for identifier in detection_ids
@@ -133,7 +164,8 @@ def pending_extractions(lib: Library, owner: str, capture_id: str | None = None)
             summaries.append(item)
         return {"pending": summaries, "more": len(pending) > 10,
                 "intake_failures": intake_failures(lib.root, owner),
-                "worker_launch_status": worker_launch_status(lib.root, owner)}
+                "worker_launch_status": worker_launch_status(lib.root, owner),
+                "capture_intake": capture_intake_status(lib, owner)}
     if not pending:
         raise LibrarianError("OBJECT_NOT_FOUND", "no pending extraction for capture")
     run = pending[0]

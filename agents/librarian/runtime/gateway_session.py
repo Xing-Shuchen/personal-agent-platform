@@ -8,11 +8,12 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import sys
 from pathlib import Path
 
 from .commands import execute_command
-from .store import Library, LibrarianError, _now
+from .store import Library, LibrarianError, _new, _now, _unknown_time
 from .gateway_errors import write_error
 
 
@@ -47,6 +48,60 @@ def _book_instance(lib: Library, owner: str, query: str) -> tuple[str, str]:
     return choices[0]["id"], work["title"]
 
 
+def _isbn13(value: str) -> bool:
+    return (bool(re.fullmatch(r"\d{13}", value)) and
+            sum(int(digit) * (1 if index % 2 == 0 else 3)
+                for index, digit in enumerate(value)) % 10 == 0)
+
+
+def _register_explicit_book(lib: Library, owner: str, title: str, isbn: str) -> None:
+    """An explicit user title and ISBN can establish a physical catalog copy."""
+    title, isbn = title.strip(), isbn.strip()
+    if not title or len(title) > 200 or not _isbn13(isbn):
+        raise LibrarianError("VALIDATION_FAILED", "valid title and ISBN-13 required")
+    editions = [item for item in _current(lib, owner, "Edition")
+                if item["isbn"]["isbn13"] == isbn]
+    if len(editions) > 1:
+        raise LibrarianError("CONTEXT_CONFLICT", "multiple editions share ISBN")
+    if editions:
+        work = lib.get(owner, "Work", editions[0]["work_id"])
+        if work["title"].strip().casefold() != title.casefold():
+            raise LibrarianError("CONTEXT_CONFLICT", "title conflicts with catalogued ISBN")
+        edition_id = editions[0]["id"]
+    else:
+        same_title = [item for item in _current(lib, owner, "Work")
+                      if item["title"].strip().casefold() == title.casefold()]
+        if len(same_title) > 1:
+            raise LibrarianError("CONTEXT_CONFLICT", "book title is ambiguous")
+        common = {"schema_version": "0.1.0", "owner_id": owner,
+                  "created_at": _now(), "revision": 1, "supersedes_revision": None}
+        work_id = same_title[0]["id"] if same_title else _new("work")
+        if not same_title:
+            lib.register(owner, {**common, "object_type": "Work", "id": work_id,
+                                 "title": title, "original_title": None,
+                                 "authors": [], "identifiers": []})
+        edition_id = _new("edition")
+        lib.register(owner, {**common, "object_type": "Edition", "id": edition_id,
+                             "work_id": work_id, "edition_label": None,
+                             "publisher": None, "publication_year": None,
+                             "isbn": {"isbn13": isbn, "isbn10": None},
+                             "language": None, "page_count": None,
+                             "volume_label": None})
+    copies = [item for item in _current(lib, owner, "BookInstance")
+              if item["edition_id"] == edition_id and item["medium"] == "physical"]
+    if len(copies) > 1:
+        raise LibrarianError("CONTEXT_CONFLICT", "multiple physical copies share ISBN")
+    if not copies:
+        lib.register(owner, {"object_type": "BookInstance", "schema_version": "0.1.0",
+                             "id": _new("copy"), "owner_id": owner, "created_at": _now(),
+                             "revision": 1, "supersedes_revision": None,
+                             "edition_id": edition_id, "medium": "physical",
+                             "acquired_at": _unknown_time(), "ownership_status": "unknown",
+                             "physical": {"qr_id": None, "shelf": None},
+                             "reading_status": {"state": "unknown", "current_page": None,
+                                                "progress_evidence_ref": None}})
+
+
 def _scoped_session(lib: Library, owner: str, scope: tuple[str, str, str]) -> dict:
     rows = lib.db.execute(
         "SELECT session_id FROM session_scope WHERE owner_id=? AND transport=? "
@@ -75,6 +130,7 @@ def session_inbound(lib: Library, message: dict) -> dict:
                           ensure_ascii=False, separators=(",", ":"))
     digest = hashlib.sha256(identity.encode()).hexdigest()
     request = {"action": action, "book": message.get("book") if action == "start" else None,
+               "isbn": message.get("isbn") if action == "start" else None,
                "page": message.get("page") if action == "progress" else None}
     fingerprint = hashlib.sha256(json.dumps(request, ensure_ascii=False,
                                             sort_keys=True).encode()).hexdigest()
@@ -114,6 +170,11 @@ def _execute_session_action(lib: Library, message: dict, owner: str, actor: str,
         book = message.get("book")
         if not isinstance(book, str) or not book.strip() or len(book) > 200:
             raise LibrarianError("VALIDATION_FAILED", "book title or ISBN required")
+        isbn = message.get("isbn")
+        if isbn is not None:
+            if not isinstance(isbn, str) or not _isbn13(isbn.strip()):
+                raise LibrarianError("VALIDATION_FAILED", "valid ISBN-13 required")
+            _register_explicit_book(lib, owner, book, isbn)
         copy_id, title = _book_instance(lib, owner, book)
         selected = None
         try:
@@ -137,6 +198,14 @@ def _execute_session_action(lib: Library, message: dict, owner: str, actor: str,
             payload = {"book_instance_id": copy_id, "scope": list(scope)}
             command_name = "reading.session.start"
     else:
+        if action == "status":
+            selected = lib.db.execute(
+                "SELECT session_id FROM session_scope WHERE owner_id=? AND transport=? "
+                "AND account_id=? AND conversation_id=? AND selected=1",
+                (owner, *scope)).fetchall()
+            if not selected:
+                return {"status": "none", "action": "status", "session_id": None,
+                        "revision": None, "work_id": None, "progress": None}
         session = _scoped_session(lib, owner, scope)
         if action == "status":
             return {"status": session["status"], "action": action,

@@ -1,0 +1,11 @@
+[Unit]
+Description=Check Feishu Base for Librarian handwriting reviews
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=2min
+Persistent=true
+Unit=librarian-bitable-handwriting.service
+
+[Install]
+WantedBy=timers.target

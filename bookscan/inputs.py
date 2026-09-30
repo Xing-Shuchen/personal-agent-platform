@@ -57,12 +57,14 @@ def discover(root: Path, manifest: Path | None = None) -> list[dict]:
             frames, size, exif_orientation = 1, None, None
             input_error = f"{type(exc).__name__}: {exc}"
         file_hash = sha256(source)
-        rotation = int(entry.get("rotation", 0))
+        auto_rotation = entry.get("rotation") is None
+        rotation = int(entry.get("rotation", 0)) if not auto_rotation else 0
         if rotation not in {0, 90, 180, 270}:
             raise ValueError(f"rotation must be 0/90/180/270: {source}")
         deskew = float(entry.get("deskew_degrees", 0))
         if not -8 <= deskew <= 8:
             raise ValueError(f"deskew_degrees must be within ±8: {source}")
+        auto_roi = entry.get("valid_page_roi") is None
         roi = entry.get("valid_page_roi") or ([0, 0, *size] if size else None)
         if size and (len(roi) != 4 or not all(isinstance(x, int) for x in roi)
                      or not (0 <= roi[0] < roi[2] <= size[0]
@@ -78,6 +80,7 @@ def discover(root: Path, manifest: Path | None = None) -> list[dict]:
                 "source_size": size, "exif_orientation": exif_orientation,
                 "input_error": input_error,
                 "valid_page_roi": roi, "rotation": rotation,
+                "auto_rotation": auto_rotation, "auto_roi": auto_roi,
                 "deskew_degrees": deskew,
                 "annotation_regions": entry.get("annotation_regions", []),
                 "bracket_regions": entry.get("bracket_regions", []),
@@ -87,6 +90,35 @@ def discover(root: Path, manifest: Path | None = None) -> list[dict]:
                               "source_to_working": "crop_then_rotate_then_deskew"},
             })
     return pages
+
+
+def infer_page_roi(image: np.ndarray) -> list[int]:
+    """Trim a visible facing page and dark tabletop when both edges are clear."""
+    height, width = image.shape[:2]
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    columns = gray[int(.12 * height):int(.80 * height)].mean(axis=0)
+    columns = cv2.GaussianBlur(columns.astype(np.float32)[None, :], (0, 0),
+                               max(3, width * .007)).ravel()
+    baseline = float(np.median(columns[int(.25 * width):int(.60 * width)]))
+    left, right = int(.65 * width), int(.94 * width)
+    seam = left + int(np.argmin(columns[left:right]))
+    x2 = (max(int(.60 * width), seam - int(.008 * width))
+          if baseline - float(columns[seam]) >= 45 else width)
+
+    rows = gray[:,int(.10 * width):min(int(.70 * width), x2)].mean(axis=1)
+    rows = cv2.GaussianBlur(rows.astype(np.float32)[:, None], (0, 0),
+                            0, sigmaY=max(3, height * .004)).ravel()
+    page_brightness = float(np.median(rows[int(.40 * height):int(.70 * height)]))
+    threshold = page_brightness - 65
+    search_start, search_end = int(.72 * height), int(.97 * height)
+    dark = rows[search_start:search_end] < threshold
+    sustained = max(5, int(.012 * height))
+    y2 = height
+    for offset in range(max(0, len(dark) - sustained)):
+        if dark[offset:offset + sustained].all():
+            y2 = search_start + offset
+            break
+    return [0, 0, x2, y2]
 
 
 def source_image(page: dict) -> np.ndarray:

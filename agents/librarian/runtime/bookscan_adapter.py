@@ -101,15 +101,15 @@ def adapt_report(report: dict, width: int, height: int) -> dict:
         ocr = "\n".join(row.get("ocr_raw", "") for row in rows).strip()
         scores = [row.get("ocr_score") for row in rows]
         score = min(scores) if scores and all(x is not None for x in scores) else None
-        matched = (group.get("match_status") == "matched" and
-                   group.get("text_basis") == "epub_punctuation_expansion" and
-                   bool(group.get("text_effective")))
-        printed_text = group["text_effective"] if matched else ocr
-        basis = "source_payload" if matched else "vision"
-        if matched:
-            similarity = group.get("epub_candidate", {}).get("similarity")
-            if similarity is not None:
-                score = min(score, similarity) if score is not None else similarity
+        grounded = (group.get("text_basis") == "epub_punctuation_expansion" and
+                    group.get("match_status") in {"matched", "needs_review"} and
+                    bool(group.get("text_effective")))
+        printed_text = group["text_effective"] if grounded else ocr
+        basis = "source_payload" if grounded else "vision"
+        if grounded:
+            # Confidence describes the chosen text, not OCR's ability to read
+            # the photo. The EPUB supplies that text exactly after alignment.
+            score = 1.0
         group_box = group.get("group_bbox") or group.get("bbox")
         observation["printed_regions"].append({
             "id": text_id, "page_region_id": "page_0", "bbox": _box(group_box, width, height),
@@ -155,9 +155,8 @@ def _manifest_entry(original: bytes, oriented_size: tuple[int, int]) -> dict:
                 if image.getexif().get(274) not in (None, 1):
                     break
             return {**entry, "file": "capture.png"}
-    return {"file": "capture.png", "rotation": 0,
-            "valid_page_roi": [0, 0, *oriented_size],
-            "annotation_regions": [], "bracket_regions": []}
+    return {"file": "capture.png", "annotation_regions": [],
+            "bracket_regions": []}
 
 
 def bookscan_extractor(epub: Path | None, *, python: Path | None = None,

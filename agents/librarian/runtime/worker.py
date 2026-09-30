@@ -48,6 +48,82 @@ def _latest_pending_review_ids(runs: list[dict]) -> set[str]:
             "RECONCILIATION_REQUIRED" in run["issues"]}
 
 
+def _reconcile_grounded_text_only(lib: Library, owner: str, capture_id: str,
+                                  pending: dict) -> bool:
+    """Accept only a BookScan OCR-to-EPUB text upgrade with unchanged ink geometry."""
+    if not pending["extractor_version"].startswith("bookscan-segment-v1:"):
+        return False
+    observations = {item["processing_run_id"]: item for item in
+                    _current(lib, owner, "PageObservation")
+                    if item["capture_id"] == capture_id}
+    candidate = observations.get(pending["id"])
+    traces = [item for item in _current(lib, owner, "ReadingTrace")
+              if item["status"] == "active" and
+              item["source"].get("capture_id") == capture_id]
+    if not candidate or not traces or any(
+            item["revision"] != 1 or
+            item["content"]["printed_text"]["basis"] == "user_statement" or
+            item["content"]["annotation"]["basis"] == "user_statement"
+            for item in traces):
+        return False
+    old_ids = {item["source"]["observation_id"] for item in traces}
+    if len(old_ids) != 1:
+        return False
+    baseline = next((item for item in observations.values()
+                     if item["id"] in old_ids), None)
+    if not baseline:
+        return False
+    stable = ("image_space", "visible_title", "pages", "marks", "annotations",
+              "symbols", "links", "warnings")
+    if any(baseline.get(key) != candidate.get(key) for key in stable):
+        return False
+    before = baseline["printed_regions"]
+    after = candidate["printed_regions"]
+    if len(before) != len(after):
+        return False
+    changed = {}
+    for prior, current in zip(before, after):
+        if {key: value for key, value in prior.items() if key not in {"text", "confidence"}} != {
+                key: value for key, value in current.items() if key not in {"text", "confidence"}}:
+            return False
+        if prior != current:
+            if (current["text"]["basis"] != "source_payload" or
+                    current["text"]["confidence"] != 1.0 or
+                    not (prior["text"]["basis"] == "vision" or
+                         (prior["text"]["basis"] == "source_payload" and
+                          prior["text"]["text"] == current["text"]["text"]))):
+                return False
+            changed[current["id"]] = (prior, current)
+    if not changed:
+        return False
+    try:
+        report = json.loads(lib._read_object(candidate["raw_output_asset"]))
+        for identifier, (prior, region) in changed.items():
+            match = re.fullmatch(r"bookscan_(\d+)_text", identifier)
+            if not match:
+                return False
+            group = report["groups"][int(match.group(1))]
+            source = group.get("epub_candidate") or {}
+            grounded = (group.get("match_status") == "matched" or
+                        (group.get("match_status") == "needs_review" and
+                         group.get("review_reasons") == ["weak_similarity"] and
+                         source.get("similarity", 0) >= .70 and
+                         source.get("query_coverage", 0) >= .90 and
+                         source.get("runner_up_margin", 0) >= .10))
+            if (not grounded or group.get("text_basis") != "epub_punctuation_expansion" or
+                    region["text"]["text"] != group.get("text_effective") or
+                    (prior["text"]["basis"] == "vision" and
+                     group.get("match_status") != "needs_review")):
+                return False
+    except (KeyError, IndexError, TypeError, ValueError, LibrarianError):
+        return False
+    reconcile_extraction(lib, owner, capture_id, pending["extractor_version"],
+                         expected_current_refs={(item["id"], item["revision"])
+                                                for item in traces},
+                         expected_run_id=pending["id"])
+    return True
+
+
 def _notified_batch_is_current(batch: dict, *, notified: bool,
                                revised_notice: bool, unbound: bool,
                                matching_runs: list[dict],
@@ -487,33 +563,38 @@ def _render_batch_note(batch: dict, title: str, traces: list[dict], *,
             positions.get(trace["id"], (10**9, float("inf"))),
             (trace["location"]["page"] or {}).get("number") or 10**9,
             trace["location"]["bbox"][1], trace["id"]))
-        lines.extend(["# 划线与笔记", ""])
-        last_chapter = None
-        for trace in ordered:
-            spine = positions.get(trace["id"], (None, 0))[0]
-            heading = chapter_titles.get(spine, "章节待核对")
-            if heading != last_chapter:
-                lines.extend([f"## {heading}", ""])
-                last_chapter = heading
-            printed = trace["content"]["printed_text"]["text"]
-            annotation = trace["content"]["annotation"]["text"]
-            if printed:
-                lines.append("> 📌 " + re.sub(r"\s*\n\s*", "", printed.strip()))
-            if annotation:
-                suffix = "" if trace["review"]["state"] == "resolved" else "（手写待核对）"
-                lines.append("> 💭 " + annotation.replace("\n", " / ") + suffix)
-            if not printed and not annotation:
-                lines.append("> ⚠️ 检测到标记，文字尚未辨认")
-            page = trace["location"]["page"]
-            if page:
-                lines.append(f"> 📖 第 {page['label']} 页")
-            source_time = (received_at_by_capture or {}).get(trace["source"]["capture_id"])
-            try:
-                stamp = datetime.fromisoformat(source_time).astimezone(
-                    ZoneInfo("Asia/Shanghai")).strftime("%Y-%m-%d %H:%M:%S")
-            except (TypeError, ValueError):
-                stamp = "未知"
-            lines.extend([f"> ⏱ 收图：{stamp}", _trace_marker(trace["id"], trace["revision"]), ""])
+        sections = (
+            [("划线与笔记", ordered)] if presentation_version == 11 else
+            [("高亮划线", [trace for trace in ordered if trace in highlights]),
+             ("读书笔记", [trace for trace in ordered if trace not in highlights])])
+        for section, entries in sections:
+            lines.extend([f"# {section}", ""])
+            last_chapter = None
+            for trace in entries:
+                spine = positions.get(trace["id"], (None, 0))[0]
+                heading = chapter_titles.get(spine, "章节待核对")
+                if heading != last_chapter:
+                    lines.extend([f"## {heading}", ""])
+                    last_chapter = heading
+                printed = trace["content"]["printed_text"]["text"]
+                annotation = trace["content"]["annotation"]["text"]
+                if printed:
+                    lines.append("> 📌 " + re.sub(r"\s*\n\s*", "", printed.strip()))
+                if annotation:
+                    suffix = "" if trace["review"]["state"] == "resolved" else "（手写待核对）"
+                    lines.append("> 💭 " + annotation.replace("\n", " / ") + suffix)
+                if not printed and not annotation:
+                    lines.append("> ⚠️ 检测到标记，文字尚未辨认")
+                page = trace["location"]["page"]
+                if page:
+                    lines.append(f"> 📖 第 {page['label']} 页")
+                source_time = (received_at_by_capture or {}).get(trace["source"]["capture_id"])
+                try:
+                    stamp = datetime.fromisoformat(source_time).astimezone(
+                        ZoneInfo("Asia/Shanghai")).strftime("%Y-%m-%d %H:%M:%S")
+                except (TypeError, ValueError):
+                    stamp = "未知"
+                lines.extend([f"> ⏱ 收图：{stamp}", _trace_marker(trace["id"], trace["revision"]), ""])
         lines.append(_batch_marker(batch["id"]))
         return "\n".join(lines).rstrip() + "\n"
 
@@ -660,7 +741,7 @@ def _refresh_generated_note(vault: Path, batch: dict, title: str,
 
 
 def _consolidate_generated_note(lib: Library, owner: str, title: str,
-                                vault: Path) -> Path:
+                                vault: Path, *, force: bool = False) -> Path:
     """Collapse only verifiably generated blocks into one WeRead-style note."""
     note = vault / "2Area" / "40 学习与阅读" / "阅读笔记" / f"{title}.md"
     old = note.read_text(encoding="utf-8")
@@ -712,6 +793,10 @@ def _consolidate_generated_note(lib: Library, owner: str, title: str,
             batch, title, traces, created=stamp.group(1), presentation_version=11,
             received_at_by_capture=received,
             chapter_layout=_chapter_layout(lib.root, isbn, traces)).strip())
+        variants.append(_render_batch_note(
+            batch, title, traces, created=stamp.group(1), presentation_version=12,
+            received_at_by_capture=received,
+            chapter_layout=_chapter_layout(lib.root, isbn, traces)).strip())
         variants.extend([_render_batch_note_legacy(batch, title, traces,
                                                    created=stamp.group(1)).strip(),
                          _render_batch_note_legacy(batch, title, traces,
@@ -732,12 +817,12 @@ def _consolidate_generated_note(lib: Library, owner: str, title: str,
     rendered = _render_batch_note({"id": aggregate_id, "isbn": isbn,
                                    "bibliography": _isbn_metadata(lib.root, isbn)},
                                   title, current, created=date,
-                                  presentation_version=11,
+                                  presentation_version=12,
                                   chapter_layout=_chapter_layout(lib.root, isbn, current),
                                   received_at_by_capture=_capture_received_times(
                                       lib, owner,
                                       {trace["source"]["capture_id"] for trace in current}))
-    if rendered != old:
+    if force or rendered != old:
         _atomic_write(note, rendered.encode("utf-8"))
     return note
 
@@ -913,7 +998,14 @@ def _process_batch(lib: Library, root: Path, vault: Path | None, owner: str,
     for pending in _current(lib, owner, "ProcessingRun"):
         if (pending["capture_id"] in batch["capture_ids"] and
                 pending["outcome"] == "pending"):
-            dismiss_identical_pending(lib, owner, pending["capture_id"], pending["id"])
+            dismissed = dismiss_identical_pending(
+                lib, owner, pending["capture_id"], pending["id"])
+            if not dismissed:
+                try:
+                    _reconcile_grounded_text_only(lib, owner, pending["capture_id"], pending)
+                except LibrarianError as error:
+                    if error.code not in {"RECONCILIATION_REQUIRED", "REVISION_CONFLICT"}:
+                        raise
     latest_runs = {run["capture_id"]: run for run in
                    _current(lib, owner, "ProcessingRun")}
     pending_review_ids = _latest_pending_review_ids(list(latest_runs.values()))
@@ -1043,7 +1135,8 @@ def run(root: Path, vault: Path | None, owner: str, *,
                     _repair_trace_index_best_effort(lib, owner)
                     results.extend(_refresh_generated_notes(lib, owner, vault))
                     retry_fingerprint = _retry_fingerprint(root, vision_model)
-                    for batch in _processing_batches(_current(lib, owner, "CaptureBatch")):
+                    for batch in _processing_batches([item for item in _current(lib, owner, "CaptureBatch")
+                                                      if item["status"] != "discarded"]):
                         if batch["origin"]["transport"] != "feishu":
                             continue
                         newest = max((lib.get(owner, "PageCapture", capture_id)["received_at"]

@@ -75,6 +75,36 @@ def test_upside_down_trace_crop_is_upright_for_delivery(tmp_path: Path) -> None:
         assert crop.getpixel((100, 175))[0] > 200
 
 
+def test_bookscan_rotation_orients_stored_trace_crop(tmp_path: Path) -> None:
+    import json
+    source = BytesIO()
+    image = Image.new("RGB", (200, 200), "red")
+    from PIL import ImageDraw
+    ImageDraw.Draw(image).rectangle((0, 100, 199, 199), fill="blue")
+    image.save(source, "PNG")
+
+    class FakeLibrary:
+        def get(self, _owner, model, _identifier):
+            if model == "ReadingTrace":
+                return {"medium": "physical", "location": {"kind": "physical",
+                        "bbox": [0, 0, 1, 1], "page_bbox": [0, 0, 1, 1]},
+                        "source": {"capture_id": "capture_one",
+                                   "observation_id": "observation_one"}}
+            return {"extractor": "bookscan-segment-v1:test", "warnings": [],
+                    "raw_output_asset": {}, "capture_id": "capture_one"}
+
+        def _read_object(self, _asset):
+            return json.dumps({"pages": [{"rotation": 180}]}).encode()
+
+        def read_original(self, *_args):
+            return source.getvalue()
+
+    result = prepare_evidence(FakeLibrary(), "owner", "rt_one", tmp_path / "delivery")
+    with Image.open(result["media_path"]) as crop:
+        assert crop.getpixel((100, 25))[2] > 200
+        assert crop.getpixel((100, 175))[0] > 200
+
+
 def test_pending_scan_crop_uses_review_candidate_without_promotion(tmp_path: Path, monkeypatch) -> None:
     source = BytesIO()
     image = Image.new("RGB", (1000, 800), "white")

@@ -48,7 +48,8 @@ def test_jobs_shows_job_model_overrides_only():
     assert r.returncode == 0, r.stderr
     lines = r.stdout.splitlines()
     expected_overrides = {
-        "world-historian/world-follow-low": "zai/glm-5.2",
+        "world-historian/world-follow-low": "zai/glm-5.3",
+        "world-historian/world-follow-background": "zai/glm-5.3",
         "world-historian/world-daily-report": "qwen/qwen3.8-max",
         "world-historian/world-weekly-report": "qwen/qwen3.8-max",
     }

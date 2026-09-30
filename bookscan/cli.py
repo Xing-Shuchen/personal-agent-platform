@@ -20,10 +20,11 @@ from .annotations import collect_annotations
 from .brackets import collect_brackets
 from .epub import EpubIndex
 from .groups import group_adjacent
-from .inputs import bbox_from_source, bbox_to_source, discover, sha256, source_image, working_image
+from .inputs import (bbox_from_source, bbox_to_source, discover, infer_page_roi,
+                     sha256, source_image, working_image)
 from .pagenum import detect_page_number, interpolate
 from .vision import (OCR, associate, curved_underline_candidates,
-                     merge_mark_candidates, text_lines, to_source_line,
+                     infer_page_rotation, merge_mark_candidates, text_lines, to_source_line,
                      underline_candidates)
 
 
@@ -224,6 +225,17 @@ def run(config_path: Path, limit: int | None = None,
     epub = epub_path(root, config.get("epub")) if config.get("epub") else None
     index = EpubIndex(epub) if epub else None
     ocr = OCR(config)  # Explicit local model paths: no run-time download.
+    for page in pages:
+        if (page["auto_rotation"] or page["auto_roi"]) and not page["input_error"]:
+            source = source_image(page)
+            if page["auto_roi"]:
+                page["valid_page_roi"] = infer_page_roi(source)
+                page["transform"]["crop"] = page["valid_page_roi"]
+            x1, y1, x2, y2 = page["valid_page_roi"]
+            if page["auto_rotation"]:
+                page["rotation"] = infer_page_rotation(
+                    source[y1:y2, x1:x2], ocr, config.get("selection", {}))
+                page["transform"]["rotation_clockwise"] = page["rotation"]
     fingerprint = hashlib.sha256(json.dumps({"config": config,
         "inputs": [(p["source_sha256"], p["rotation"], p["deskew_degrees"],
                     p["valid_page_roi"], p["annotation_regions"], p["bracket_regions"])
@@ -245,7 +257,8 @@ def run(config_path: Path, limit: int | None = None,
     visual_hits = ocr_hits = 0
     for page in pages:
         page_start = time.monotonic()
-        record = {k: v for k, v in page.items() if k != "source_path"}
+        record = {k: v for k, v in page.items()
+                  if k not in {"source_path", "auto_rotation", "auto_roi"}}
         record.update({"processing_status": "processing", "selected_line_count": 0,
                        "issues": [], "page_number": _empty_page_number()})
         try:

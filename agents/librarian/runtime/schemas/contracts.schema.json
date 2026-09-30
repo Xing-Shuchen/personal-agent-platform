@@ -912,7 +912,8 @@
             "processing",
             "processed",
             "partial",
-            "failed"
+            "failed",
+            "discarded"
           ]
         },
         "revision": {

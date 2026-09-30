@@ -20,9 +20,9 @@ from .gateway_errors import write_error
 MAX_INPUT_BYTES = 8192
 
 
-def _analysis_rotation(lib: Library, owner: str, *, observation_id: str | None = None,
-                       run_id: str | None = None) -> int:
-    """Orient a delivery crop as it appeared to the extractor."""
+def _analysis_page(lib: Library, owner: str, *, observation_id: str | None = None,
+                   run_id: str | None = None) -> tuple[int, list[float] | None]:
+    """Find BookScan's latest source-raster orientation and single-page ROI."""
     if observation_id:
         observation = lib.get(owner, "PageObservation", observation_id)
     elif run_id and hasattr(lib, "db"):
@@ -34,9 +34,45 @@ def _analysis_rotation(lib: Library, owner: str, *, observation_id: str | None =
     else:
         observation = None
     if not observation:
-        return 0
-    return (180 if "Upside-down scan analyzed after 180-degree rotation"
-            in observation.get("warnings", []) else 0)
+        return 0, None
+    if "Upside-down scan analyzed after 180-degree rotation" in observation.get("warnings", []):
+        return 180, None
+
+    def bookscan_transform(item: dict) -> tuple[int, list[float] | None]:
+        if not item.get("extractor", "").startswith("bookscan-"):
+            return 0, None
+        try:
+            report = json.loads(lib._read_object(item["raw_output_asset"]))
+            pages = report["pages"]
+            if len(pages) == 1 and pages[0].get("rotation") in (0, 90, 180, 270):
+                page = pages[0]
+                roi, size = page.get("valid_page_roi"), page.get("source_size")
+                clip = ([roi[0] / size[0], roi[1] / size[1],
+                         roi[2] / size[0], roi[3] / size[1]]
+                        if isinstance(roi, list) and len(roi) == 4 and
+                        isinstance(size, list) and len(size) == 2 and
+                        size[0] > 0 and size[1] > 0 else None)
+                return page["rotation"], clip
+        except (AttributeError, KeyError, TypeError, ValueError, LibrarianError):
+            pass
+        return 0, None
+
+    transform = bookscan_transform(observation)
+    if not hasattr(lib, "db"):
+        return transform
+    # A newer BookScan pass may have corrected orientation while its changed
+    # marks still await reconciliation. Old trace IDs must display upright too.
+    rows = lib.db.execute(
+        "SELECT body FROM records WHERE owner_id=? AND model='PageObservation' "
+        "AND current=1 AND json_extract(body,'$.capture_id')=? "
+        "AND json_extract(body,'$.created_at')>? "
+        "ORDER BY json_extract(body,'$.created_at') DESC",
+        (owner, observation.get("capture_id"), observation.get("created_at", ""))).fetchall()
+    for row in rows:
+        candidate = json.loads(row[0])
+        if candidate.get("extractor", "").startswith("bookscan-"):
+            return bookscan_transform(candidate)
+    return transform
 
 
 def _pending_crop(lib: Library, owner: str, capture_id: str, candidate_index: int | None,
@@ -89,8 +125,8 @@ def _pending_crop(lib: Library, owner: str, capture_id: str, candidate_index: in
             raise LibrarianError("VALIDATION_FAILED", "candidate crop has no pixels")
         output = io.BytesIO()
         image.crop(bounds).save(output, format="PNG")
-    return output.getvalue(), {**source_info, "capture_id": capture["id"]}, _analysis_rotation(
-        lib, owner, run_id=detail.get("pending_run_id"))
+    rotation, _ = _analysis_page(lib, owner, run_id=detail.get("pending_run_id"))
+    return output.getvalue(), {**source_info, "capture_id": capture["id"]}, rotation
 
 
 def prepare_evidence(lib: Library, owner: str, trace_id: str | None, directory: Path,
@@ -99,6 +135,7 @@ def prepare_evidence(lib: Library, owner: str, trace_id: str | None, directory: 
                      pending_run_id: str | None = None) -> dict:
     if not isinstance(owner, str) or not owner or ((trace_id is None) == (capture_id is None)):
         raise LibrarianError("VALIDATION_FAILED", "choose trace or pending capture")
+    page_clip_applied = False
     if trace_id is not None:
         if (not isinstance(trace_id, str) or not trace_id.startswith("rt_") or
                 candidate_index is not None or candidate_id is not None or
@@ -107,11 +144,13 @@ def prepare_evidence(lib: Library, owner: str, trace_id: str | None, directory: 
         trace = lib.get(owner, "ReadingTrace", trace_id)
         if trace.get("medium") != "physical" or trace.get("location", {}).get("kind") != "physical":
             raise LibrarianError("VALIDATION_FAILED", "photo evidence requires a physical trace")
-        crop_bytes = render_trace_crop(lib, owner, trace_id, context=.2)
+        rotation, clip = _analysis_page(
+            lib, owner, observation_id=trace["source"].get("observation_id"))
+        crop_bytes = render_trace_crop(lib, owner, trace_id, context=.2,
+                                      clip_to=clip)
+        page_clip_applied = clip is not None
         source = {"trace_id": trace_id, "capture_id": trace["source"]["capture_id"],
                   "source_status": "stored_trace"}
-        rotation = _analysis_rotation(
-            lib, owner, observation_id=trace["source"].get("observation_id"))
     else:
         if not isinstance(capture_id, str) or not capture_id.startswith("capture_"):
             raise LibrarianError("VALIDATION_FAILED", "capture ID required")
@@ -131,7 +170,7 @@ def prepare_evidence(lib: Library, owner: str, trace_id: str | None, directory: 
     with Image.open(io.BytesIO(crop_bytes)) as image_source:
         crop = image_source.convert("RGB")
         if rotation:
-            crop = crop.rotate(rotation, expand=True)
+            crop = crop.rotate(-rotation, expand=True)
         crop.thumbnail((2200, 2200))
         directory.mkdir(parents=True, exist_ok=True, mode=0o700)
         for old in directory.glob("evidence-*.jpg"):
@@ -144,7 +183,9 @@ def prepare_evidence(lib: Library, owner: str, trace_id: str | None, directory: 
         except Exception:
             Path(name).unlink(missing_ok=True)
             raise
-    return {**source, "media_path": name, "mime_type": "image/jpeg"}
+    return {**source, "media_path": name, "mime_type": "image/jpeg",
+            "display_rotation_clockwise": rotation,
+            "single_page_roi_applied": page_clip_applied}
 
 
 def main() -> int:

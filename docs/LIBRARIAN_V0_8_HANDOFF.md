@@ -1,5 +1,28 @@
 # Librarian v0.8 handoff — 2026-09-28
 
+## Scoped release decision — 2026-09-30
+
+The owner explicitly requested `release-v0.8` after accepting the first-book
+development scope in the 2026-09-29 specification addendum. This branch marks
+that scoped implementation: BookScan intake and EPUB alignment, chapter-ordered
+Vault export, authenticated Feishu Librarian tools, and the Feishu Base
+handwriting review bridge. The bridge has 15 pending rows with cropped image
+attachments; owner decisions are still pending and are imported by the timer.
+The gallery review link is stored in the private Bitable state as `review_url`.
+
+Release verification: 538 Python tests passed with Hugging Face offline mode,
+24 OpenClaw plugin tests passed, and the offline contract validator passed
+(77 definitions, 18 entry models, 42 positive and 43 negative cases).
+`tests/test_cli.py` was updated to the already committed World Historian model
+configuration so the full repository gate reflects current `main`.
+
+This scoped release does not claim the original §38.1 four-photo acceptance,
+`source-design.txt`, general unseen-photo discovery, actual handwritten
+decisions, all live Feishu delivery checks, digital source mutation checks, or
+an external knowledge writer. Those remain deferred or unverified as recorded
+in the audit. Earlier full-specification release cautions below describe the
+original gate; they are not evidence that the deferred items passed.
+
 ## Latest scope and release status — 2026-09-29
 
 The first-book development deliverable is the BookScan-generated Library/Vault

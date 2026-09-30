@@ -90,10 +90,24 @@ def test_bookscan_unknown_page_and_invalid_source_box():
         adapt_report(source, 100, 100)
 
 
+def test_reviewable_epub_text_is_used_without_hiding_review_warning():
+    source = report()
+    source["groups"][1].update({
+        "text_basis": "epub_punctuation_expansion",
+        "text_effective": "社会学思想的核心部分。",
+        "epub_candidate": {"similarity": .72},
+        "review_reasons": ["weak_similarity"],
+    })
+    observed = adapt_report(source, 100, 100)
+    assert observed["printed_regions"][1]["text"]["text"] == "社会学思想的核心部分。"
+    assert observed["printed_regions"][1]["text"]["basis"] == "source_payload"
+    assert observed["printed_regions"][1]["text"]["confidence"] == 1.0
+    assert "bookscan_1:epub_alignment_needs_review" in observed["warnings"]
+
+
 def test_unrecognized_image_uses_full_frame_without_manual_regions():
     stream = io.BytesIO()
     Image.new("RGB", (90, 120), "white").save(stream, format="PNG")
     entry = _manifest_entry(stream.getvalue(), (90, 120))
-    assert entry == {"file": "capture.png", "rotation": 0,
-                     "valid_page_roi": [0, 0, 90, 120],
+    assert entry == {"file": "capture.png",
                      "annotation_regions": [], "bracket_regions": []}

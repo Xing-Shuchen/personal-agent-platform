@@ -66,6 +66,38 @@ class OCR:
             if data.get("rec_score") is not None else None)
 
 
+def infer_page_rotation(image: np.ndarray, ocr: OCR, selection: dict) -> int:
+    """Choose reading orientation from line OCR, leaving uncertain pages alone."""
+    height, width = image.shape[:2]
+    scale = min(1.0, 1800 / max(height, width))
+    if scale < 1:
+        image = cv2.resize(image, None, fx=scale, fy=scale,
+                           interpolation=cv2.INTER_AREA)
+    candidates = (0, 180) if height >= width else (0, 180, 90, 270)
+    results = []
+    for rotation in candidates:
+        rotated = (image if rotation == 0 else cv2.rotate(image, {
+            90: cv2.ROTATE_90_CLOCKWISE,
+            180: cv2.ROTATE_180,
+            270: cv2.ROTATE_90_COUNTERCLOCKWISE}[rotation]))
+        lines, _ = text_lines(ocr.detect(rotated), selection)
+        sample = lines[::max(1, len(lines) // 12)][:12]
+        scores = []
+        for line in sample:
+            x1, y1, x2, y2 = line["bbox"]
+            text, confidence = ocr.recognize(rotated[y1:y2, x1:x2])
+            if len(text.strip()) >= 4 and confidence is not None and confidence >= .5:
+                scores.append(confidence)
+        results.append((sum(scores), len(scores), rotation))
+        if rotation == 0 and len(scores) >= 7 and sum(scores) / len(scores) >= .90:
+            return 0
+    results.sort(reverse=True)
+    best, runner_up = results[0], results[1]
+    if best[1] >= 3 and best[0] >= runner_up[0] * 1.5 and best[0] - runner_up[0] >= 1.5:
+        return best[2]
+    return 0
+
+
 def _poly_box(points) -> list[int]:
     array = np.asarray(points)
     return [int(array[:, 0].min()), int(array[:, 1].min()),

@@ -4,8 +4,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { acceptMessage, librarianEvidenceTool, librarianSourceBookTool, librarianReviewTool, librarianReviewDecisionTool, librarianReviewFinalizeTool, librarianSearchTool, librarianSessionTool,
-  rememberInboundSession, runPythonBridge, startWorker, workerArgs,
+import { acceptMessage, librarianEvidenceTool, librarianSourceBookTool, librarianImportEpubTool, librarianReviewTool, librarianReviewDecisionTool, librarianReviewFinalizeTool, librarianSearchTool, librarianSessionTool,
+  rememberInboundSession, runPythonBridge, startWorker, workerArgs, physicalProcessingHeld,
+  physicalProcessingInstruction,
   writeIntakeStatus, writeWorkerLaunchStatus } from "./index.js";
 import librarianPlugin from "./index.js";
 
@@ -94,6 +95,33 @@ test("worker spawn failure is private and a later launch clears it", async () =>
     assert.equal(recovered.code, null);
     await writeWorkerLaunchStatus(local, "owner_other", "digital", "failed");
     assert.equal((await readdir(folder)).length, 2);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("trusted hold instruction prevents physical worker recovery until resume", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "librarian-physical-hold-"));
+  try {
+    const local = { ...config, stateRoot: dir, repoRoot: dir, python: "/bin/true" };
+    const hooks = new Map();
+    librarianPlugin.register({ pluginConfig: local,
+      logger: { info() {}, warn() {} }, registerTool() {}, registerService() {},
+      on(name, handler) { hooks.set(name, handler); } });
+    assert.equal(physicalProcessingInstruction("收到后先暂存，不要开始处理"), "hold");
+    assert.equal(physicalProcessingInstruction("可以开始了"), "resume");
+    assert.equal(physicalProcessingInstruction("已经发送完毕。开始处理新一批22张图。"), "resume");
+    assert.equal(physicalProcessingInstruction("不要开始处理"), "hold");
+    await hooks.get("message_received")({ senderId: "person", messageId: "hold-1",
+      content: "图片很多，收到后先暂存，不要开始处理" }, ctx);
+    assert.equal(await physicalProcessingHeld(local, "owner_fixture"), true);
+    assert.deepEqual(await startWorker(local, "owner_fixture", "physical"), { state: "held" });
+    await hooks.get("message_received")({ senderId: "stranger", messageId: "resume-stranger",
+      content: "可以开始了" }, ctx);
+    assert.equal(await physicalProcessingHeld(local, "owner_fixture"), true);
+    await hooks.get("message_received")({ senderId: "person", messageId: "resume-1",
+      content: "可以开始了" }, ctx);
+    assert.equal(await physicalProcessingHeld(local, "owner_fixture"), false);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
@@ -267,12 +295,57 @@ test("session tool carries only trusted inbound source identity", async () => {
   assert.deepEqual(seen, { owner_id: "owner_fixture", actor_id: "person",
     source: { transport: "telegram", account_id: "bot",
       conversation_id: "agent:librarian:chat",
-      source_event_id: "msg-77" }, action: "start", book: "Synthetic Work", page: undefined });
+      source_event_id: "msg-77" }, action: "start", book: "Synthetic Work",
+    isbn: undefined, page: undefined });
   assert.equal(librarianSessionTool(config, { ...trusted, requesterSenderId: "other" },
     recent, bridge, 1001), null);
   assert.equal(librarianSessionTool(config, trusted, recent, bridge, 601001), null);
   assert.equal(librarianSessionTool(config, { ...trusted, agentAccountId: "other" },
     recent, bridge, 1001), null);
+});
+
+test("EPUB tool uses only the current sender's staged attachment", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "librarian-epub-tool-"));
+  try {
+    const file = join(dir, "book.epub");
+    await writeFile(file, Buffer.from("synthetic EPUB bytes"));
+    const recent = new Map();
+    const inbound = { channelId: "telegram", accountId: "bot",
+      conversationId: "chat", sessionKey: "agent:librarian:epub" };
+    rememberInboundSession(config, recent, { senderId: "person", messageId: "file-1",
+      media: [{ contentType: "application/epub+zip", path: file }] }, inbound, 1000);
+    const trusted = { agentId: "librarian", sessionKey: inbound.sessionKey,
+      requesterSenderId: "person", messageChannel: "telegram", agentAccountId: "bot" };
+    let sent;
+    const tool = librarianImportEpubTool(config, trusted, recent,
+      async (_config, message) => { sent = message; return { status: "stored" }; }, 1001);
+    assert.equal(tool?.name, "librarian_import_epub");
+    await tool.execute("call", {});
+    assert.equal(sent.data_path, file);
+    assert.equal(sent.source.conversation_id, "chat");
+    assert.equal(librarianImportEpubTool(config, { ...trusted, requesterSenderId: "other" },
+      recent, async () => ({}), 1001), null);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("EPUB tool can use a configured local inbox without a staged attachment", async () => {
+  const recent = new Map();
+  const inbound = { channelId: "telegram", accountId: "bot",
+    conversationId: "chat", sessionKey: "agent:librarian:local-epub" };
+  rememberInboundSession(config, recent,
+    { senderId: "person", messageId: "file-request" }, inbound, 1000);
+  const trusted = { agentId: "librarian", sessionKey: inbound.sessionKey,
+    requesterSenderId: "person", messageChannel: "telegram", agentAccountId: "bot" };
+  let sent;
+  const tool = librarianImportEpubTool({ ...config, epubInboxRoot: "/inbox" },
+    trusted, recent, async (_config, message) => { sent = message; return { status: "stored" }; },
+    1001);
+  assert.equal(tool?.name, "librarian_import_epub");
+  await tool.execute("call", {});
+  assert.equal(sent.inbox_root, "/inbox");
+  assert.equal(sent.source.source_event_id, "file-request");
 });
 
 test("images and session commands use the same Feishu conversation scope", async () => {

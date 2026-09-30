@@ -29,10 +29,15 @@ def lib(tmp_path):
 
 
 def test_session_lifecycle_and_message_retry(lib):
+    empty = session_inbound(lib, _message("msg-0", "status"))
+    assert empty == {"status": "none", "action": "status", "session_id": None,
+                     "revision": None, "work_id": None, "progress": None}
+    assert session_inbound(lib, _message("msg-0", "status")) == empty
     start = _message("msg-1", "start", book="Synthetic Work")
     result = session_inbound(lib, start)
     assert result["status"] == "active"
     assert session_inbound(lib, start) == result
+    assert session_inbound(lib, _message("msg-status", "status"))["status"] == "active"
     assert session_inbound(lib, _message("msg-2", "start", book="Synthetic Work"))["status"] == "unchanged"
     page = session_inbound(lib, _message("msg-3", "progress", page=39))
     assert page["progress"]["end_page"]["number"] == 39
@@ -60,3 +65,22 @@ def test_identity_ambiguity_and_conflicting_retry(lib):
     with pytest.raises(LibrarianError):
         session_inbound(lib, {**_message("msg-4", "start", book="Synthetic Work"),
                               "owner_id": "another_owner"})
+
+
+def test_explicit_title_and_isbn_register_new_book_once(tmp_path):
+    with Library(tmp_path) as lib:
+        first = _message("new-1", "start", book="社会理论二十讲", isbn="9787208171411")
+        started = session_inbound(lib, first)
+        assert started["status"] == "active"
+        assert session_inbound(lib, first) == started
+        assert session_inbound(lib, _message("new-2", "start", book="社会理论二十讲",
+                                                  isbn="9787208171411"))["status"] == "unchanged"
+        for model in ("Work", "Edition", "BookInstance", "ReadingSession"):
+            assert lib.db.execute("SELECT count(*) FROM records WHERE owner_id=? AND model=?",
+                                  ("owner_fixture", model)).fetchone()[0] == 1
+        with pytest.raises(LibrarianError, match="title conflicts"):
+            session_inbound(lib, _message("new-3", "start", book="另一书",
+                                          isbn="9787208171411"))
+        with pytest.raises(LibrarianError, match="valid ISBN"):
+            session_inbound(lib, _message("new-4", "start", book="另一书",
+                                          isbn="9787208171412"))

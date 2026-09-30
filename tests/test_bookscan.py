@@ -13,7 +13,7 @@ from bookscan.brackets import collect_brackets
 from bookscan.epub import EpubIndex, normalized
 from bookscan.evaluate import evaluate
 from bookscan.groups import group_adjacent
-from bookscan.inputs import bbox_from_source, bbox_to_source, discover
+from bookscan.inputs import bbox_from_source, bbox_to_source, discover, infer_page_roi
 from bookscan.pagenum import interpolate
 from bookscan.vision import (associate, curved_underline_candidates,
                              text_lines, underline_candidates)
@@ -39,7 +39,7 @@ def test_adapter_uses_accepted_sentence_expansion_only() -> None:
     observed = adapt_report(report, 100, 100)
     matched, uncertain = observed["printed_regions"]
     assert matched["text"] == {"text": "这是句子的中间部分。",
-                               "confidence": .91, "basis": "source_payload"}
+                               "confidence": 1.0, "basis": "source_payload"}
     assert uncertain["text"] == {"text": "不确定片段",
                                  "confidence": .7, "basis": "vision"}
     assert "bookscan_1:epub_alignment_needs_review" in observed["warnings"]
@@ -104,6 +104,17 @@ def test_group_clause_fallback_omits_comma(tmp_path: Path):
     assert result["epub_expanded_text"] == "我们需要保留这一行"
 
 
+def test_weak_but_unique_epub_match_keeps_review_and_uses_grounded_text(tmp_path: Path):
+    sentence = "帕森斯让大家注意到，在早期基督教时代就蕴含先驱思想。"
+    index = EpubIndex(make_epub(tmp_path / "book.epub", [
+        ("one.xhtml", sentence)], ["one.xhtml"]))
+    result = align_group("帕森斯让家注意到，在早期基督含先数思想。", index, {})
+    assert result["match_status"] == "needs_review"
+    assert result["review_reasons"] == ["weak_similarity"]
+    assert result["text_effective"] == sentence
+    assert result["text_basis"] == "epub_punctuation_expansion"
+
+
 def test_group_expansion_starts_at_marked_ocr_span(tmp_path: Path):
     sentence = ("帕森斯区分了规范秩序和实际秩序。我们先来看实际秩序。"
                 "帕森斯所谓的实际秩序，意指最终不是刻意地形成的秩序。"
@@ -117,6 +128,15 @@ def test_group_expansion_starts_at_marked_ocr_span(tmp_path: Path):
     assert result["epub_candidate"]["exact"] == sentence[
         sentence.index("帕森斯所谓"):sentence.index("秩序。在度假") + len("秩序")]
     assert result["epub_expanded_text"] == "帕森斯所谓的实际秩序，意指最终不是刻意地形成的秩序。"
+
+
+def test_auto_page_roi_excludes_facing_page_and_tabletop():
+    image = np.full((1200, 1000, 3), 245, dtype=np.uint8)
+    image[900:, :] = 110
+    image[:900, 780:830] = 90
+    roi = infer_page_roi(image)
+    assert 730 < roi[2] < 800
+    assert 870 < roi[3] < 920
 
 
 def test_adjacent_marked_lines_are_one_group_with_one_crop(tmp_path: Path):

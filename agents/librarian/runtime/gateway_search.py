@@ -24,18 +24,53 @@ def _title_key(value: str) -> str:
 
 def search_inbound(lib: Library, message: dict) -> dict:
     owner = message.get("owner_id")
+    trace_id = message.get("trace_id")
     query = message.get("query", "")
     book = message.get("book")
     page = message.get("page")
     limit = message.get("limit", 10)
     if (not isinstance(owner, str) or not owner or not isinstance(query, str)
             or len(query) > 256 or
+            (trace_id is not None and (not isinstance(trace_id, str) or
+                                       not trace_id.startswith("rt_") or
+                                       len(trace_id) > 80 or query or book or page)) or
             (book is not None and (not isinstance(book, str) or not book.strip() or len(book) > 200)) or
             (page is not None and (isinstance(page, bool) or not isinstance(page, int)
                                    or not 1 <= page <= 9999)) or
-            not (query.strip() or book or page) or isinstance(limit, bool)
+            not (trace_id or query.strip() or book or page) or isinstance(limit, bool)
             or not isinstance(limit, int) or not 1 <= limit <= 20):
         raise LibrarianError("VALIDATION_FAILED", "trusted owner and bounded search fields required")
+    if trace_id:
+        trace = lib.get(owner, "ReadingTrace", trace_id)
+        if trace["status"] != "active":
+            raise LibrarianError("OBJECT_NOT_FOUND", "trace is not active")
+        work = lib.get(owner, "Work", trace["work_id"]) if trace["work_id"] else None
+        alignment = None
+        observation = lib.get(owner, "PageObservation", trace["source"]["observation_id"])
+        try:
+            report = json.loads(lib._read_object(observation["raw_output_asset"]))
+            ids = trace["source"]["detection_ids"]
+            indexes = {int(identifier.split("_")[1]) for identifier in ids
+                       if identifier.startswith("bookscan_") and
+                       identifier.split("_")[1].isdigit()}
+            if len(indexes) == 1:
+                group = report["groups"][next(iter(indexes))]
+                candidate = group.get("epub_candidate") or {}
+                alignment = {"match_status": group.get("match_status"),
+                             "text_basis": group.get("text_basis"),
+                             "review_reasons": group.get("review_reasons", []),
+                             "epub_expanded_text": group.get("epub_expanded_text"),
+                             "similarity": candidate.get("similarity"),
+                             "query_coverage": candidate.get("query_coverage"),
+                             "runner_up_margin": candidate.get("runner_up_margin")}
+        except (KeyError, IndexError, TypeError, ValueError, UnicodeDecodeError):
+            pass
+        return {"trace_id": trace_id, "revision": trace["revision"],
+                "book_title": work["title"] if work else None,
+                "page": trace["location"]["page"],
+                "printed_text": trace["content"]["printed_text"],
+                "annotation": trace["content"]["annotation"],
+                "review": trace["review"], "alignment": alignment}
     work_id = None
     missing_book = False
     if book:

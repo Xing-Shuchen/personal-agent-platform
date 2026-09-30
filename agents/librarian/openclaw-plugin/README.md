@@ -23,20 +23,24 @@ agent turn also has no mapped sender and cannot read the private store.
 `librarian_session` applies an explicit reading-session instruction using the
 trusted inbound message ID and canonical session key as conversation scope.
 The hook's `conversationId` is optional, so session commands do not depend on
-that field. The model supplies only
-the requested action, title or reported page. `librarian_evidence` reads an
+that field. The model supplies only the requested action, title, ISBN or
+reported page. An explicit title plus valid ISBN-13 registers a new physical
+catalog chain before starting its session. `librarian_import_epub` is offered
+when the current authenticated message contains one staged EPUB or a local
+`epubInboxRoot` is configured. It stores one EPUB matching the selected
+physical session under `source-books/<isbn13>.epub` and returns a content hash
+receipt. `librarian_evidence` reads an
 owner-scoped physical trace, sends a temporary cropped original to the
 current bound conversation, then removes the temporary file; originals remain
 in the private object store and never enter the Vault. `librarian_review` lists
 pending extraction conflicts and compares current traces with proposed groups
-without changing stored records. Configure the dedicated OpenClaw agent with
-`tools.profile: "minimal"` and `tools.alsoAllow` containing the four
-`librarian_*` tool names. The minimal profile supplies `session_status`.
-Do not combine `allow` and `alsoAllow` in the same agent scope. The global
-`coding` profile filters out plugin tools even when they appear in an agent
-`allow` list. Image intake and background processing run through the
-plugin service, so the chat agent needs no shell or filesystem tool. This
-prevents a model from bypassing owner-scoped search through local SQLite.
+without changing stored records. This owner's dedicated Librarian agent uses
+`tools.profile: "full"`, retains `tools.alsoAllow` for the `librarian_*` tools,
+and has per-agent gateway exec mode `full` plus filesystem access outside its
+workspace. It can inspect attachments, repair the local pipeline and operate
+the Vault in the authenticated owner conversation. The plugin's owner mapping
+still gates its dedicated reading tools and image intake. Do not combine
+`allow` and `alsoAllow` in the same agent scope.
 
 From the PAP repository root, install the linked local plugin:
 
@@ -46,9 +50,9 @@ openclaw plugins install --link --force --accept-capabilities ./agents/librarian
 
 Configure absolute repository and private state paths, a Python interpreter,
 and an explicit owner mapping. Vault is optional. On this PC,
-`physicalWorkerEnabled` is set to `false` in the private OpenClaw configuration:
-image intake remains active, but the physical worker does not launch after
-intake or on its recovery schedule. `bookscanPython` points to the separate
+`physicalWorkerEnabled` is set to `true` in the private OpenClaw configuration:
+image intake starts the physical worker after the upload quiet period and the
+recovery schedule resumes unfinished batches. `bookscanPython` points to the separate
 PaddleOCR interpreter. The Bookscan adapter and its limits are documented in
 [BOOKSCAN_INTEGRATION.md](../runtime/BOOKSCAN_INTEGRATION.md). The digital worker
 has a separate schedule. The following OCR setup describes the historical

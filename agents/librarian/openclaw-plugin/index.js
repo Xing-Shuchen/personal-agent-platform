@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { constants } from "node:fs";
-import { chmod, copyFile, lstat, mkdir, readdir, realpath, rename, stat, unlink, writeFile } from "node:fs/promises";
+import { chmod, copyFile, lstat, mkdir, readFile, readdir, realpath, rename, stat, unlink, writeFile } from "node:fs/promises";
 import { delimiter, dirname, isAbsolute, resolve } from "node:path";
 
 const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
@@ -40,6 +40,50 @@ function inboundSessions() {
 
 const configuredOwnerIds = (config) =>
   [...new Set((config.ownerMappings ?? []).map((entry) => entry.ownerId))];
+
+function physicalHoldPath(config, ownerId) {
+  const key = createHash("sha256").update(ownerId).digest("hex");
+  return resolve(config.stateRoot, "worker-control", `${key}.json`);
+}
+
+export async function physicalProcessingHeld(config, ownerId) {
+  if (!config.stateRoot || !ownerId) return false;
+  try {
+    const record = JSON.parse(await readFile(physicalHoldPath(config, ownerId), "utf8"));
+    return record.owner_id === ownerId && record.held === true;
+  } catch (error) {
+    if (error?.code === "ENOENT") return false;
+    throw error;
+  }
+}
+
+export async function setPhysicalProcessingHold(config, ownerId, held, messageId) {
+  if (!config.stateRoot || !ownerId || !messageId) return;
+  const directory = resolve(config.stateRoot, "worker-control");
+  await mkdir(directory, { recursive: true, mode: 0o700 });
+  const info = await lstat(directory);
+  if (!info.isDirectory() || info.isSymbolicLink()) throw new Error("worker control directory is unsafe");
+  await chmod(directory, 0o700);
+  const target = physicalHoldPath(config, ownerId);
+  const temporary = resolve(directory, `${randomUUID()}.tmp`);
+  try {
+    await writeFile(temporary, JSON.stringify({ owner_id: ownerId, held,
+      source_event_id: messageId, updated_at: new Date().toISOString() }),
+    { mode: 0o600, flag: "wx" });
+    await rename(temporary, target);
+  } finally {
+    await unlink(temporary).catch(() => {});
+  }
+}
+
+export function physicalProcessingInstruction(content) {
+  if (typeof content !== "string") return null;
+  if (/(先暂存|只暂存|暂存.*不要开始处理|不要开始处理|先不要处理|暂停处理|停止处理)/u.test(content))
+    return "hold";
+  if (/(?:^|[。！!\n])\s*(?:可以开始了|现在开始处理|开始处理(?:新一批|扫描|照片|图片|这批)?|\/lib\s+intake\s+resume)/u.test(content.trim()))
+    return "resume";
+  return null;
+}
 
 function ownerFor(config, event, ctx) {
   if (configuredOwnerIds(config).length !== 1) return null;
@@ -191,6 +235,10 @@ const runEvidenceBridge = (config, message) => runPythonBridge(
   config, "agents.librarian.runtime.gateway_evidence", message);
 const runSourceBookBridge = (config, message) => runPythonBridge(
   config, "agents.librarian.runtime.gateway_source_book", message);
+const runSourceBookIntakeBridge = (config, message) => runPythonBridge(
+  config, "agents.librarian.runtime.gateway_source_book_intake", message);
+const runDiscardBridge = (config, message) => runPythonBridge(
+  config, "agents.librarian.runtime.gateway_discard_captures", message);
 const runReviewBridge = (config, message) => runPythonBridge(
   config, "agents.librarian.runtime.gateway_review", message);
 const runReviewDecisionBridge = (config, message) => runPythonBridge(
@@ -218,6 +266,8 @@ export function workerArgs(config, ownerId) {
 
 export async function startWorker(config, ownerId, mode = "physical", logger = null) {
   if (mode === "physical" && config.physicalWorkerEnabled === false) return;
+  if (mode === "physical" && await physicalProcessingHeld(config, ownerId))
+    return { state: "held" };
   const args = workerArgs(config, ownerId);
   if (!args) return;
   args.push(mode === "digital" ? "--digital-only" : "--physical-only");
@@ -254,16 +304,18 @@ export function librarianSearchTool(config, ctx, bridge = runSearchBridge) {
   return {
     name: "librarian_search",
     label: "Librarian search",
-    description: "Search this authenticated sender's reading traces by quoted text, book title, and/or printed page number. For page questions pass book and page. Results can also include newer pending_evidence scan candidates; these are unreviewed and must not be described as stored traces.",
+    description: "Search this authenticated sender's reading traces by quoted text, book title, printed page number, or exact trace_id. For a trace ID, pass only trace_id to retrieve its full stored text, provenance basis and EPUB alignment candidate. For page questions pass book and page. Results can also include newer pending_evidence scan candidates; these are unreviewed and must not be described as stored traces.",
     parameters: { type: "object", properties: {
+      trace_id: { type: "string", pattern: "^rt_[A-Za-z0-9_-]+$" },
       query: { type: "string", minLength: 1, maxLength: 256 },
       book: { type: "string", minLength: 1, maxLength: 200 },
       page: { type: "integer", minimum: 1, maximum: 9999 },
       limit: { type: "integer", minimum: 1, maximum: 20 },
-    }, anyOf: [{ required: ["query"] }, { required: ["book"] },
+    }, anyOf: [{ required: ["trace_id"] }, { required: ["query"] }, { required: ["book"] },
       { required: ["page"] }], additionalProperties: false },
     async execute(_id, params) {
       const result = await bridge(config, { owner_id: ownerId,
+        ...(params.trace_id ? { trace_id: params.trace_id } : {}),
         query: params.query, book: params.book, page: params.page,
         limit: params.limit ?? 10 });
       return { content: [{ type: "text", text: JSON.stringify(result) }],
@@ -341,6 +393,8 @@ export function librarianEvidenceTool(config, ctx, bridge = runEvidenceBridge) {
         candidate_index: result.candidate_index ?? null,
         gap_index: result.gap_index ?? null,
         source_status: result.source_status ?? "stored_trace",
+        display_rotation_clockwise: result.display_rotation_clockwise ?? 0,
+        single_page_roi_applied: result.single_page_roi_applied === true,
         delivery_status: "queued" }) }] };
     },
   };
@@ -409,7 +463,7 @@ export function librarianReviewTool(config, ctx, bridge = runReviewBridge) {
   return {
     name: "librarian_review",
     label: "Librarian pending extraction review",
-    description: "Read pending extraction conflicts for this authenticated sender. With no capture_id, list pending captures, recent image-intake failures and latest worker launch outcomes; spawned means only that a process started. With a capture_id, compare current traces and proposed groups; this tool never changes stored traces.",
+    description: "Read pending extraction conflicts for this authenticated sender. With no capture_id, list pending review candidates, durable intake counts, processing hold, recent intake failures and worker launches. An empty pending list does not mean photos were not received. With a capture_id, compare current traces and proposed groups; this tool never changes stored traces.",
     parameters: { type: "object", properties: {
       capture_id: { type: "string", pattern: "^capture_[A-Za-z0-9_-]+$" },
     }, additionalProperties: false },
@@ -511,7 +565,51 @@ export function rememberInboundSession(config, recent, event, ctx, now = Date.no
     captureConversationId: ctx.conversationId ?? ctx.sessionKey,
     legacyConversationId: ctx.conversationId && ctx.conversationId !== ctx.sessionKey
       ? ctx.sessionKey : undefined,
-    messageId: event.messageId, at: now });
+    messageId: event.messageId, at: now,
+    epubMedia: event.mediaStagingPending ? [] : (event.media ?? []).filter((media) =>
+      ["application/epub+zip", "application/octet-stream", "application/zip"].includes(
+        media.contentType?.toLowerCase()) ||
+      (typeof media.path === "string" && media.path.toLowerCase().endsWith(".epub"))) });
+}
+
+export function librarianImportEpubTool(config, ctx, recent,
+                                        bridge = runSourceBookIntakeBridge,
+                                        now = Date.now()) {
+  if (ctx?.agentId !== "librarian" || !ctx.sessionKey || !ctx.requesterSenderId) return null;
+  const entry = recent.get(ctx.sessionKey);
+  const route = ctx.deliveryContext ?? {};
+  if (!entry || now - entry.at > 10 * 60_000 || now < entry.at ||
+      entry.senderId !== ctx.requesterSenderId ||
+      entry.channelId !== (ctx.messageChannel ?? route.channel) ||
+      entry.accountId !== (ctx.agentAccountId ?? route.accountId) ||
+      ownerFor(config, { senderId: entry.senderId },
+        { channelId: entry.channelId, accountId: entry.accountId }) !== entry.ownerId ||
+      entry.epubMedia.length > 1 ||
+      (!entry.epubMedia.length && !config.epubInboxRoot)) return null;
+  return {
+    name: "librarian_import_epub",
+    label: "Store received EPUB",
+    description: "Store the EPUB attached to this authenticated inbound message, or find the one matching the selected physical book in the configured local EPUB inbox. Call after starting the book session; no path or owner argument is accepted.",
+    parameters: { type: "object", properties: {}, additionalProperties: false },
+    async execute() {
+      const media = entry.epubMedia[0];
+      let path;
+      if (media) {
+        if (!media.path || !isAbsolute(media.path)) throw new Error("EPUB is not staged locally");
+        path = await realpath(media.path);
+        const info = await stat(path);
+        if (!info.isFile() || info.size < 1 || info.size > MAX_EPUB_BYTES)
+          throw new Error("EPUB size is outside the accepted range");
+      }
+      const result = await bridge(config, { owner_id: entry.ownerId,
+        actor_id: entry.senderId,
+        source: { transport: entry.channelId, account_id: entry.accountId,
+          conversation_id: entry.captureConversationId,
+          source_event_id: entry.messageId },
+        ...(path ? { data_path: path } : { inbox_root: config.epubInboxRoot }) });
+      return { content: [{ type: "text", text: JSON.stringify(result) }], details: result };
+    },
+  };
 }
 
 export function librarianSessionTool(config, ctx, recent, bridge = runSessionBridge,
@@ -530,10 +628,11 @@ export function librarianSessionTool(config, ctx, recent, bridge = runSessionBri
   return {
     name: "librarian_session",
     label: "Librarian session",
-    description: "Apply an explicit reading-session instruction from this authenticated inbound message. start needs a physical book title or ISBN; progress needs a page number.",
+    description: "Apply an explicit reading-session instruction from this authenticated inbound message. For a new physical book, start with the user's title in book and ISBN-13 in isbn; progress needs a page number.",
     parameters: { type: "object", properties: {
       action: { type: "string", enum: ["start", "progress", "pause", "resume", "close", "status"] },
       book: { type: "string", minLength: 1, maxLength: 200 },
+      isbn: { type: "string", pattern: "^[0-9]{13}$" },
       page: { type: "integer", minimum: 1, maximum: 9999 },
     }, required: ["action"], additionalProperties: false },
     async execute(_id, params) {
@@ -543,7 +642,8 @@ export function librarianSessionTool(config, ctx, recent, bridge = runSessionBri
           conversation_id: entry.captureConversationId, source_event_id: entry.messageId },
         ...(entry.legacyConversationId
           ? { legacy_conversation_id: entry.legacyConversationId } : {}),
-        action: params.action, book: params.book, page: params.page });
+        action: params.action, book: params.book, isbn: params.isbn,
+        page: params.page });
       return { content: [{ type: "text", text: JSON.stringify(result) }], details: result };
     },
   };
@@ -610,6 +710,8 @@ export default {
       { name: "librarian_evidence" });
     api.registerTool((ctx) => librarianSourceBookTool(config, ctx),
       { name: "librarian_source_book" });
+    api.registerTool((ctx) => librarianImportEpubTool(config, ctx, recentInbound),
+      { name: "librarian_import_epub" });
     api.registerTool((ctx) => librarianReviewTool(config, ctx),
       { name: "librarian_review" });
     api.registerTool((ctx) => librarianReviewDecisionTool(config, ctx, recentInbound),
@@ -637,6 +739,25 @@ export default {
           `media=${Array.isArray(event.media) ? event.media.length : "absent"} ` +
           `staging=${Boolean(event.mediaStagingPending)}`);
         rememberInboundSession(config, recentInbound, event, ctx);
+        const ownerId = ownerFor(config, event, ctx);
+        const instruction = ownerId && physicalProcessingInstruction(event.content);
+        const discard = ownerId && typeof event.content === "string" &&
+          /^丢弃刚刚收到的\s*(\d+)\s*张图[。！!\s]*(?:重新接收[。！!\s]*)?$/u.exec(event.content.trim());
+        if (instruction && event.messageId) {
+          await setPhysicalProcessingHold(config, ownerId, instruction === "hold", event.messageId);
+          api.logger.info(`Librarian physical processing ${instruction === "hold" ? "held" : "resumed"}`);
+          if (instruction === "hold") clearTimeout(intakeTimer);
+          else void startWorker(config, ownerId, "physical", api.logger);
+        }
+        if (discard && event.messageId) {
+          const receipt = await runDiscardBridge(config, { owner_id: ownerId,
+            source: { transport: ctx.channelId, account_id: ctx.accountId,
+              conversation_id: ctx.conversationId ?? ctx.sessionKey,
+              source_event_id: event.messageId },
+            count: Number(discard[1]),
+            before: new Date(event.timestamp ?? Date.now()).toISOString() });
+          api.logger.info(`Librarian discarded ${receipt.count} unprocessed image(s)`);
+        }
         if (ctx.accountId === "librarian") api.logger.info(
           `Librarian inbound binding: owner=${Boolean(ownerFor(config, event, ctx))} ` +
           `saved=${Boolean(recentInbound.get(ctx.sessionKey))} entries=${recentInbound.size}`);

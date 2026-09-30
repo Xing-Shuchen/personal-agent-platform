@@ -104,8 +104,17 @@ def align_group(ocr_query: str, index: EpubIndex, config: dict,
     if margin < float(config.get("min_runner_up_margin", .06)):
         reasons.append("epub_ambiguous")
     if reasons:
+        # OCR can omit whole runs of Chinese characters while still locating
+        # one unambiguous EPUB passage. Keep the low-score review flag, but
+        # publish the grounded sentence instead of known-corrupt OCR.
+        grounded_weak_match = (reasons == ["weak_similarity"] and
+                               first["similarity"] >= .70 and
+                               first["query_coverage"] >= .90 and
+                               margin >= .10)
         return {**base, "epub_candidate": first,
                 "epub_expanded_text": first["expanded_exact"],
+                "text_effective": first["expanded_exact"] if grounded_weak_match else ocr_query,
+                "text_basis": "epub_punctuation_expansion" if grounded_weak_match else "visual_ocr",
                 "match_status": "needs_review", "review_reasons": reasons}
     return {**base, "epub_candidate": first,
             "epub_expanded_text": first["expanded_exact"],
