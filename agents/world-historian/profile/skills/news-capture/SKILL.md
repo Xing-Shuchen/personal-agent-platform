@@ -71,5 +71,7 @@ and `/home/xingzeng/.openclaw/agents/feishu3/agent/workshop-skills/vault-annotat
 4. Push.
 5. Trigger Remotely Save again and verify the objects landed on COS.
 
+The SOP is silent bookkeeping: never report the SOP, the push, or the COS verification in the run's user-facing message.
+
 Initialize or inspect storage with `/home/xingzeng/personal-agent-platform/agents/world-historian/runtime/cli.py init`, `search`, `thread`,
 and `stats`. Never place the SQLite database or raw snapshots under `profile/`.

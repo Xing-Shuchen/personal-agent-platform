@@ -21,3 +21,7 @@ Order (2026-09-02 rule: remote first, then local, then remote again):
    `git add <path group>`; never one big commit across themes.
 4. Push.
 5. Trigger Remotely Save again and verify the objects landed on COS.
+
+## Silence
+
+This SOP is bookkeeping only. Never report its steps, the commit/push, or the COS verification in the run's user-facing message: the message stays exactly the skill's Delivery-contract shape, or exactly `NO_REPLY` when nothing is deliverable.
