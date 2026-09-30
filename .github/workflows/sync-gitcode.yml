@@ -6,30 +6,42 @@ on:
     - cron: '23 */3 * * *'
   workflow_dispatch:
 
-# GITHUB_TOKEN 需要写权限才能镜像推送（个人仓库下显式声明即生效）
 permissions:
   contents: write
+
+concurrency:
+  group: sync-gitcode
+  cancel-in-progress: false
 
 jobs:
   sync:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - name: Sync GitCode to GitHub
         env:
-          GITCODE_URL: "https://oauth2:${{ secrets.GITCODE_TOKEN }}@gitcode.com/shuchen_xing/personal-agent-platform.git"
+          GITCODE_TOKEN: ${{ secrets.GITCODE_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GIT_TERMINAL_PROMPT: '0'
         run: |
           set -euo pipefail
-          git config --global user.name 'github-actions[bot]'
-          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+          if [ -z "$GITCODE_TOKEN" ]; then
+            echo 'Missing repository secret: GITCODE_TOKEN' >&2
+            exit 1
+          fi
 
-          # 裸克隆 GitCode 仓库（全部 refs）
-          git clone --mirror "$GITCODE_URL" upstream.git
+          # 只抓取需要镜像的 refs，避免 GitCode 内部 refs 进入推送范围。
+          mkdir upstream.git
           cd upstream.git
+          git init --bare
+          git -c http.extraheader="Authorization: Basic $(printf 'oauth2:%s' "$GITCODE_TOKEN" | base64 -w0)" \
+            fetch --no-tags 'https://gitcode.com/shuchen_xing/personal-agent-platform.git' \
+            '+refs/heads/*:refs/heads/*' '+refs/tags/*:refs/tags/*'
 
-          # 配置目标 GitHub 认证地址
-          git remote set-url --push origin "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
+          git remote add github "https://github.com/${{ github.repository }}.git"
+          git config "http.https://github.com/${{ github.repository }}.git.extraheader" \
+            "Authorization: Basic $(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
 
-          # 只同步分支和标签（不用 --mirror：避免触碰 refs/pull 等隐藏 ref 被拒）
-          # --prune: GitCode 侧删除的分支/标签在 GitHub 同步删除（仅限这两个命名空间）
-          git push --prune --force origin 'refs/heads/*:refs/heads/*'
-          git push --prune --force origin 'refs/tags/*:refs/tags/*'
+          # GitCode 删除的分支和标签也从 GitHub 镜像中删除。
+          git push --prune --force github 'refs/heads/*:refs/heads/*'
+          git push --prune --force github 'refs/tags/*:refs/tags/*'
