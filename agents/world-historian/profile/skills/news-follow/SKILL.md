@@ -157,8 +157,35 @@ Persist each change through `store-bundle`: `DEMOTE` → the thread's `id`,
 column of its `DEMOTE` line; `CLOSE` → `id`, `title`, `status: "closed"`. For
 either lifecycle-only bundle, carry the existing `last_checked_at`,
 `next_check_at`, and `quiet_count` values through verbatim: never reset or zero
-those raw fields. A lifecycle-only change is not user-facing: if it is the
-run's only change, the final response must be exactly `NO_REPLY`.
+those raw fields.
+
+## Lifecycle notices (level lowered)
+
+A lowering is user-facing: every `DEMOTE` and `CLOSE` this run persists must be
+reported in this run's message, even when the thread gained no new event.
+
+Record each persisted lowering as one appended JSON line in
+`/home/xingzeng/personal-agent-platform/var/world-historian/lifecycle-notices.jsonl`:
+`{"ts": "<local ISO>", "id": "<thr_…>", "title": "<verbatim title>", "from":
+"<old priority>", "to": "<normal|low|background|closed>", "reason": "<N> 天无新事件"}`.
+Append through one small `python3 - <<'PY'` heredoc; never rewrite the file.
+
+Then consume pending notices at the end of the run, before composing the
+response:
+
+```bash
+NOTICES=/home/xingzeng/personal-agent-platform/var/world-historian/lifecycle-notices.jsonl
+if [ -s "$NOTICES" ]; then
+  cat "$NOTICES"
+  mv "$NOTICES" "/home/xingzeng/personal-agent-platform/var/world-historian/lifecycle-notices-delivered-$(date +%Y%m%d-%H%M).jsonl"
+fi
+```
+
+Its printed lines are the notices to report; the `mv` clears them so later runs
+do not repeat them. Report a lowering in the very run that persists it, at any
+hour — no holding, no quiet-hours suppression. Empty output means nothing is
+pending. A run that dies after appending leaves the line pending, so a lowering
+is never lost.
 
 ## Delivery contract
 
@@ -167,10 +194,12 @@ trigger a delivery. `low` and `background` threads stay tracked in the
 Chronicle: record their events/claims as usual. `low` threads appear in the
 roster, while `background` threads never appear in the message.
 
-- No `high`/`normal` thread gained a material event or claim correction — the
-ENTIRE final response must be exactly the single marker `NO_REPLY`. This
-includes runs whose only changes touch `low`/`background` threads: they are
-persisted but a `low`-only change still returns exactly `NO_REPLY`. No work
+- No `high`/`normal` thread gained a material event or claim correction and no
+lifecycle notice was consumed — the ENTIRE final response must be exactly the
+single marker `NO_REPLY`. This includes runs whose only changes touch
+`low`/`background` threads: they are persisted but a `low`-only change still
+returns exactly `NO_REPLY`. A consumed lifecycle notice is the one exception
+that makes such a run user-facing (see「Lifecycle notices」). No work
 summary, no rejection notes, no Chinese「无变化」prose, nothing before or after.
 Any surrounding text makes it a normal delivery and spams the user (observed
 2026-09-01: a work-summary +
@@ -178,8 +207,9 @@ Any surrounding text makes it a normal delivery and spams the user (observed
 `NO_REPLY` — any other marker, including the legacy Hermes `[SILENT]`, is
 delivered as literal text, observed 2026-09-08 13:05).
 - At least one `high`/`normal` thread gained a material event or claim
-correction — return one Chinese update, written as Feishu Markdown (the Feishu
-channel renders it), with exactly this shape and nothing else:
+correction, or a lifecycle notice was consumed — return one Chinese update,
+written as Feishu Markdown (the Feishu channel renders it), with exactly this
+shape and nothing else:
 
 ```markdown
 **🛰️ 世界线追踪 · M月D日** ｜ Level: <High|Normal|Low|Background> ｜ <N> 条进展
@@ -187,12 +217,16 @@ channel renders it), with exactly this shape and nothing else:
 **进展**
 - **<线程标题>** — <新增/修正了什么事件，一句话>（[来源](<url>)）
 
+**降级**
+- **<线程标题>** — <旧档位> → <新档位|closed>（<原因>）
+
 **追踪中**
 <`roster` command stdout, pasted verbatim>
 ```
 
 Formatting rules:
-1. 进展 — 每个有新进展的 `high`/`normal` thread 一条：加粗线程标题、一句话说明新增或修正的事件、有来源就附行内链接。不写检索过程、不写被排除的候选；`low`/`background` 绝不出现。
-2. 追踪中 — 将上面 `roster` command 的 stdout 原样粘贴：不得由模型选择 emoji、不得重新加粗、不得重排、不得添加或删除行。三档 emoji 映射为 `🟥` high / `🟦` normal / `⬜` low。
-3. 保持紧凑：每个 thread 一行。Feishu 卡片渲染加粗、列表、链接、表情和空行——不要用表格，分节标签用加粗（`**进展**`）而不是 `#` 标题。
-4. 来源档位只写 `Level: <优先级>`：优先级取 invocation 结构化参数 `priority`，首字母大写（`Level: High` / `Level: Normal`；`low`/`background` 不会投递，若出现写 `Level: Low` / `Level: Background`）。不写 job 名、不译成中文、不加其他词。
+1. 进展 — 每个有新进展的 `high`/`normal` thread 一条：加粗线程标题、一句话说明新增或修正的事件、有来源就附行内链接。不写检索过程、不写被排除的候选；`low`/`background` 绝不出现。标题里的 `<N> 条进展` 只数这些进展条，不含降级；没有进展时省略 `**进展**` 一节、计数写 `0 条进展`。
+2. 降级 — 每个被消费的 lifecycle 通知一条：加粗线程标题、`<旧档位> → <新档位|closed>`、括号里写原因（如 `3 天无新事件`）。降级只写在这里，绝不写进 `进展`，也不要有单独的降级前言。
+3. 追踪中 — 将上面 `roster` command 的 stdout 原样粘贴：不得由模型选择 emoji、不得重新加粗、不得重排、不得添加或删除行。三档 emoji 映射为 `🟥` high / `🟦` normal / `⬜` low。
+4. 保持紧凑：每个 thread 一行。Feishu 卡片渲染加粗、列表、链接、表情和空行——不要用表格，分节标签用加粗（`**进展**`）而不是 `#` 标题。
+5. 来源档位只写 `Level: <优先级>`：优先级取 invocation 结构化参数 `priority`，首字母大写（`Level: High` / `Level: Normal`；`low`/`background` 不会投递，若出现写 `Level: Low` / `Level: Background`）。不写 job 名、不译成中文、不加其他词。
