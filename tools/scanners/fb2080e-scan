@@ -1,0 +1,279 @@
+#!/usr/bin/env python3
+"""One-page FB2080E scanning CLI for a local agent or terminal user."""
+
+from __future__ import annotations
+
+import argparse
+from datetime import datetime, timezone
+from decimal import Decimal, InvalidOperation
+import hashlib
+import os
+from pathlib import Path
+import shlex
+import subprocess
+import sys
+import tempfile
+
+SCANNER = "/usr/bin/scanimage"
+USB_ID = "usb 0x0638 0x0a84\n"
+MAX_WIDTH_MM = Decimal("221")
+MAX_HEIGHT_MM = Decimal("297")
+
+
+def utc_now() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def dpi_value(value: str) -> int:
+    try:
+        number = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("DPI 必须是整数") from exc
+    if not 75 <= number <= 600:
+        raise argparse.ArgumentTypeError("DPI 必须在 75–600 之间")
+    return number
+
+
+def mm_value(value: str) -> Decimal:
+    try:
+        number = Decimal(value)
+    except InvalidOperation as exc:
+        raise argparse.ArgumentTypeError("毫米数值无效") from exc
+    if not number.is_finite() or number < 0:
+        raise argparse.ArgumentTypeError("毫米数值必须为非负数")
+    return number
+
+
+def parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(
+        prog="fb2080e-scan",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        description=(
+            "虹光 FB2080E 单张扫描。一次调用只扫描一页；供人或 agent 编排翻页流程。\n"
+            "--help 不访问设备，也不会启动扫描。"
+        ),
+        epilog="""示例：
+  tools/scanners/fb2080e-scan --list-devices
+  tools/scanners/fb2080e-scan --list-options
+  tools/scanners/fb2080e-scan --output var/scans/book/page-0001.tif
+  tools/scanners/fb2080e-scan --dpi 150 --mode Gray --width-mm 100 --height-mm 100 \\
+      --output var/scans/test-small.tif
+
+默认：300 dpi、Color、Normal 扫描源、从左上角开始的 221×297 mm 区域。
+本机实测选项：DPI 75–600；模式 Color/Gray/Lineart/Dithered；
+水平范围 0–221 mm，垂直范围 0–297 mm。设备断开或更换后应重新查询选项。
+
+--output 必填且不能是已有文件；只接受 .tif/.tiff。扫描结果先写到
+<输出文件>.part，命令退出码为 0 且 TIFF 可完整解码、尺寸合理后才保存为
+正式文件。失败保留 .part 和日志，不覆盖旧页。伴随生成 .command.txt、
+.stderr.txt、.exit-status.txt、.check.txt、.sha256.txt。
+
+--list-devices 和 --list-options 会初始化/打开设备进行查询，但不请求图像。
+扫描会驱动机械部件；运行前放好纸、盖好盖板。普通用户运行，不用 sudo。
+多页编排由 agent 逐次调用本命令：每页给唯一输出路径；自动翻页时在
+上一页成功完成后等待所需秒数（如 4 秒），再调用下一页。检查每页结果
+和页序，不能仅凭文件存在认定成功。Ctrl+C 可停止当前扫描。
+
+退出码：0=成功；1=设备/扫描/图像校验失败；2=参数或环境错误；
+124=扫描超时；130=用户中断。调试日志可能含设备序列号，请在本地保存。""",
+    )
+    action = p.add_mutually_exclusive_group()
+    action.add_argument("--list-devices", action="store_true", help="列出本机可用的 FB2080E 设备名，不扫描图像")
+    action.add_argument("--list-options", action="store_true", help="显示当前设备实际支持的 SANE 参数，不扫描图像")
+    p.add_argument("--output", type=Path, metavar="FILE.tif", help="单张 TIFF 输出路径；必须尚不存在")
+    p.add_argument("--dpi", type=dpi_value, default=300, metavar="75..600", help="扫描分辨率，默认 300 dpi")
+    p.add_argument("--mode", choices=("Color", "Gray", "Lineart", "Dithered"), default="Color", help="扫描模式，默认 Color")
+    p.add_argument("--left-mm", type=mm_value, default=Decimal("0"), metavar="MM", help="扫描区域左边距，默认 0 mm")
+    p.add_argument("--top-mm", type=mm_value, default=Decimal("0"), metavar="MM", help="扫描区域上边距，默认 0 mm")
+    p.add_argument("--width-mm", type=mm_value, default=MAX_WIDTH_MM, metavar="MM", help="扫描区域宽度，默认 221 mm")
+    p.add_argument("--height-mm", type=mm_value, default=MAX_HEIGHT_MM, metavar="MM", help="扫描区域高度，默认 297 mm")
+    p.add_argument("--timeout-seconds", type=int, default=240, metavar="SEC", help="单张扫描超时，默认 240 秒")
+    return p
+
+
+def discover(environment: dict[str, str]) -> tuple[list[str], str]:
+    result = subprocess.run(
+        [SCANNER, "-f", "%d|%v|%m%n"],
+        env=environment,
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"设备发现失败（退出码 {result.returncode}）：{result.stderr.strip()}")
+    devices = sorted({
+        fields[0]
+        for line in result.stdout.splitlines()
+        if len(fields := line.split("|", 2)) == 3
+        and fields[0].lower().startswith("avision:")
+        and fields[2].strip().lower() == "fb2080e"
+    })
+    return devices, result.stdout
+
+
+def validate_area(args: argparse.Namespace) -> None:
+    if args.width_mm <= 0 or args.height_mm <= 0:
+        raise ValueError("宽度和高度必须大于 0")
+    if args.left_mm + args.width_mm > MAX_WIDTH_MM:
+        raise ValueError("左边距加宽度不能超过 221 mm")
+    if args.top_mm + args.height_mm > MAX_HEIGHT_MM:
+        raise ValueError("上边距加高度不能超过 297 mm")
+    if not 30 <= args.timeout_seconds <= 1200:
+        raise ValueError("超时必须在 30–1200 秒之间")
+
+
+def check_image(path: Path, args: argparse.Namespace) -> str:
+    from PIL import Image, ImageStat
+
+    with Image.open(path) as image:
+        image.load()
+        expected_width = float(args.width_mm) * args.dpi / 25.4
+        expected_height = float(args.height_mm) * args.dpi / 25.4
+        reasonable = (
+            image.format == "TIFF"
+            and abs(image.width - expected_width) <= max(12, expected_width * 0.05)
+            and abs(image.height - expected_height) <= max(12, expected_height * 0.05)
+        )
+        stats = ImageStat.Stat(image.convert("RGB"))
+        report = (
+            f"format={image.format}\nsize={image.width}x{image.height}\nmode={image.mode}\n"
+            f"expected_approx={expected_width:.0f}x{expected_height:.0f}\n"
+            f"RGB_mean={stats.mean}\nRGB_stddev={stats.stddev}\n"
+            f"low_variance={max(stats.stddev) < 2}\nvalid={reasonable}\n"
+        )
+        if not reasonable:
+            raise ValueError(f"TIFF 尺寸或格式异常：{image.width}x{image.height}, {image.format}")
+        return report
+
+
+def scan(args: argparse.Namespace, environment: dict[str, str], device: str, discovery: str) -> int:
+    output = args.output.expanduser().absolute()
+    if output.suffix.lower() not in (".tif", ".tiff"):
+        print("--output 必须以 .tif 或 .tiff 结尾", file=sys.stderr)
+        return 2
+    output.parent.mkdir(parents=True, exist_ok=True)
+    part = Path(f"{output}.part")
+    companions = [Path(f"{output}.{name}") for name in (
+        "command.txt", "stderr.txt", "exit-status.txt", "check.txt", "sha256.txt", "discovery.txt"
+    )]
+    if any(path.exists() for path in (output, part, *companions)):
+        print(f"目标或伴随文件已存在，拒绝覆盖：{output}", file=sys.stderr)
+        return 2
+
+    command = [
+        SCANNER, "-d", device, "--mode", args.mode, "--resolution", str(args.dpi),
+        "--source", "Normal", "-l", str(args.left_mm), "-t", str(args.top_mm),
+        "-x", str(args.width_mm), "-y", str(args.height_mm), "--format=tiff",
+    ]
+    with Path(f"{output}.command.txt").open("x", encoding="utf-8") as command_log:
+        command_log.write(shlex.join(command) + "\n")
+    with Path(f"{output}.discovery.txt").open("x", encoding="utf-8") as discovery_log:
+        discovery_log.write(discovery)
+    print(f"开始扫描：{device}，{args.dpi} dpi，{args.mode}；输出：{output}", flush=True)
+    try:
+        with part.open("xb") as image_stream, Path(f"{output}.stderr.txt").open("x", encoding="utf-8") as error_stream:
+            try:
+                result = subprocess.run(command, env=environment, stdout=image_stream, stderr=error_stream,
+                                        timeout=args.timeout_seconds, check=False)
+                status = result.returncode
+            except subprocess.TimeoutExpired:
+                status = 124
+            except KeyboardInterrupt:
+                status = 130
+    except OSError as exc:
+        print(f"无法写入扫描文件：{exc}", file=sys.stderr)
+        return 1
+    Path(f"{output}.exit-status.txt").write_text(f"{status}\n", encoding="utf-8")
+    if status != 0 or part.stat().st_size == 0:
+        print(f"扫描未成功（退出码 {status}）；保留 .part 和日志。", file=sys.stderr)
+        return status if status in (124, 130) else 1
+
+    try:
+        report = check_image(part, args)
+    except Exception as exc:
+        Path(f"{output}.check.txt").write_text(f"valid=False\nerror={exc}\n", encoding="utf-8")
+        print(f"图像校验失败：{exc}；保留 .part。", file=sys.stderr)
+        return 1
+    Path(f"{output}.check.txt").write_text(report, encoding="utf-8")
+    try:
+        os.link(part, output)  # 同目录原子创建，若已存在则失败，不覆盖。
+        part.unlink()
+    except OSError as exc:
+        print(f"正式文件创建失败：{exc}；保留 .part。", file=sys.stderr)
+        return 1
+    with output.open("rb") as image_stream:
+        digest = hashlib.file_digest(image_stream, "sha256").hexdigest()
+    Path(f"{output}.sha256.txt").write_text(f"{digest}  {output.name}\n", encoding="utf-8")
+    print(f"完成：{output}；UTC {utc_now()}；SHA256 {digest}")
+    return 0
+
+
+def main() -> int:
+    args = parser().parse_args()
+    if not args.list_devices and not args.list_options and args.output is None:
+        print("请指定 --output，或使用 --list-devices / --list-options。", file=sys.stderr)
+        return 2
+    if (args.list_devices or args.list_options) and args.output is not None:
+        print("查询选项不能与 --output 同时使用。", file=sys.stderr)
+        return 2
+    if os.geteuid() == 0:
+        print("请使用普通用户运行，不要 sudo。", file=sys.stderr)
+        return 2
+    if not Path(SCANNER).is_file():
+        print(f"找不到 {SCANNER}", file=sys.stderr)
+        return 2
+    if args.output is not None:
+        output = args.output.expanduser().absolute()
+        if output.suffix.lower() not in (".tif", ".tiff"):
+            print("--output 必须以 .tif 或 .tiff 结尾", file=sys.stderr)
+            return 2
+        if output.exists() or Path(f"{output}.part").exists():
+            print(f"目标或临时文件已存在，拒绝覆盖：{output}", file=sys.stderr)
+            return 2
+        try:
+            from PIL import Image  # noqa: F401
+        except ImportError:
+            print("缺少 Python Pillow，无法校验 TIFF。", file=sys.stderr)
+            return 2
+    try:
+        validate_area(args)
+    except ValueError as exc:
+        print(exc, file=sys.stderr)
+        return 2
+    environment = os.environ.copy()
+    for key in ("LD_LIBRARY_PATH", "LD_PRELOAD", "LD_AUDIT", "SANE_CONFIG_DIR"):
+        environment.pop(key, None)
+    environment["LC_ALL"] = "C"
+    try:
+        with tempfile.TemporaryDirectory(prefix="fb2080e-sane-") as temporary:
+            config = Path(temporary)
+            (config / "dll.d").mkdir()
+            (config / "dll.aliases.d").mkdir()
+            (config / "dll.conf").write_text("avision\n", encoding="ascii")
+            (config / "avision.conf").write_text(USB_ID, encoding="ascii")
+            environment["SANE_CONFIG_DIR"] = temporary
+            devices, discovery = discover(environment)
+            if args.list_devices:
+                for device in devices:
+                    print(device)
+                return 0 if devices else 1
+            if len(devices) != 1:
+                print(f"需要恰好一台 FB2080E，当前发现 {len(devices)} 台。", file=sys.stderr)
+                return 1
+            device = devices[0]
+            if args.list_options:
+                result = subprocess.run([SCANNER, "-d", device, "--help"], env=environment,
+                                        timeout=30, check=False)
+                return 0 if result.returncode == 0 else 1
+            return scan(args, environment, device, discovery)
+    except subprocess.TimeoutExpired:
+        print("设备查询超时。", file=sys.stderr)
+        return 1
+    except RuntimeError as exc:
+        print(exc, file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
