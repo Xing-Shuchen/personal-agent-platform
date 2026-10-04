@@ -152,12 +152,26 @@ def text_lines(detections: list[dict], config: dict) -> tuple[list[dict], list[d
     return merged, rejected
 
 
+def _ink_threshold(gray: np.ndarray, config: dict) -> int:
+    """Choose a page-adaptive ink cutoff so faint pen strokes still register.
+
+    The configured value is a floor; the adaptive value never exceeds the
+    page's paper luminance minus a margin, so clean dark-ink pages keep their
+    previous behavior while faint hand-drawn strokes are not erased.
+    """
+    base = int(config.get("ink_threshold", 145))
+    if not config.get("adaptive_ink_threshold", True):
+        return base
+    paper = float(np.percentile(gray, 90))
+    return int(max(base, min(paper - 55, 215)))
+
+
 def underline_candidates(image: np.ndarray, typical_height: float,
                          config: dict) -> list[dict]:
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    # Preserve narrow ink; a global threshold works for the current clean scans.
-    threshold = int(config.get("ink_threshold", 145))
-    dark = np.uint8(gray < threshold) * 255
+    # Preserve narrow ink; lift the cutoff toward each page's paper luminance
+    # so faint strokes stay connected instead of splitting into 1px fragments.
+    dark = np.uint8(gray < _ink_threshold(gray, config)) * 255
     min_length = max(20, int(typical_height * float(config.get("min_length_in_line_heights", 1.0))))
     lines = np.zeros_like(dark)
     for factor in (1.0, 1.8):
@@ -188,7 +202,7 @@ def curved_underline_candidates(image: np.ndarray, textlines: list[dict],
     belongs to the text line; geometry alone is not proof of author intent.
     """
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    dark = np.uint8(gray < int(config.get("ink_threshold", 145))) * 255
+    dark = np.uint8(gray < _ink_threshold(gray, config)) * 255
     height, width = dark.shape
     marks = []
     for line in textlines:
@@ -223,7 +237,8 @@ def curved_underline_candidates(image: np.ndarray, textlines: list[dict],
     return marks
 
 
-def merge_mark_candidates(marks: list[dict]) -> list[dict]:
+def merge_mark_candidates(marks: list[dict],
+                          typical_height: float | None = None) -> list[dict]:
     merged: list[dict] = []
     for mark in sorted(marks, key=lambda item: (item["bbox"][1], item["bbox"][0])):
         box = mark["bbox"]
@@ -232,8 +247,16 @@ def merge_mark_candidates(marks: list[dict]) -> list[dict]:
             prior = other["bbox"]
             vertical_gap = max(0, box[1] - prior[3], prior[1] - box[3])
             horizontal_overlap = max(0, min(box[2], prior[2]) - max(box[0], prior[0]))
+            horizontal_gap = max(0, max(box[0], prior[0]) - min(box[2], prior[2]))
             if vertical_gap <= 5 and horizontal_overlap >= min(
                     box[2] - box[0], prior[2] - prior[0]) * .55:
+                target = other
+                break
+            # A faint hand-drawn line breaks into dashes; bridge fragments that
+            # share a baseline so the association length test sees one stroke.
+            if (typical_height
+                    and vertical_gap <= max(5, int(typical_height * .06))
+                    and horizontal_gap <= max(36, int(typical_height * 2.4))):
                 target = other
                 break
         if target is None:

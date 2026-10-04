@@ -28,7 +28,7 @@ from .review_index import build_index as build_review_index
 from .gateway_review_finalize import auto_reconcile_fully_reviewed
 from .pipeline import (process_capture, reconcile_extraction,
                        dismiss_identical_pending, bind_fingerprint_context,
-                       _repair_trace_index_best_effort)
+                       resolve_capture, _repair_trace_index_best_effort)
 from .store import Library, LibrarianError, _new, _now, _unknown_time
 from .koodo_native import sync_koodo_sqlite
 from .weread_native import fetch_weread_book, sync_weread_book
@@ -959,6 +959,78 @@ def _sync_digital(lib: Library, root: Path, owner: str, *,
     return results
 
 
+def _observation_page_number(lib: Library, owner: str, capture_id: str) -> dict | None:
+    """Return the raw BookScan page-number record for a capture, if any."""
+    for observation in _current(lib, owner, "PageObservation"):
+        if observation.get("capture_id") != capture_id:
+            continue
+        key = (observation.get("raw_output_asset") or {}).get("object_key")
+        path = lib.root / key if key else None
+        if path and path.is_file():
+            pages = json.loads(path.read_text(encoding="utf-8")).get("pages") or []
+            if pages:
+                return pages[0].get("page_number")
+    return None
+
+
+def _resolve_batch_page_sequence(lib: Library, owner: str, batch: dict) -> None:
+    """Fill a run's conflicted page numbers from its own scan order.
+
+    Each capture is extracted on its own, so BookScan's per-run sequence check
+    never sees a neighbour. The batch supplies that sequence: a conflicted page
+    is accepted only when one of its own detected candidates matches the value
+    predicted by two consistent observed neighbours, so a body digit in the
+    corner can never be promoted by position alone.
+    """
+    from bookscan.pagenum import interpolate
+    capture_ids = batch["capture_ids"]
+    numbers = [_observation_page_number(lib, owner, capture_id)
+               for capture_id in capture_ids]
+    prior_status = [(number or {}).get("status") for number in numbers]
+    records = [{"scan_index": position, "page_id": capture_id, "issues": [],
+                "page_number": number or {"status": "unknown", "observed_value": None,
+                                          "inferred_value": None, "resolved_value": None,
+                                          "bbox": None, "sequence_segment_id": None,
+                                          "inference_evidence": [], "candidates": []}}
+               for position, (capture_id, number) in enumerate(zip(capture_ids, numbers))]
+    if len(records) < 2:
+        return
+    interpolate(records)
+    for capture_id, before_status, record in zip(capture_ids, prior_status, records):
+        if before_status == "inferred":
+            continue
+        if record["page_number"]["status"] != "inferred":
+            continue
+        value = record["page_number"]["resolved_value"]
+        row = lib.db.execute(
+            "SELECT body FROM records WHERE owner_id=? AND model='CaptureResolution' "
+            "AND current=1 AND json_extract(body,'$.capture_id')=?",
+            (owner, capture_id)).fetchone()
+        if row is None:
+            continue
+        prior = json.loads(row["body"])
+        page_regions = []
+        changed = False
+        for page in prior["pages"]:
+            page = dict(page)
+            if page["id"] == "page_0" and (page.get("page") or {}).get("value") is None:
+                page["page"] = {"value": {"label": str(value), "number": value,
+                                          "scheme": "arabic"},
+                                "confidence": None, "basis": "vision",
+                                "status": "resolved"}
+                changed = True
+            page_regions.append(page)
+        if not changed:
+            continue
+        try:
+            resolve_capture(lib, owner, capture_id, prior["revision"],
+                            pages=page_regions, _basis="vision")
+        except LibrarianError as error:
+            if error.code not in {"RECONCILIATION_REQUIRED", "REVISION_CONFLICT",
+                                  "CONTEXT_CONFLICT", "VALIDATION_FAILED"}:
+                raise
+
+
 def _process_batch(lib: Library, root: Path, vault: Path | None, owner: str,
                    batch: dict, vision_model: str) -> dict:
     if vault:
@@ -1069,6 +1141,7 @@ def _process_batch(lib: Library, root: Path, vault: Path | None, owner: str,
                                           "code": error.code})
             else:
                 raise
+    _resolve_batch_page_sequence(lib, owner, batch)
     traces = [trace for trace in _current(lib, owner, "ReadingTrace")
               if trace["status"] == "active" and
               trace["source"].get("capture_id") in batch["capture_ids"]]

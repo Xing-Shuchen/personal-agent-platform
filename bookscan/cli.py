@@ -280,7 +280,7 @@ def run(config_path: Path, limit: int | None = None,
                 marks = merge_mark_candidates(
                     underline_candidates(working, typical, config.get("selection", {})) +
                     curved_underline_candidates(working, geometry,
-                                                config.get("selection", {})))
+                                                config.get("selection", {})), typical)
                 selected, reviews = associate(geometry, marks,
                                               config.get("selection", {}))
                 number_issue = None

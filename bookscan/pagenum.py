@@ -55,6 +55,7 @@ def interpolate(pages: list[dict]) -> None:
     observed = [(i, p["page_number"]["observed_value"]) for i, p in enumerate(pages)
                 if p["page_number"]["status"] == "observed"]
     segment = 0
+    expectations: dict[int, tuple] = {}
     for (left_index, left_value), (right_index, right_value) in zip(
             observed, observed[1:]):
         scan_gap = pages[right_index]["scan_index"] - pages[left_index]["scan_index"]
@@ -65,16 +66,36 @@ def interpolate(pages: list[dict]) -> None:
         segment_id = f"segment-{segment:02d}"
         pages[left_index]["page_number"]["sequence_segment_id"] = segment_id
         pages[right_index]["page_number"]["sequence_segment_id"] = segment_id
-        for index in range(left_index + 1, right_index):
-            info = pages[index]["page_number"]
-            if info["status"] != "unknown":
-                continue
+        evidence = [{"page_id": pages[left_index]["page_id"],
+                     "observed_value": left_value},
+                    {"page_id": pages[right_index]["page_id"],
+                     "observed_value": right_value}]
+        for index in range(left_index, right_index + 1):
             value = left_value + pages[index]["scan_index"] - pages[left_index]["scan_index"]
-            info.update({"inferred_value": value, "resolved_value": value,
-                         "status": "inferred", "bbox": None,
-                         "sequence_segment_id": segment_id,
-                         "inference_evidence": [
-                             {"page_id": pages[left_index]["page_id"],
-                              "observed_value": left_value},
-                             {"page_id": pages[right_index]["page_id"],
-                              "observed_value": right_value}]})
+            expectations[index] = (value, segment_id, evidence)
+        # An edge scan of the run has only one consistent segment to lean on;
+        # extend it a few scans outwards so a conflicted first/last page can be
+        # checked against the sequence without guessing past the evidence.
+        if left_index == observed[0][0]:
+            for index in range(max(0, left_index - 3), left_index):
+                value = left_value + pages[index]["scan_index"] - pages[left_index]["scan_index"]
+                expectations.setdefault(index, (value, segment_id, evidence))
+        if right_index == observed[-1][0]:
+            for index in range(right_index + 1, min(len(pages), right_index + 4)):
+                value = left_value + pages[index]["scan_index"] - pages[left_index]["scan_index"]
+                expectations.setdefault(index, (value, segment_id, evidence))
+    for index, (value, segment_id, evidence) in expectations.items():
+        info = pages[index]["page_number"]
+        if info["status"] == "observed":
+            continue
+        if info["status"] == "conflict":
+            # A running head and a body digit can share a corner region; trust
+            # the sequence only when a detected candidate matches it, so a
+            # positional guess can never promote the wrong number.
+            if not any(item.get("value") == value
+                       for item in info.get("candidates", [])):
+                continue
+        info.update({"inferred_value": value, "resolved_value": value,
+                     "status": "inferred", "bbox": None,
+                     "sequence_segment_id": segment_id,
+                     "inference_evidence": evidence})

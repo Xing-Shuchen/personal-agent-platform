@@ -93,9 +93,28 @@ def discover(root: Path, manifest: Path | None = None) -> list[dict]:
 
 
 def infer_page_roi(image: np.ndarray) -> list[int]:
-    """Trim a visible facing page and dark tabletop when both edges are clear."""
+    """Trim dark scanner borders and a visible facing page when edges are clear."""
     height, width = image.shape[:2]
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+
+    def leading_paper_edge(profile: np.ndarray, length: int,
+                           paper: float) -> int:
+        """Find a sustained dark-to-paper transition near the leading edge."""
+        profile = cv2.GaussianBlur(profile.astype(np.float32)[None, :],
+                                   (0, 0), max(3, length * .002)).ravel()
+        if paper - float(np.median(profile[:max(1, int(.04 * length))])) < 65:
+            return 0
+        bright = profile > paper - 55
+        sustained = max(5, int(.008 * length))
+        end = min(int(.45 * length), len(bright) - sustained + 1)
+        for offset in range(max(0, end)):
+            if bright[offset:offset + sustained].all():
+                return max(0, offset - int(.003 * length))
+        return 0
+
+    left_profile = gray[int(.18 * height):int(.78 * height)].mean(axis=0)
+    paper = float(np.median(left_profile[int(.45 * width):int(.75 * width)]))
+    x1 = leading_paper_edge(left_profile, width, paper)
     columns = gray[int(.12 * height):int(.80 * height)].mean(axis=0)
     columns = cv2.GaussianBlur(columns.astype(np.float32)[None, :], (0, 0),
                                max(3, width * .007)).ravel()
@@ -104,21 +123,26 @@ def infer_page_roi(image: np.ndarray) -> list[int]:
     seam = left + int(np.argmin(columns[left:right]))
     x2 = (max(int(.60 * width), seam - int(.008 * width))
           if baseline - float(columns[seam]) >= 45 else width)
+    right_edge = leading_paper_edge(left_profile[::-1], width, paper)
+    if right_edge:
+        x2 = min(x2, width - right_edge)
 
-    rows = gray[:,int(.10 * width):min(int(.70 * width), x2)].mean(axis=1)
+    rows = gray[:,max(x1 + int(.08 * (x2 - x1)), 0):
+                min(x2, x1 + int(.78 * (x2 - x1)))].mean(axis=1)
     rows = cv2.GaussianBlur(rows.astype(np.float32)[:, None], (0, 0),
                             0, sigmaY=max(3, height * .004)).ravel()
     page_brightness = float(np.median(rows[int(.40 * height):int(.70 * height)]))
+    y1 = leading_paper_edge(rows, height, page_brightness)
     threshold = page_brightness - 65
-    search_start, search_end = int(.72 * height), int(.97 * height)
+    search_start, search_end = int(.72 * height), height
     dark = rows[search_start:search_end] < threshold
     sustained = max(5, int(.012 * height))
     y2 = height
-    for offset in range(max(0, len(dark) - sustained)):
+    for offset in range(max(0, len(dark) - sustained + 1)):
         if dark[offset:offset + sustained].all():
             y2 = search_start + offset
             break
-    return [0, 0, x2, y2]
+    return [x1, y1, x2, y2]
 
 
 def source_image(page: dict) -> np.ndarray:
