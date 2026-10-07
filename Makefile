@@ -1,14 +1,16 @@
 .PHONY: setup validate test install-preview
 
+PYTHON ?= python3
+
 setup:
-	python -m venv .venv
+	$(PYTHON) -m venv .venv
 	. .venv/bin/activate && pip install -e . pytest
 
 validate:
-	pap validate
+	.venv/bin/pap validate
 
 install-preview:
-	python scripts/install_agents.py
+	$(PYTHON) scripts/install_agents.py
 
 test:
-	pytest -q
+	.venv/bin/python -m pytest -q

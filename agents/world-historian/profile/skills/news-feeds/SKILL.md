@@ -9,7 +9,7 @@ This job is deterministic and runs through the manifest's `runner: command`:
 there is no model turn and zero model tokens. The declared argv is exactly:
 
 ```text
-/home/xingzeng/personal-agent-platform/.venv/bin/python agents/world-historian/runtime/cli.py feeds update
+$PAP_ROOT/.venv/bin/python agents/world-historian/runtime/cli.py feeds update
 ```
 
 PAP executes that argv from the repository root. It fetches all `kind: rss`

@@ -4,11 +4,7 @@ metadata:
   name: personal-historian
   description: Produces validated, provenance-bound personal historical cards and period summaries.
 spec:
-  # Model policy belongs to PAP (§35). Declaring it here is what lets the runtime
-  # record an authoritative model/provider in artifact provenance (§21) and what
-  # PAP reports in each RunRecord (§31), instead of both being unknown.
-  model: qwen/deepseek-v4.1-flash
-  provider_rejection_fallback: deepseek/deepseek-flash
+  enabled: false  # Set locally in var/config/agents.yaml after setup
   profile:
     name: personal-historian
     source: profile
@@ -21,16 +17,13 @@ spec:
     desired_jobs:
       - name: historian-event-card-refresh
         schedule: "17 1 * * *"
-        timezone: Asia/Shanghai
         skill: historian-event-card
-        model: qwen/qwen3.8-max
         runtime: historian
         args: {mode: refresh}
         attach_to_session: false
         delivery: local
       - name: historian-thread-weekly-update
         schedule: "47 1 * * 1"
-        timezone: Asia/Shanghai
         skill: historian-thread-card
         runtime: historian
         args: {mode: weekly-update}
@@ -38,50 +31,39 @@ spec:
         delivery: local
       - name: historian-weekly-summary
         schedule: "17 2 * * *"
-        timezone: Asia/Shanghai
         skill: historian-period-summary
-        model: qwen/qwen3.8-max
         runtime: historian
-        args: {kind: week, period: previous, timezone: Asia/Shanghai}
+        args: {kind: week, period: previous}
         attach_to_session: false
         delivery: local
-        notify:
-          channel: feishu
-          account: diary
-          target: ou_094472595f39f23d2b5a222f4729387e
       - name: historian-weekly-literary-render
         schedule: "27 2 * * *"
-        timezone: Asia/Shanghai
         skill: historian-literary-renderer
-        model: gpt-5.6-sol
         runner: codex
         runtime: historian
-        args: {kind: week, period: previous, timezone: Asia/Shanghai}
+        args: {kind: week, period: previous}
         attach_to_session: false
         delivery: local
         enabled: true
       - name: historian-monthly-summary
         schedule: "37 3 1 * *"
-        timezone: Asia/Shanghai
         skill: historian-period-summary
         runtime: historian
-        args: {kind: month, period: previous, timezone: Asia/Shanghai}
+        args: {kind: month, period: previous}
         attach_to_session: false
         delivery: local
       - name: historian-quarterly-summary
         schedule: "17 4 1 1,4,7,10 *"
-        timezone: Asia/Shanghai
         skill: historian-period-summary
         runtime: historian
-        args: {kind: quarter, period: previous, timezone: Asia/Shanghai}
+        args: {kind: quarter, period: previous}
         attach_to_session: false
         delivery: local
       - name: historian-halfyear-summary
         schedule: "37 5 1 1,7 *"
-        timezone: Asia/Shanghai
         skill: historian-period-summary
         runtime: historian
-        args: {kind: halfyear, period: previous, timezone: Asia/Shanghai}
+        args: {kind: halfyear, period: previous}
         attach_to_session: false
         delivery: local
   state:

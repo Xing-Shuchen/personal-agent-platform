@@ -28,6 +28,8 @@ def _specs(root: Path) -> list[spec_mod.AgentSpec]:
 def _find_spec(root: Path, name: str) -> spec_mod.AgentSpec:
     for spec in _specs(root):
         if spec.name == name:
+            if not spec.enabled:
+                raise spec_mod.SpecError(f"agent {name!r} is disabled; enable it in var/config/agents.yaml")
             return spec
     raise spec_mod.SpecError(f"unknown agent {name!r}")
 
@@ -63,7 +65,7 @@ def _cmd_validate(args: argparse.Namespace) -> int:
         for s in specs:
             jobs = ", ".join(j.name for j in s.jobs) or "none"
             print(f"OK {s.name}: profile={s.profile_name} caps={len(s.capabilities)} "
-                  f"proactive={s.proactive_enabled} jobs=[{jobs}]")
+                  f"enabled={s.enabled} proactive={s.proactive_enabled} jobs=[{jobs}]")
         print(f"{len(specs)} agent spec(s) valid.")
     return 0
 
@@ -98,7 +100,7 @@ def _cmd_agents(args: argparse.Namespace) -> int:
         print(f"INVALID: {exc}", file=sys.stderr)
         return 1
     for spec in specs:
-        mode = spec.proactive_class if spec.proactive_enabled else "reactive"
+        mode = "disabled" if not spec.enabled else (spec.proactive_class if spec.proactive_enabled else "reactive")
         print(f"{spec.name}\t{mode}\t{len(spec.jobs)} job(s)\t{spec.description}")
     return 0
 
@@ -115,7 +117,7 @@ def _cmd_jobs(args: argparse.Namespace) -> int:
             continue
         for job in spec.jobs:
             rendered_args = json.dumps(job.args, ensure_ascii=False, sort_keys=True)
-            state = "enabled" if job.enabled else "disabled"
+            state = "enabled" if spec.enabled and job.enabled else "disabled"
             runner = f"\trunner={job.runner}" if job.runner != "openclaw" else ""
             model = f"\tmodel={job.model}" if job.model is not None else ""
             print(f"{spec.name}/{job.name}\t{job.schedule}\t{job.skill}\t"

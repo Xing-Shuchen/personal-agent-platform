@@ -402,9 +402,9 @@ def _finish_vault(client: FeishuBase, state: dict, root: Path, vault: Path | Non
                for item in worker):
             raise RuntimeError("Vault export did not finish")
         sync = subprocess.run(
-            ["/home/xingzeng/.local/bin/obsidian", "command",
+            [os.environ.get("PAP_OBSIDIAN_BIN", "obsidian"), "command",
              "id=remotely-save:start-sync"], capture_output=True, text=True,
-            timeout=60, env={**os.environ, "HOME": "/home/xingzeng"})
+            timeout=60, env=os.environ.copy())
         if sync.returncode:
             raise RuntimeError("Obsidian sync command failed")
         books = {item["book"] for item in applied_records if item["book"]}

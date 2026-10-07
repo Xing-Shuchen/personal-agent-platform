@@ -1,12 +1,12 @@
 # Chronicle bundle format
 
-Read this reference before calling `/home/xingzeng/personal-agent-platform/agents/world-historian/runtime/cli.py store-bundle`.
+Read this reference before calling `$PAP_ROOT/agents/world-historian/runtime/cli.py store-bundle`.
 
 Use the runtime through:
 
 ```bash
-"/home/xingzeng/personal-agent-platform/.venv/bin/python" \
-  "/home/xingzeng/personal-agent-platform/agents/world-historian/runtime/cli.py" <command>
+"$PAP_ROOT/.venv/bin/python" \
+  "$PAP_ROOT/agents/world-historian/runtime/cli.py" <command>
 ```
 
 The input is one JSON object. Top-level keys are optional lists named:
@@ -84,7 +84,7 @@ Important fields:
 
 - Every entity is an object with `name` and a canonical `kind` (plus `role`
   for event entities); never use bare entity strings or `kind: "unknown"` in a
-  capture bundle. See [the canonical kind vocabulary](/home/xingzeng/personal-agent-platform/agents/world-historian/profile/references/entity-kinds.md).
+  capture bundle. See the canonical kind vocabulary in `agents/world-historian/profile/references/entity-kinds.md`.
 
 - An event's `title` is a required-in-practice short heading (at most 60
   characters) for the timeline. It identifies the event in a compact noun or

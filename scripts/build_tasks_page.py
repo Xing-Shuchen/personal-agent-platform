@@ -73,7 +73,8 @@ def build_html(root: Path) -> str:
         agent_names.append(spec.name)
         for job in spec.jobs:
             recurrence, times = describe_schedule(job.schedule)
-            status = "Enabled" if job.enabled else "Disabled"
+            active = spec.enabled and job.enabled
+            status = "Enabled" if active else "Disabled"
             destination = "Message" if job.delivery == "user-home" else "Local"
             zone = job.timezone or ("Asia/Shanghai" if "tz Asia/Shanghai" in job.schedule else "Host local time")
             delivery_note = f"deliver {job.deliver_at}" if job.deliver_at else ""
@@ -84,7 +85,7 @@ def build_html(root: Path) -> str:
                 f'<td><strong>{escape(job.name)}</strong><small>{escape(job.skill)}</small></td>'
                 f'<td><span class="recurrence">{escape(recurrence)}</span><small class="timezone">{escape(zone)}</small></td>'
                 f'<td class="time-cell">{escape(times)}</td>'
-                f'<td><span class="badge {"enabled" if job.enabled else "disabled"}">{status}</span></td>'
+                f'<td><span class="badge {"enabled" if active else "disabled"}">{status}</span></td>'
                 f'<td><span class="delivery">{destination}</span><small>{escape(delivery_note)}</small></td>'
                 f'<td><code>{escape(job.schedule)}</code></td></tr>'
             )
@@ -93,7 +94,7 @@ def build_html(root: Path) -> str:
         for name in agent_names
     )
     total = len(rows)
-    enabled = sum(job.enabled for spec in specs for job in spec.jobs)
+    enabled = sum(spec.enabled and job.enabled for spec in specs for job in spec.jobs)
     generated = datetime.now().astimezone().strftime("%Y-%m-%d %H:%M %Z")
     return f'''<!doctype html>
 <html lang="en">

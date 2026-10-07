@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from pap.cognition import Index, classify, main, parse_markdown, segments
 from paplog import observe
 
@@ -40,6 +42,21 @@ def test_incremental_rename_edit_delete_and_no_private_status_text(tmp_path: Pat
     index.build(vault); assert not index.search("alpha") and index.search("beta")
     new.unlink(); index.build(vault); assert not index.search("beta")
     assert "beta" not in json.dumps(index.status())
+    index.close()
+
+
+def test_missing_vault_preserves_existing_index(tmp_path: Path):
+    vault = tmp_path / "vault"
+    write(vault, "1Project/a.md", "# A\nalpha\n")
+    index = Index(tmp_path / "cognition.sqlite3")
+    index.build(vault)
+    first = index.search("alpha")
+    vault.rename(tmp_path / "moved-vault")
+
+    with pytest.raises(FileNotFoundError, match="Vault directory unavailable"):
+        index.build(vault)
+
+    assert index.search("alpha") == first
     index.close()
 
 

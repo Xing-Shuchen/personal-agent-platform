@@ -13,8 +13,8 @@ or create/delete events.
 Read its full current state:
 
 ```bash
-"/home/xingzeng/personal-agent-platform/.venv/bin/python" \
-  "/home/xingzeng/personal-agent-platform/agents/world-historian/runtime/cli.py" \
+"$PAP_ROOT/.venv/bin/python" \
+  "$PAP_ROOT/agents/world-historian/runtime/cli.py" \
   thread <thread_id>
 ```
 
@@ -44,8 +44,8 @@ verbatim even though this is a presentation-only change.
 After the bundle commits successfully, re-render this Thread only:
 
 ```bash
-"/home/xingzeng/personal-agent-platform/.venv/bin/python" \
-  "/home/xingzeng/personal-agent-platform/agents/world-historian/runtime/cli.py" \
+"$PAP_ROOT/.venv/bin/python" \
+  "$PAP_ROOT/agents/world-historian/runtime/cli.py" \
   sync --thread <thread_id>
 ```
 

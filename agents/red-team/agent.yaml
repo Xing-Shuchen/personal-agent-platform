@@ -4,6 +4,7 @@ metadata:
   name: red-team
   description: Adversarial reviewer for arguments, designs, assumptions and plans.
 spec:
+  enabled: false  # Set locally in var/config/agents.yaml after setup
   profile:
     name: red-team
     source: profile

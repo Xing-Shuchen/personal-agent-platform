@@ -1,0 +1,13 @@
+# Copy to var/config/agents.yaml. This file is local and must not be committed.
+# Turning on an agent also makes its declared proactive jobs eligible for pap tick.
+agents:
+  compiler-news: {enabled: false}
+  intelligence: {enabled: false}
+  librarian: {enabled: false}
+  personal-historian: {enabled: false}
+  red-team: {enabled: false}
+  serendipity: {enabled: false}
+  wechat-archivist: {enabled: false}
+  # Optional local fallback example:
+  # world-historian: {enabled: false, provider_rejection_fallback: provider/model}
+  world-historian: {enabled: false}

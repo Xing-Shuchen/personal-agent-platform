@@ -139,6 +139,19 @@ def test_auto_page_roi_excludes_facing_page_and_tabletop():
     assert 870 < roi[3] < 920
 
 
+def test_auto_page_roi_trims_scanner_black_on_all_four_sides():
+    image = np.full((1200, 1000, 3), 45, dtype=np.uint8)
+    image[105:1110, 255:965] = 240
+    # Sparse printed text should not move the page boundary.
+    for y in range(230, 1000, 50):
+        image[y:y + 4, 360:850] = 65
+    roi = infer_page_roi(image)
+    assert 245 <= roi[0] <= 265
+    assert 95 <= roi[1] <= 115
+    assert 955 <= roi[2] <= 975
+    assert 1090 <= roi[3] <= 1120
+
+
 def test_adjacent_marked_lines_are_one_group_with_one_crop(tmp_path: Path):
     page = {"page_id": "p", "source_file": "one.jpg", "scan_index": 0,
             "source_size": [400, 240], "valid_page_roi": [0, 0, 400, 240],

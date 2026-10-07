@@ -43,22 +43,16 @@ def test_validate_invalid_spec_fails(tmp_path):
     assert "INVALID" in r.stderr
 
 
-def test_jobs_shows_job_model_overrides_only():
+def test_release_jobs_have_no_author_model_routes():
     r = run(["jobs", "--root", str(REPO), "--agent", "world-historian"])
     assert r.returncode == 0, r.stderr
     lines = r.stdout.splitlines()
-    expected_overrides = {
-        "world-historian/world-follow-low": "zai/glm-5.3",
-        "world-historian/world-follow-background": "zai/glm-5.3",
-        "world-historian/world-daily-report": "qwen/qwen3.8-max",
-        "world-historian/world-weekly-report": "qwen/qwen3.8-max",
-    }
     actual_overrides = {
         fields[0]: next(field.removeprefix("model=") for field in fields if field.startswith("model="))
         for line in lines
         if (fields := line.split("\t")) and any(field.startswith("model=") for field in fields)
     }
-    assert actual_overrides == expected_overrides
+    assert actual_overrides == {}
 
 
 def test_gate_cli_allow_and_deny(tmp_path):

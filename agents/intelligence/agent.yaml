@@ -4,11 +4,10 @@ metadata:
   name: intelligence
   description: Monitors external developments and reports only information likely to update the user's world model.
 spec:
+  enabled: false  # Set locally in var/config/agents.yaml after setup
   profile:
     name: intelligence
     source: profile
-  model: zai-intelligence-serendipity/glm-5.3
-  model_fallback: true
   capabilities:
     - personal_context.read
     - web.search

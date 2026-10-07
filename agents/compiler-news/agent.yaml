@@ -4,11 +4,10 @@ metadata:
   name: compiler-news
   description: 每日搜集并筛选 AI 编译器与大模型高性能计算软件栈的重要新闻和技术进展。
 spec:
+  enabled: false  # Set locally in var/config/agents.yaml after setup
   profile:
     name: compiler-news
     source: profile
-  model: deepseek-compiler-news/deepseek-v4.1-flash
-  provider_rejection_fallback: deepseek/deepseek-flash
   capabilities:
     - personal_context.read
     - web.search
@@ -22,7 +21,6 @@ spec:
         schedule: "0 7 * * *"
         deliver_at: "08:10"
         skill: compiler-hpc-brief
-        model: qwen/qwen3.8-max
         args: {}
         attach_to_session: true
         delivery: user-home

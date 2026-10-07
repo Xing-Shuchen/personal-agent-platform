@@ -77,7 +77,7 @@ def plan_skill_copies(spec: AgentSpec, root: Path, workspace_dir: Path) -> list[
 def cmd_list(specs: list[AgentSpec], root: Path, openclaw_home: Path) -> int:
     print(f"OpenClaw home: {openclaw_home}")
     for spec in specs:
-        print(f"\nagent: {spec.name}  (proactive={spec.proactive_enabled})")
+        print(f"\nagent: {spec.name}  (enabled={spec.enabled}, proactive={spec.proactive_enabled})")
         workspace_dir = openclaw_workspace_dir(openclaw_home, spec.name)
         print(f"  OpenClaw workspace: {workspace_dir}")
         if not spec.proactive_enabled:
@@ -85,14 +85,20 @@ def cmd_list(specs: list[AgentSpec], root: Path, openclaw_home: Path) -> int:
         for job in plan_jobs(spec):
             print(f"  platform job {job['name']}: '{job['schedule']}' skill={job['skill']} "
                   f"delivery={job['delivery']} args={json.dumps(job['args'], ensure_ascii=False)}")
+        if not spec.enabled:
+            print("  skill install skipped until enabled in var/config/agents.yaml")
+            continue
         for sk in plan_skill_copies(spec, root, workspace_dir):
             print(f"  skill install: {sk['src']} -> {sk['dst']}")
     return 0
 
 
 def cmd_apply(specs: list[AgentSpec], root: Path, openclaw_home: Path, dry_run: bool) -> int:
+    if not openclaw_home.is_dir():
+        print(f"ERROR: OpenClaw home not found: {openclaw_home}", file=sys.stderr)
+        return 1
     workspace_dirs = {
-        spec.name: openclaw_workspace_dir(openclaw_home, spec.name) for spec in specs
+        spec.name: openclaw_workspace_dir(openclaw_home, spec.name) for spec in specs if spec.enabled
     }
     for workspace_dir in workspace_dirs.values():
         if not workspace_dir.is_dir():
@@ -100,6 +106,8 @@ def cmd_apply(specs: list[AgentSpec], root: Path, openclaw_home: Path, dry_run: 
             return 1
 
     for spec in specs:
+        if not spec.enabled:
+            continue
         workspace_dir = workspace_dirs[spec.name]
         # Merge skills into the agent-specific workspace; do not overwrite
         # OpenClaw-owned workspace profile files.

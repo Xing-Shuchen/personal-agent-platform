@@ -1,0 +1,9 @@
+[Unit]
+Description=Librarian handwriting review bridge
+
+[Service]
+Type=oneshot
+EnvironmentFile=%h/.config/pap/librarian.env
+WorkingDirectory=%h/personal-agent-platform
+ExecStart=%h/personal-agent-platform/.venv/bin/python -m agents.librarian.runtime.bitable_handwriting sync --root %h/personal-agent-platform/var/librarian --owner local-owner --vault %h/Documents/Obsidian --credentials %h/personal-agent-platform/var/librarian/bitable-credentials.json
+TimeoutStartSec=300

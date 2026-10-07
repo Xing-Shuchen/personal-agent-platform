@@ -14,8 +14,8 @@ a news brief — do not call the gate; the user asked for this daily summary.
    read-only command:
 
    ```bash
-   "/home/xingzeng/personal-agent-platform/.venv/bin/python" \
-     "/home/xingzeng/personal-agent-platform/agents/world-historian/runtime/cli.py" \
+   "$PAP_ROOT/.venv/bin/python" \
+     "$PAP_ROOT/agents/world-historian/runtime/cli.py" \
      daily-stats
    ```
 

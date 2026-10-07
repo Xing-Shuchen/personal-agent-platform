@@ -26,7 +26,7 @@ Treat the input as a seed for an ongoing thread, not as an article title.
    open questions, and watch queries. Do not assert motivations as facts.
    Every entity must be an object with `name` and `kind` (and `role` for an
    event entity), never a bare name. Choose `kind` from the closed vocabulary
-   in [entity-kinds.md](/home/xingzeng/personal-agent-platform/agents/world-historian/profile/references/entity-kinds.md);
+   in `agents/world-historian/profile/references/entity-kinds.md`;
    `kind: "unknown"` is a defect to fix before persistence.
    For every named person whose statement is referenced, also retrieve and
    store the verbatim original (发言原话 / 公开信 / 文章全文或明确节选) as a
@@ -40,7 +40,7 @@ Treat the input as a seed for an ongoing thread, not as an article title.
 6. Read [the Chronicle bundle format](references/chronicle-bundle.md),
    then persist one validated JSON bundle with:
 
-   `"/home/xingzeng/personal-agent-platform/.venv/bin/python" "/home/xingzeng/personal-agent-platform/agents/world-historian/runtime/cli.py" store-bundle --json <path>`
+   `"$PAP_ROOT/.venv/bin/python" "$PAP_ROOT/agents/world-historian/runtime/cli.py" store-bundle --json <path>`
 
    The runtime assigns deterministic IDs and commits the bundle atomically.
 6. Return a compact Chinese intake report: what was captured, the best primary
@@ -58,20 +58,9 @@ only actual formulas/expressions get `$` delimiters. Never use Unicode
 sub/superscripts inside formulas (`log₃`, `π₁` → `\log_3`, `\pi_1`);
 `S⁶` in running prose may stay, but inside a formula write `$S^6$`.
 
-## Vault completion
+## Optional vault projection
 
-If this run wrote or changed any vault file, finish the vault SOP before
-returning; skip it only when no vault file changed. Follow
-`/home/xingzeng/.openclaw/workspace-feishu3/skills/obsidian-remotely-save-sync/SKILL.md`
-and `/home/xingzeng/.openclaw/agents/feishu3/agent/workshop-skills/vault-annotation-guard/SKILL.md`:
+If `WORLD_HISTORIAN_VAULT_DIR` is configured, the runtime may update local projected files. Do not commit, push, or invoke third-party sync services as part of this skill. Preserve manually annotated sections.
 
-1. Trigger the Remotely Save pull with the Obsidian CLI (`HOME=/home/xingzeng`) and verify with `verify_sync_diff.py`.
-2. Run the annotation guard for each changed file (compare 「手工批注」 with `HEAD`); restore it from git if its annotation was lost.
-3. Commit vault changes grouped by theme, using Chinese messages and explicit `git add <path group>`.
-4. Push.
-5. Trigger Remotely Save again and verify the objects landed on COS.
-
-The SOP is silent bookkeeping: never report the SOP, the push, or the COS verification in the run's user-facing message.
-
-Initialize or inspect storage with `/home/xingzeng/personal-agent-platform/agents/world-historian/runtime/cli.py init`, `search`, `thread`,
+Initialize or inspect storage with `$PAP_ROOT/agents/world-historian/runtime/cli.py init`, `search`, `thread`,
 and `stats`. Never place the SQLite database or raw snapshots under `profile/`.

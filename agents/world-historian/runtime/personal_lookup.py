@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
 """Privacy-bounded local lookup for World Historian personal links.
 
-This module is deliberately separate from the agent prompt boundary.  It may
-read the three approved observation exports locally, but its JSON output never
+This module is deliberately separate from the agent prompt boundary. It may
+read explicitly configured observation exports locally, but its JSON output never
 contains their statements, facts, names, or other raw personal material.
 """
 
 from __future__ import annotations
 
 import argparse
+import os
 import json
 import re
 import sqlite3
@@ -18,13 +19,9 @@ from pathlib import Path
 from typing import Any
 
 
-ROOT = Path("/home/xingzeng/personal-agent-platform")
+ROOT = Path(os.environ.get("PAP_ROOT", str(Path(__file__).resolve().parents[3])))
 DEFAULT_DB = ROOT / "var/world-historian/chronicle.sqlite"
-PERSONAL_INPUTS = (
-    Path("/home/xingzeng/personal-historian-handoff/examples/live-run/personal/today/observations.json"),
-    Path("/home/xingzeng/personal-historian-handoff/examples/live-run/personal/prehistory/observations.json"),
-    Path("/home/xingzeng/personal-historian-handoff/examples/live-run/personal/platform-history/observations.json"),
-)
+PERSONAL_INPUTS = tuple(Path(part).expanduser() for part in os.environ.get("PAP_PERSONAL_INPUTS", "").split(os.pathsep) if part)
 
 _ASCII = re.compile(r"[A-Za-z][A-Za-z0-9._+-]{2,}")
 _CJK = re.compile(r"[\u4e00-\u9fff]{4,}")

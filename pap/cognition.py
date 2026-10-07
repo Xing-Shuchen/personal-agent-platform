@@ -291,6 +291,8 @@ class Index:
 
     @_observed_build.__func__
     def build(self, vault: Path, *, dry_run: bool = False) -> dict[str, Any]:
+        if not vault.is_dir():
+            raise FileNotFoundError(f"Vault directory unavailable: {vault}")
         files = sorted(p for p in vault.rglob("*.md") if not any(x in SKIP for x in p.relative_to(vault).parts))
         if dry_run: return {"candidates": len(files), "dry_run": True}
         self.db.execute("BEGIN IMMEDIATE")
@@ -599,7 +601,7 @@ def default_index(vault: Path) -> Path: return vault / ".index" / "cognition" / 
 
 def main(argv: list[str] | None = None) -> int:
     parser=argparse.ArgumentParser(prog="pap cognition", description="Local derived evidence index")
-    parser.add_argument("--vault", type=Path, default=Path(os.environ.get("PAP_VAULT", Path.home()/"documents/Obsidian/Second_Brain")))
+    parser.add_argument("--vault", type=Path, default=Path(os.environ.get("PAP_VAULT", Path.home()/"Documents/Obsidian")))
     parser.add_argument("--db", type=Path)
     sub=parser.add_subparsers(dest="cmd",required=True); sub.add_parser("status"); pindex=sub.add_parser("index"); pindex.add_argument("--dry-run",action="store_true"); pindex.add_argument("--full",action="store_true",help="rebuild only the derived cognitive SQLite database"); pe=sub.add_parser("evidence"); pe.add_argument("evidence_id"); pe.add_argument("--excerpt",type=int,default=DEFAULT_EXCERPT); ps=sub.add_parser("search"); ps.add_argument("query"); ps.add_argument("--limit",type=int,default=10); ps.add_argument("--source-type"); ps.add_argument("--voice"); pshadow=sub.add_parser("shadow",help="build a non-production ContextPack"); pshadow.add_argument("kind",choices=("serendipity","intelligence")); pshadow.add_argument("--run-id")
     args=parser.parse_args(argv); vault=args.vault.expanduser().resolve(); db=(args.db or default_index(vault)).expanduser(); index=Index(db)

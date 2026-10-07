@@ -11,8 +11,8 @@ alternate paths/databases, inspect source code, or call web tools.
 Read only these fixed references first:
 
 ```text
-/home/xingzeng/personal-agent-platform/agents/world-historian/profile/skills/personal-crosslink/references/privacy-boundary.md
-/home/xingzeng/personal-agent-platform/agents/world-historian/profile/skills/personal-crosslink/references/personal-link-bundle.md
+$PAP_ROOT/agents/world-historian/profile/skills/personal-crosslink/references/privacy-boundary.md
+$PAP_ROOT/agents/world-historian/profile/skills/personal-crosslink/references/personal-link-bundle.md
 ```
 
 ## Fixed local contract
@@ -20,16 +20,14 @@ Read only these fixed references first:
 Use these exact paths; never list, search, probe, or infer alternatives:
 
 ```text
-PYTHON=/home/xingzeng/personal-agent-platform/.venv/bin/python
-CLI=/home/xingzeng/personal-agent-platform/agents/world-historian/runtime/cli.py
-CHRONICLE_DB=/home/xingzeng/personal-agent-platform/var/world-historian/chronicle.sqlite
-PERSONAL_TODAY=/home/xingzeng/personal-historian-handoff/examples/live-run/personal/today/observations.json
-PERSONAL_PREHISTORY=/home/xingzeng/personal-historian-handoff/examples/live-run/personal/prehistory/observations.json
-PERSONAL_PLATFORM=/home/xingzeng/personal-historian-handoff/examples/live-run/personal/platform-history/observations.json
-BUNDLE_DIR=/home/xingzeng/personal-agent-platform/var/world-historian
+PYTHON=$PAP_ROOT/.venv/bin/python
+CLI=$PAP_ROOT/agents/world-historian/runtime/cli.py
+CHRONICLE_DB=$PAP_ROOT/var/world-historian/chronicle.sqlite
+PERSONAL_INPUTS=$PAP_PERSONAL_INPUTS  # OS-path-separated local observation exports
+BUNDLE_DIR=$PAP_ROOT/var/world-historian
 ```
 
-The only personal inputs are the three `PERSONAL_*` files. Never open diaries,
+The only personal inputs are files explicitly listed in `PAP_PERSONAL_INPUTS`. Never open diaries,
 Obsidian, messages, calendars, browser databases, legacy aggregate files, or
 other personal sources.
 
@@ -55,10 +53,10 @@ never write SQLite directly or inspect schema/migrations/source.
 The approved local lookup adapter is:
 
 ```text
-/home/xingzeng/personal-agent-platform/agents/world-historian/runtime/personal_lookup.py
+$PAP_ROOT/agents/world-historian/runtime/personal_lookup.py
 ```
 
-It reads exactly the three `PERSONAL_*` files and the local Chronicle, then
+It reads exactly those configured files and the local Chronicle, then
 returns only `observation_id`, `kind`, `domain`, a coarse time bucket, public
 topic terms, a minimal descriptor, and record-ID evidence. Do not replace it,
 pass it alternative paths, or inspect the personal files directly.
@@ -73,8 +71,8 @@ bucket, and a minimal redacted descriptor. Raw `statement`, `facts`,
 2. Obtain at most 10 privacy-redacted local candidates with this exact command:
 
 ```bash
-"/home/xingzeng/personal-agent-platform/.venv/bin/python" \
-  "/home/xingzeng/personal-agent-platform/agents/world-historian/runtime/personal_lookup.py" \
+"$PAP_ROOT/.venv/bin/python" \
+  "$PAP_ROOT/agents/world-historian/runtime/personal_lookup.py" \
   --limit 10
 ```
 
@@ -86,15 +84,15 @@ bucket, and a minimal redacted descriptor. Raw `statement`, `facts`,
 4. Check duplicates only with this exact command, replacing the placeholders:
 
 ```bash
-"/home/xingzeng/personal-agent-platform/.venv/bin/python" \
-  "/home/xingzeng/personal-agent-platform/agents/world-historian/runtime/cli.py" \
+"$PAP_ROOT/.venv/bin/python" \
+  "$PAP_ROOT/agents/world-historian/runtime/cli.py" \
   personal-link-exists "WORLD_EVENT_ID" "PERSONAL_EVENT_ID"
 ```
 
 5. Write a nonempty bundle only to:
 
 ```text
-/home/xingzeng/personal-agent-platform/var/world-historian/personal-link-bundle-YYYYMMDD.json
+$PAP_ROOT/var/world-historian/personal-link-bundle-YYYYMMDD.json
 ```
 
 It must have a top-level `personal_links` list with
@@ -104,11 +102,11 @@ It must have a top-level `personal_links` list with
 6. Persist only a nonempty bundle with exactly:
 
 ```bash
-"/home/xingzeng/personal-agent-platform/.venv/bin/python" \
-  "/home/xingzeng/personal-agent-platform/agents/world-historian/runtime/cli.py" \
-  --db "/home/xingzeng/personal-agent-platform/var/world-historian/chronicle.sqlite" \
+"$PAP_ROOT/.venv/bin/python" \
+  "$PAP_ROOT/agents/world-historian/runtime/cli.py" \
+  --db "$PAP_ROOT/var/world-historian/chronicle.sqlite" \
   store-bundle --json \
-  "/home/xingzeng/personal-agent-platform/var/world-historian/personal-link-bundle-YYYYMMDD.json"
+  "$PAP_ROOT/var/world-historian/personal-link-bundle-YYYYMMDD.json"
 ```
 
 7. Finish with exactly `NO_REPLY`, whether or not a link was created.

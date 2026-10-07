@@ -12,8 +12,8 @@ not write anything to the Chronicle and do not run the gate.
 1. Check what is already local first:
 
    ```bash
-   "/home/xingzeng/personal-agent-platform/.venv/bin/python" \
-     "/home/xingzeng/personal-agent-platform/agents/world-historian/runtime/cli.py" feeds recent --hours 24
+   "$PAP_ROOT/.venv/bin/python" \
+     "$PAP_ROOT/agents/world-historian/runtime/cli.py" feeds recent --hours 24
    ```
 
 2. Read `config.yaml` from this profile directory for the preferred `sources`
@@ -42,8 +42,8 @@ not write anything to the Chronicle and do not run the gate.
      flag them as 「追踪中」:
 
      ```bash
-     "/home/xingzeng/personal-agent-platform/.venv/bin/python" \
-       "/home/xingzeng/personal-agent-platform/agents/world-historian/runtime/cli.py" \
+     "$PAP_ROOT/.venv/bin/python" \
+       "$PAP_ROOT/agents/world-historian/runtime/cli.py" \
        active-thread-titles
      ```
    - when both a domestic and a foreign story cover the same topic, prefer the

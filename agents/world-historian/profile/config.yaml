@@ -1,6 +1,4 @@
-# Provider/model and messaging targets remain deployment-local.
-# pap exports PAP_AGENT_STATE_DIR for deterministic runtime commands.
-
+# General public sources. Add personal watchlists in local agent state only.
 chronicle:
   expansion:
     max_new_events_per_run: 5
@@ -8,66 +6,10 @@ chronicle:
   significance:
     report_threshold: 0.70
     record_threshold: 0.25
-
-# Preferred news sources. news-follow / news-capture should check these
-# before generic web search and treat them as authoritative where relevant.
-# `kind`: rss (fetch feed directly) | site (browse/search site) | wechat
-# (公众号：无公开 RSS，只能用 site:mp.weixin.qq.com 检索或等转发)
 sources:
-  # 用户常看（远川研究所矩阵）
-  - name: 远川研究所
-    kind: wechat
-    note: 公众号「远川研究所」矩阵：远川研究所/远川科技评论/远川出海研究/远川制造等，主号内容偏产业深度
-  - name: 腾讯科技
-    kind: site
-    url: https://tech.qq.com/
-  - name: 新潮沉思录
-    kind: wechat
-    note: 公众号，无官网；以时事评论为主
-  - name: 36氪
+  - name: BBC News
     kind: rss
-    url: https://www.36kr.com/feed
-  - name: 量子位
-    kind: site
-    url: https://www.jiqizhixin.com/
-    note: 量子位无独立官网，内容同步于机器之心/36氪等平台
-  - name: 机器之心
-    kind: site
-    url: https://www.jiqizhixin.com/
-    note: 官网 RSS 已失效（404），用站内搜索/浏览
-  - name: 智能涌现
-    kind: wechat
-    note: 36氪旗下公众号，聚焦 AI 产业
-  - name: 凤凰网
-    kind: rss
-    # 原生 https://news.ifeng.com/rss/ XML 含未转义实体（&nbsp;），ETree 解析必失败；
-    # 走本机 RSSHub（docker rsshub，127.0.0.1:1200）
-    url: http://127.0.0.1:1200/ifeng/news
-  - name: 联合早报
-    kind: rss
-    url: http://127.0.0.1:1200/zaobao/realtime/china
-    note: 本机 RSSHub；世界频道 zaobao/realtime/world 备用
-  - name: 财新网
-    kind: rss
-    url: http://127.0.0.1:1200/caixin/latest
-    note: 本机 RSSHub；标题级 feed，正文需订阅
-  - name: 澎湃新闻
-    kind: rss
-    url: http://127.0.0.1:1200/thepaper/featured
-    note: 本机 RSSHub 首页头条；栏目用 /thepaper/list/<id>（channel 路由 503 不可用）
-  # 已验证可用的高质量补充源
-  - name: BBC 中文
-    kind: rss
-    url: https://feeds.bbci.co.uk/zhongwen/simp/rss.xml
-  - name: FT 中文网
-    kind: rss
-    url: https://www.ftchinese.com/rss/news
-  - name: 少数派
-    kind: rss
-    url: https://sspai.com/feed
-  - name: Solidot
-    kind: rss
-    url: https://www.solidot.org/index.rss
+    url: https://feeds.bbci.co.uk/news/world/rss.xml
   - name: TechCrunch
     kind: rss
     url: https://techcrunch.com/feed/
@@ -80,22 +22,3 @@ sources:
   - name: MIT Technology Review
     kind: rss
     url: https://www.technologyreview.com/feed/
-  - name: 我爱计算机
-    kind: rss
-    url: http://www.52cs.org/?feed=rss2
-  - name: Google Research Blog
-    kind: rss
-    url: https://feeds.feedburner.com/blogspot/gJZg/
-  # 用户新增（2026-09-09）
-  - name: AIHOT 日报
-    kind: rss
-    url: https://aihot.news/feed.xml
-    note: 官方 RSS（最新 50 条精选）；日报页 https://aihot.news/daily/<YYYY-MM-DD> 服务端渲染可直接抓取
-  - name: 八点一氪
-    kind: site
-    url: https://36kr.com/user/5652071
-    note: 36氪专栏；SPA 无公开 RSS，本机 RSSHub /36kr/user/5652071 目前 503，需站内浏览/搜索
-  - name: 派早报
-    kind: site
-    url: https://sspai.com/u/ee0vj778/updates
-    note: 少数派专栏；SPA 无按用户 RSS，RSSHub /sspai/column/ee0vj778 目前 503；站级 feed https://sspai.com/feed 已在列表中

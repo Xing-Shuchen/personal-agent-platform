@@ -1,6 +1,6 @@
-# Experimental parameters; these are not measured accuracy guarantees.
+# Optional OCR processing template. Set paths for your own inputs locally.
 root: .
-epub: 社会理论二十讲.epub
+epub: input.epub
 manifest: manifest.json
 output_dir: output
 models:

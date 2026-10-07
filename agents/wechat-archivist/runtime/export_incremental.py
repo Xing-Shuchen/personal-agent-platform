@@ -14,10 +14,10 @@ import tempfile
 from datetime import datetime
 from pathlib import Path
 
-ROOT = Path(os.environ.get("PAP_ROOT", "/home/xingzeng/personal-agent-platform"))
+ROOT = Path(os.environ.get("PAP_ROOT", str(Path(__file__).resolve().parents[3])))
 STATE = Path(os.environ.get("PAP_AGENT_STATE_DIR", str(ROOT / "var" / "wechat-archivist")))
-DBROOT = Path(os.environ.get("WECHAT_DBROOT", "/home/xingzeng/文档/xwechat_files/wxid_nwa1rxjhd6u022_908c/db_storage"))
-KEYS = Path(os.environ.get("WECHAT_KEYS", "/home/xingzeng/下载/wechat-extraction-20260910T153257Z/keys-wxid_nwa1rxjhd6u022_908c.json"))
+DBROOT = Path(os.environ.get("WECHAT_DBROOT", ""))
+KEYS = Path(os.environ.get("WECHAT_KEYS", ""))
 TOOL = ROOT / "agents" / "wechat-archivist" / "runtime" / "wcdb_key_tool.py"
 MSG_ARCHIVE = STATE / "messages.jsonl"
 CHECKPOINT = STATE / "checkpoint.json"
@@ -36,6 +36,8 @@ def append_log(event: dict) -> None:
 
 
 def main() -> int:
+    if not os.environ.get("WECHAT_DBROOT") or not os.environ.get("WECHAT_KEYS"):
+        raise RuntimeError("Set WECHAT_DBROOT and WECHAT_KEYS to local WeChat export paths")
     STATE.mkdir(mode=0o700, parents=True, exist_ok=True)
     lock_path = STATE / ".lock"
     with lock_path.open("a+") as lock:

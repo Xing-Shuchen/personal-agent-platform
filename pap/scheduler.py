@@ -187,6 +187,8 @@ def due_jobs(
         lower = max(lower, now - MAX_CATCHUP)
         job_state = state.setdefault("jobs", {})
         for spec in specs:
+            if not spec.enabled:
+                continue
             for job in spec.jobs:
                 if not job.enabled:
                     # §40: declared, auditable, not yet scheduled.
@@ -309,11 +311,11 @@ def _send_message(
     sender: Callable[..., subprocess.CompletedProcess[str]] | None = None,
 ) -> str:
     """Send one already-approved user-facing message through OpenClaw."""
-    if not target:
-        return "unconfigured"
     command_runner = sender or subprocess.run
-    channel = channel or os.environ.get("PAP_OPENCLAW_CHANNEL", "feishu")
-    account = account or os.environ.get("PAP_OPENCLAW_ACCOUNT", "feishu4")
+    channel = channel or os.environ.get("PAP_OPENCLAW_CHANNEL", "")
+    account = account or os.environ.get("PAP_OPENCLAW_ACCOUNT", "")
+    if not target or not channel or not account:
+        return "unconfigured"
     openclaw_bin = os.environ.get("PAP_OPENCLAW_BIN", "openclaw")
     started = time.monotonic()
     message_action_id = ulid()

@@ -48,6 +48,15 @@ def _now() -> datetime:
     return datetime.now(timezone.utc).astimezone()
 
 
+def _process_start_ticks(pid: int, proc_root: Path = Path("/proc")) -> int | None:
+    """Linux process identity for local liveness checks; PID alone can be reused."""
+    try:
+        fields = (proc_root / str(pid) / "stat").read_text(encoding="utf-8").rsplit(") ", 1)[1].split()
+        return int(fields[19])
+    except (OSError, IndexError, ValueError):
+        return None
+
+
 def new_run_id(now: datetime | None = None) -> str:
     """Allocate the canonical v2 run identity.
 
@@ -344,6 +353,9 @@ def invoke(
         "input": _input_fingerprint(input_text),
         "started_at": started.isoformat(timespec="seconds"),
     }
+    process_start_ticks = _process_start_ticks(os.getpid())
+    if process_start_ticks is not None:
+        started_record.update({"process_id": os.getpid(), "process_start_ticks": process_start_ticks})
     if runner_backend != "command":
         started_record.update({"model": model_name, "provider": provider_name})
     append_jsonl(run_log, started_record)

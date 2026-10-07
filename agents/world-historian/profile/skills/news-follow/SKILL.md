@@ -15,9 +15,9 @@ Chronicle by the `news-feeds` job.
 Before any web search, check what is already local:
 
 ```bash
-"/home/xingzeng/personal-agent-platform/.venv/bin/python" \
-  "/home/xingzeng/personal-agent-platform/agents/world-historian/runtime/cli.py" \
-  --db "/home/xingzeng/personal-agent-platform/var/world-historian/chronicle.sqlite" \
+"$PAP_ROOT/.venv/bin/python" \
+  "$PAP_ROOT/agents/world-historian/runtime/cli.py" \
+  --db "$PAP_ROOT/var/world-historian/chronicle.sqlite" \
   feeds recent --hours 24 --limit 80
 ```
 
@@ -76,13 +76,13 @@ because they share keywords.
 
 Before writing, read
 [the follow bundle fields](references/follow-bundle.md). Persist
-only genuine deltas through `/home/xingzeng/personal-agent-platform/agents/world-historian/runtime/cli.py store-bundle`. Supersede or
+only genuine deltas through `$PAP_ROOT/agents/world-historian/runtime/cli.py store-bundle`. Supersede or
 dispute claims explicitly; never overwrite their historical state. Update each
 thread's last-check state even when no event is added.
 
 Every entity written in a follow bundle must be an object with `name` and a
 closed-vocabulary `kind` (plus `role` for an event entity), never a bare name.
-Use [entity-kinds.md](/home/xingzeng/personal-agent-platform/agents/world-historian/profile/references/entity-kinds.md)
+Use [entity-kinds.md]($PAP_ROOT/agents/world-historian/profile/references/entity-kinds.md)
 and fix any proposed `kind: "unknown"` before persisting.
 
 Every new event must include a concise `title` (maximum 60 characters) for
@@ -109,7 +109,7 @@ If this run wrote or changed any vault file, finish the vault SOP before
 returning; skip it only when no vault file changed. Steps:
 [references/vault-completion-sop.md](references/vault-completion-sop.md).
 
-The SOP is silent bookkeeping: never mention it, the git push, or the COS verification in the run's user-facing message. A run that did vault work still returns exactly the Delivery-contract shape, or exactly `NO_REPLY` when nothing is deliverable — never a status or work-summary line about the SOP.
+Local projection is optional and should not appear in the user-facing message. A run that did vault work still returns exactly the Delivery-contract shape, or exactly `NO_REPLY` when nothing is deliverable — never a status or work-summary line about the SOP.
 
 ## Thread roster (read-only, delivery set)
 
@@ -119,7 +119,7 @@ and `low`; `background` threads stay tracked in the Chronicle but never appear
 in a follow update.
 
 ```bash
-"/home/xingzeng/personal-agent-platform/.venv/bin/python" \
+"$PAP_ROOT/.venv/bin/python" \
   agents/world-historian/runtime/cli.py roster
 ```
 
@@ -149,8 +149,8 @@ Find candidates with this read-only command (use the defaults unless testing a
 different lifecycle window):
 
 ```bash
-"/home/xingzeng/personal-agent-platform/.venv/bin/python" \
-  "/home/xingzeng/personal-agent-platform/agents/world-historian/runtime/cli.py" \
+"$PAP_ROOT/.venv/bin/python" \
+  "$PAP_ROOT/agents/world-historian/runtime/cli.py" \
   lifecycle-candidates
 ```
 
@@ -167,7 +167,7 @@ A lowering is user-facing: every `DEMOTE` and `CLOSE` this run persists must be
 reported in this run's message, even when the thread gained no new event.
 
 Record each persisted lowering as one appended JSON line in
-`/home/xingzeng/personal-agent-platform/var/world-historian/lifecycle-notices.jsonl`:
+`$PAP_ROOT/var/world-historian/lifecycle-notices.jsonl`:
 `{"ts": "<local ISO>", "id": "<thr_…>", "title": "<verbatim title>", "from":
 "<old priority>", "to": "<normal|low|background|closed>", "reason": "<N> 天无新事件"}`.
 Append through one small `python3 - <<'PY'` heredoc; never rewrite the file.
@@ -176,10 +176,10 @@ Then consume pending notices at the end of the run, before composing the
 response:
 
 ```bash
-NOTICES=/home/xingzeng/personal-agent-platform/var/world-historian/lifecycle-notices.jsonl
+NOTICES=$PAP_ROOT/var/world-historian/lifecycle-notices.jsonl
 if [ -s "$NOTICES" ]; then
   cat "$NOTICES"
-  mv "$NOTICES" "/home/xingzeng/personal-agent-platform/var/world-historian/lifecycle-notices-delivered-$(date +%Y%m%d-%H%M).jsonl"
+  mv "$NOTICES" "$PAP_ROOT/var/world-historian/lifecycle-notices-delivered-$(date +%Y%m%d-%H%M).jsonl"
 fi
 ```
 
@@ -234,4 +234,4 @@ Formatting rules:
 3. 追踪中 — 将上面 `roster` command 的 stdout 原样粘贴：不得由模型选择 emoji、不得重新加粗、不得重排、不得添加或删除行。三档 emoji 映射为 `🟥` high / `🟦` normal / `⬜` low。
 4. 保持紧凑：每个 thread 一行。Feishu 卡片渲染加粗、列表、链接、表情和空行——不要用表格，分节标签用加粗（`**进展**`）而不是 `#` 标题。
 5. 来源档位只写 `Level: <优先级>`：优先级取 invocation 结构化参数 `priority`，首字母大写（`Level: High` / `Level: Normal`；`low`/`background` 不会投递，若出现写 `Level: Low` / `Level: Background`）。不写 job 名、不译成中文、不加其他词。
-6. 绝不在消息前后加状态行或工作摘要：不要报告 vault SOP、git push、COS 校验、lifecycle 检查及其结果，也不要写「无待处理通知」这类否定报告。消息只能是上面的结构，或在无可投递内容时恰好 `NO_REPLY`。
+6. 绝不在消息前后加状态行或工作摘要：不要报告可选本地投影、lifecycle 检查及其结果，也不要写「无待处理通知」这类否定报告。消息只能是上面的结构，或在无可投递内容时恰好 `NO_REPLY`。

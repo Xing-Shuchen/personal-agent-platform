@@ -10,6 +10,11 @@ __pycache__/
 /local-processing/models/
 /local-processing/output/
 /local-processing/.cache/
+/local-processing/config.local.yaml
+/local-processing/manifest.json
+/local-processing/inputs.sha256
+/pap-tasks.html
+/dist/
 
 # Runtime state (gate db, audit logs, per-agent run state)
 #

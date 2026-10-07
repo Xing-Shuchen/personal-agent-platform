@@ -48,6 +48,7 @@ class AgentSpec:
     name: str
     description: str
     profile_name: str
+    enabled: bool = True
     capabilities: list[str] = field(default_factory=list)
     proactive_enabled: bool = False
     proactive_class: str | None = None
@@ -71,6 +72,10 @@ def _require(spec_path: Path, obj: dict[str, Any], key: str, where: str) -> Any:
     if key not in obj or obj[key] is None:
         raise _err(spec_path, f"{where}: missing required key '{key}'")
     return obj[key]
+
+
+def _is_provider_model(value: Any) -> bool:
+    return isinstance(value, str) and re.fullmatch(r"[^/\s]+/[^/\s]+", value) is not None
 
 
 def parse_deliver_at(value: str) -> tuple[int, int, str | None]:
@@ -118,6 +123,9 @@ def load_spec(path: Path) -> AgentSpec:
     spec = doc.get("spec")
     if not isinstance(spec, dict):
         raise _err(path, "spec: must be a mapping")
+    agent_enabled = spec.get("enabled", True)
+    if not isinstance(agent_enabled, bool):
+        raise _err(path, "spec.enabled: must be a boolean")
 
     profile = spec.get("profile")
     if not isinstance(profile, dict):
@@ -281,17 +289,14 @@ def load_spec(path: Path) -> AgentSpec:
         raise _err(path, "spec.model_fallback: must be a boolean")
 
     provider_rejection_fallback = spec.get("provider_rejection_fallback")
-    if provider_rejection_fallback is not None and (
-        not isinstance(provider_rejection_fallback, str)
-        or provider_rejection_fallback.count("/") != 1
-        or any(not part.strip() for part in provider_rejection_fallback.split("/", 1))
-    ):
+    if provider_rejection_fallback is not None and not _is_provider_model(provider_rejection_fallback):
         raise _err(path, "spec.provider_rejection_fallback: must be a non-empty string in 'provider/model' form")
 
     return AgentSpec(
         name=name,
         description=description,
         profile_name=profile_name,
+        enabled=agent_enabled,
         capabilities=list(capabilities),
         proactive_enabled=proactive_enabled,
         proactive_class=proactive_class,
@@ -318,6 +323,33 @@ def load_platform(root: Path) -> list[AgentSpec]:
             if not skill_file.is_file():
                 raise _err(agent_yaml, f"job {job.name!r}: skill file not found: {skill_file}")
         specs.append(loaded)
+    # Machine-local activation is stored under var/, which is excluded from Git.
+    local_config = root / "var" / "config" / "agents.yaml"
+    if local_config.exists():
+        try:
+            overrides = yaml.safe_load(local_config.read_text(encoding="utf-8")) or {}
+        except yaml.YAMLError as exc:
+            raise SpecError(f"{local_config}: invalid YAML: {exc}") from exc
+        if not isinstance(overrides, dict) or not isinstance(overrides.get("agents", {}), dict):
+            raise SpecError(f"{local_config}: expected agents mapping")
+        by_name = {item.name: item for item in specs}
+        for name, config in overrides.get("agents", {}).items():
+            if name not in by_name or not isinstance(config, dict):
+                raise SpecError(f"{local_config}: unknown agent or invalid config: {name!r}")
+            unknown = set(config) - {"enabled", "provider_rejection_fallback"}
+            if unknown:
+                raise SpecError(f"{local_config}: {name}: unknown override keys: {sorted(unknown)}")
+            if not isinstance(config.get("enabled"), bool):
+                raise SpecError(f"{local_config}: {name}: enabled must be a boolean")
+            provider_rejection_fallback = config.get("provider_rejection_fallback")
+            if provider_rejection_fallback is not None and not _is_provider_model(provider_rejection_fallback):
+                raise SpecError(
+                    f"{local_config}: {name}: provider_rejection_fallback: "
+                    "must be a non-empty string in 'provider/model' form"
+                )
+            by_name[name].enabled = config["enabled"]
+            if provider_rejection_fallback is not None:
+                by_name[name].provider_rejection_fallback = provider_rejection_fallback
     if not specs:
         raise SpecError(f"no agent.yaml files found under {agents_dir}")
     names = [s.name for s in specs]

@@ -4,11 +4,10 @@ metadata:
   name: serendipity
   description: Surfaces rare, non-obvious connections across the user's own history and current context.
 spec:
+  enabled: false  # Set locally in var/config/agents.yaml after setup
   profile:
     name: serendipity
     source: profile
-  model: zai-intelligence-serendipity/glm-5.3
-  model_fallback: true
   capabilities:
     - personal_context.read
     - local_state.write

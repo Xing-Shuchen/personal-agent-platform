@@ -22,7 +22,7 @@ inspectable source/evidence anchors. Read
 the report before delivery.
 
 If the window contains no reportable delta, return exactly `NO_REPLY`. Otherwise
-pass the report through `"/home/xingzeng/personal-agent-platform/.venv/bin/pap" gate --agent world-historian` using a stable window
+pass the report through `"$PAP_ROOT/.venv/bin/pap" gate --agent world-historian` using a stable window
 key, then return a compact simplified-Chinese report only when allowed.
 
 End every daily/weekly report with this fixed footer line:

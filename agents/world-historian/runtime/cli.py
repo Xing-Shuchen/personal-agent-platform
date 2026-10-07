@@ -59,7 +59,10 @@ def _sync(conn: sqlite3.Connection, db_path: Path,
     database must never silently project into the real vault.
     """
     vault = obsidian.vault_dir()
-    if vault is None or not thread_ids:
+    if vault is None:
+        return {"written": [], "removed": [], "errors": [], "skipped": True,
+                "reason": "WORLD_HISTORIAN_VAULT_DIR is not configured"}
+    if not thread_ids:
         return {"written": [], "removed": [], "errors": [], "skipped": True}
     if db_overridden and os.environ.get("WORLD_HISTORIAN_VAULT_DIR") is None:
         return {"written": [], "removed": [], "errors": [], "skipped": True,

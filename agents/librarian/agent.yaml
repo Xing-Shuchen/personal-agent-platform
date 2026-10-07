@@ -4,10 +4,10 @@ metadata:
   name: librarian
   description: Captures reading evidence and retrieves provenance-bound reading traces.
 spec:
+  enabled: false  # Set locally in var/config/agents.yaml after setup
   profile:
     name: librarian
     source: profile
-  model: qwen/deepseek-v4.1-flash
   capabilities:
     - local_state.read
     - local_state.write

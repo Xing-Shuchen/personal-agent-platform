@@ -48,15 +48,7 @@ From the PAP repository root, install the linked local plugin:
 openclaw plugins install --link --force --accept-capabilities ./agents/librarian/openclaw-plugin
 ```
 
-Configure absolute repository and private state paths, a Python interpreter,
-and an explicit owner mapping. Vault is optional. On this PC,
-`physicalWorkerEnabled` is set to `true` in the private OpenClaw configuration:
-image intake starts the physical worker after the upload quiet period and the
-recovery schedule resumes unfinished batches. `bookscanPython` points to the separate
-PaddleOCR interpreter. The Bookscan adapter and its limits are documented in
-[BOOKSCAN_INTEGRATION.md](../runtime/BOOKSCAN_INTEGRATION.md). The digital worker
-has a separate schedule. The following OCR setup describes the historical
-adapter; the physical worker now uses Bookscan when explicitly enabled.
+Configure absolute repository and private state paths, a Python interpreter, and an explicit owner mapping in local OpenClaw configuration. Vault and Bookscan are optional. Keep `physicalWorkerEnabled` false until the chosen OCR interpreter and review workflow are ready. The adapter and its limits are documented in [BOOKSCAN_INTEGRATION.md](../runtime/BOOKSCAN_INTEGRATION.md).
 
 Install the package's `librarian-ocr` extra in that interpreter. An owner-supplied EPUB at
 `stateRoot/source-books/<isbn13>.epub` enables local OCR alignment; without it,
@@ -71,13 +63,10 @@ load but cannot ingest any sender's images. A dedicated Librarian
 agent/profile is declared at `agents/librarian/agent.yaml` and
 `agents/librarian/profile/`. Register the OpenClaw agent separately with
 `openclaw agents add librarian --non-interactive --workspace
-~/.openclaw/workspace-librarian --model MODEL_ID`, then bind it to a dedicated
-channel account when routing is decided. On this PC it is bound to the
-`feishu:librarian` account, with DM pairing enabled and group chats disabled.
-The sender is paired and the mapping is active for the first-book run.
+~/.openclaw/workspace-librarian --model MODEL_ID`, then bind it to the user's chosen channel account. Map only authenticated senders to an owner.
 
 ```bash
-openclaw config set plugins.entries.pap-librarian-intake.config '{"repoRoot":"/absolute/path/to/personal-agent-platform","stateRoot":"/absolute/path/to/personal-agent-platform/var/librarian","vaultRoot":"/absolute/path/to/Obsidian/Second_Brain","python":"/absolute/path/to/personal-agent-platform/.venv/bin/python","bookscanPython":"/absolute/path/to/personal-agent-platform/local-processing/.venv/bin/python","physicalWorkerEnabled":false,"ownerMappings":[{"channelId":"feishu","accountId":"librarian","senderId":"paired-user-open-id","ownerId":"owner_local"}]}' --strict-json
+openclaw config set plugins.entries.pap-librarian-intake.config '{"repoRoot":"/absolute/path/to/personal-agent-platform","stateRoot":"/absolute/path/to/personal-agent-platform/var/librarian","vaultRoot":"/absolute/path/to/Obsidian/Vault","python":"/absolute/path/to/personal-agent-platform/.venv/bin/python","bookscanPython":"/absolute/path/to/personal-agent-platform/local-processing/.venv/bin/python","physicalWorkerEnabled":false,"ownerMappings":[{"channelId":"your-channel","accountId":"librarian","senderId":"paired-user-open-id","ownerId":"owner_local"}]}' --strict-json
 openclaw plugins enable pap-librarian-intake --accept-capabilities
 openclaw plugins inspect pap-librarian-intake --runtime --json
 ```

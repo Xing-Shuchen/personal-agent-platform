@@ -4,12 +4,28 @@ import json
 import subprocess
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+import pytest
 
 from pap.run import RunResult
 from pap.scheduler import _deliver, tick
 from paplog import observe
 
 CST = timezone(timedelta(hours=8))
+
+
+@pytest.fixture(autouse=True)
+def configured_test_delivery(monkeypatch):
+    monkeypatch.setenv("PAP_OPENCLAW_CHANNEL", "test-channel")
+    monkeypatch.setenv("PAP_OPENCLAW_ACCOUNT", "test-account")
+
+
+def test_delivery_requires_local_route(monkeypatch):
+    from pap.scheduler import _send_message
+
+    monkeypatch.delenv("PAP_OPENCLAW_CHANNEL")
+    monkeypatch.delenv("PAP_OPENCLAW_ACCOUNT")
+    assert _send_message("hello", run_id="run_test", target="recipient",
+                         sender=lambda *args, **kwargs: pytest.fail("unexpected send")) == "unconfigured"
 
 
 def make_platform(
@@ -307,12 +323,12 @@ def test_delivery_uses_openclaw_gateway(monkeypatch):
         return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
 
     monkeypatch.setenv("PAP_OPENCLAW_CHANNEL", "feishu")
-    monkeypatch.setenv("PAP_OPENCLAW_ACCOUNT", "feishu4")
+    monkeypatch.setenv("PAP_OPENCLAW_ACCOUNT", "account_test")
     monkeypatch.setenv("PAP_OPENCLAW_BIN", "/usr/local/bin/openclaw")
     assert _deliver(result, job, target="ou_test", sender=sender) == "sent"
     assert calls == [(
         ["/usr/local/bin/openclaw", "message", "send", "--channel", "feishu",
-         "--account", "feishu4", "--target", "ou_test", "--message", "hello"],
+         "--account", "account_test", "--target", "ou_test", "--message", "hello"],
         {"capture_output": True, "text": True, "timeout": 60},
     )]
 
@@ -324,7 +340,7 @@ def test_delivery_suppresses_leaked_tool_echo():
         response=(
             "Let me verify one candidate delta before deciding on delivery "
             "(whether Buckmaster's call for an independent investigation is already in the record).\n"
-            'db = sqlite3.connect("file:/home/xingzeng/personal-agent-platform/'
+            'db = sqlite3.connect("file:/example/personal-agent-platform/'
             'var/world-historian/chronicle.sqlite?mode=ro", uri=True)'
         ),
         error="", started_at="", completed_at="", usage={},

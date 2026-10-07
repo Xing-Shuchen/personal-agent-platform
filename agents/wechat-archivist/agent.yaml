@@ -2,13 +2,12 @@ apiVersion: pap/v1
 kind: Agent
 metadata:
   name: wechat-archivist
-  description: 每日从本人 Ubuntu 微信数据库增量归档聊天记录。
+  description: 从用户明确配置的本地微信数据库增量归档聊天记录。
 spec:
+  enabled: false  # Set locally in var/config/agents.yaml after setup
   profile:
     name: wechat-archivist
     source: profile
-  model: deepseek-wechat-archivist/deepseek-v4.1-flash
-  provider_rejection_fallback: deepseek/deepseek-flash
   capabilities:
     - local_state.write
   proactive:
@@ -18,7 +17,6 @@ spec:
       - name: wechat-daily-incremental
         schedule: "15 3 * * *"
         skill: wechat-daily-incremental
-        model: deepseek-wechat-archivist/deepseek-v4.1-flash
         args: {}
         attach_to_session: false
         delivery: local

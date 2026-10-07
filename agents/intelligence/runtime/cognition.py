@@ -14,7 +14,7 @@ from pap.cognition import Index, default_index  # noqa: E402
 
 def main() -> int:
     request = json.load(sys.stdin)
-    vault = Path(os.environ.get("PAP_VAULT", str(Path.home() / "documents/Obsidian/Second_Brain"))).expanduser().resolve()
+    vault = Path(os.environ.get("PAP_VAULT", str(Path.home() / "Documents/Obsidian"))).expanduser().resolve()
     index = Index(default_index(vault))
     try:
         index.build(vault)

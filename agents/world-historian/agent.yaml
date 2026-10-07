@@ -4,14 +4,10 @@ metadata:
   name: world-historian
   description: Preserves evolving external-world events as sourced claims, revisable events, and long-running threads.
 spec:
+  enabled: false  # Set locally in var/config/agents.yaml after setup
   profile:
     name: world-historian
     source: profile
-  model: deepseek-world-historian/deepseek-v4.1-flash
-  provider_rejection_fallback: deepseek/deepseek-flash
-  # The route carries a fallback chain in OpenClaw; pinning the model on the
-  # command line would skip it.
-  model_fallback: true
   capabilities:
     - personal_context.read
     - web.search
@@ -37,7 +33,7 @@ spec:
         delivery: local
         runner: command
         command:
-          - /home/xingzeng/personal-agent-platform/.venv/bin/python
+          - python3
           - agents/world-historian/runtime/cli.py
           - feeds
           - update
@@ -49,9 +45,8 @@ spec:
         delivery: local
         runner: command
         command:
-          - /home/xingzeng/personal-agent-platform/scripts/sync_chronicle_snapshot.sh
-        # 2026-09-28 用户要求：从 vault 移除 Chronicle 快照（改为直接交付 DB 文件），
-        # 故暂停本任务；重新指向新落点时把 enabled 改回 true 即可。
+          - bash
+          - scripts/sync_chronicle_snapshot.sh
         enabled: false
       - name: world-follow-normal
         schedule: "43 3,13,22 * * *"
@@ -63,15 +58,13 @@ spec:
       - name: world-follow-low
         schedule: "43 20 * * *"
         skill: news-follow
-        model: zai/glm-5.3
         args:
           priority: low
         attach_to_session: false
         delivery: user-home
       - name: world-follow-background
-        schedule: "every 14d from 2026-09-12 20:43 tz Asia/Shanghai"
+        schedule: "43 20 * * 6"
         skill: news-follow
-        model: zai/glm-5.3
         args:
           priority: background
         attach_to_session: false
@@ -100,14 +93,12 @@ spec:
       - name: world-daily-report
         schedule: "0 0 * * *"
         skill: news-daily-stats
-        model: qwen/qwen3.8-max
         args: {}
         attach_to_session: true
         delivery: user-home
       - name: world-weekly-report
         schedule: "0 22 * * 0"
         skill: news-synthesize
-        model: qwen/qwen3.8-max
         args:
           mode: weekly
         attach_to_session: true

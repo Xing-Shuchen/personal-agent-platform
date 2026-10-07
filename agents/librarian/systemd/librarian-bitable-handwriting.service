@@ -1,8 +1,0 @@
-[Unit]
-Description=Librarian handwriting review bridge for Feishu Base
-
-[Service]
-Type=oneshot
-WorkingDirectory=/home/xingzeng/personal-agent-platform
-ExecStart=/home/xingzeng/personal-agent-platform/.venv/bin/python -m agents.librarian.runtime.bitable_handwriting sync --root /home/xingzeng/personal-agent-platform/var/librarian --owner owner_feishu_librarian --vault /home/xingzeng/文档/Obsidian/Second_Brain --credentials /home/xingzeng/personal-agent-platform/var/librarian/bitable-credentials.json
-TimeoutStartSec=300

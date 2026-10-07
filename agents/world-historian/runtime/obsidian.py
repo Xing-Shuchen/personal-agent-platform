@@ -1,7 +1,7 @@
 """Export World Historian threads to the Obsidian vault.
 
-Target: ``2Area/41 新闻及事件/`` in the user's Second_Brain vault — one file
-per thread. The Chronicle database stays the single source of truth: files
+Target: a locally configured Obsidian directory — one file per thread.
+The Chronicle database stays the single source of truth: files
 are projections, overwritten from the database on every sync. A file is
 written only when the corresponding thread is created or modified in a
 committed bundle (``touched_threads``); the caller decides when to sync.
@@ -27,7 +27,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-DEFAULT_VAULT_SUBPATH = Path("文档/Obsidian/Second_Brain/2Area/41 新闻及事件")
 CLOSED_DIR = "closed_threads"
 MANUAL_SECTION = "手工批注"
 _INDEX_VERSION = 1
@@ -62,7 +61,7 @@ def vault_dir() -> Path | None:
     if env is not None:
         value = env.strip()
         return Path(value) if value else None
-    return _real_home() / DEFAULT_VAULT_SUBPATH
+    return None
 
 
 _UNSAFE_CHARS = re.compile(r'[\\/:*?"<>|#\[\]^]+')

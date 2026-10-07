@@ -20,6 +20,7 @@ from .pipeline import ExtractionOutput
 
 REPO = Path(__file__).resolve().parents[3]
 SAMPLE_ROOT = REPO / "local-processing"
+LOCAL_CONFIG = SAMPLE_ROOT / "config.local.yaml"
 
 
 @lru_cache(maxsize=1)
@@ -32,7 +33,7 @@ def processor_fingerprint() -> str:
     digest = hashlib.sha256()
     sources = [*sorted(path for path in (REPO / "bookscan").glob("*.py")
                        if path.name not in {"review.py", "evaluate.py"}),
-               SAMPLE_ROOT / "config.yaml", SAMPLE_ROOT / "manifest.json",
+               SAMPLE_ROOT / "config.yaml", LOCAL_CONFIG, SAMPLE_ROOT / "manifest.json",
                SAMPLE_ROOT / "inputs.sha256"]
     # The adapter's imports and fingerprint implementation do not change the
     # observation; adapt_report and the extractor below do.
@@ -144,10 +145,14 @@ def adapt_report(report: dict, width: int, height: int) -> dict:
 
 def _manifest_entry(original: bytes, oriented_size: tuple[int, int]) -> dict:
     """Reuse hand reviewed regions only for the exact sample bytes."""
-    sample_manifest = json.loads((SAMPLE_ROOT / "manifest.json").read_text(encoding="utf-8"))
+    manifest_path = SAMPLE_ROOT / "manifest.json"
+    hashes_path = SAMPLE_ROOT / "inputs.sha256"
+    if not manifest_path.is_file() or not hashes_path.is_file():
+        return {"file": "capture.png", "annotation_regions": [], "bracket_regions": []}
+    sample_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     digest = hashlib.sha256(original).hexdigest()
     known = dict(line.strip().split(maxsplit=1) for line in
-                 (SAMPLE_ROOT / "inputs.sha256").read_text(encoding="utf-8").splitlines()
+                 hashes_path.read_text(encoding="utf-8").splitlines()
                  if line.strip())
     for entry in sample_manifest["pages"]:
         if known.get(digest) == entry["file"]:
@@ -163,7 +168,8 @@ def bookscan_extractor(epub: Path | None, *, python: Path | None = None,
                        work_root: Path | None = None):
     """Return an extractor that invokes the isolated PaddleOCR environment."""
     interpreter = str(python or os.environ.get("LIBRARIAN_BOOKSCAN_PYTHON") or sys.executable)
-    template = yaml.safe_load((SAMPLE_ROOT / "config.yaml").read_text(encoding="utf-8"))
+    config_path = LOCAL_CONFIG if LOCAL_CONFIG.is_file() else SAMPLE_ROOT / "config.yaml"
+    template = yaml.safe_load(config_path.read_text(encoding="utf-8"))
 
     def extract(original: bytes) -> ExtractionOutput:
         with Image.open(io.BytesIO(original)) as image:
