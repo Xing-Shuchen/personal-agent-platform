@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="32" viewBox="0 0 64 32" shape-rendering="crispEdges">
+<!-- row 1: floor, wall, desk, desk trim -->
+<path fill="#203440" d="M0 0h16v16H0z"/><path fill="#28414e" d="M0 0h16v1H0zM0 15h16v1H0z"/><path fill="#365361" d="M2 4h2v2H2zM11 10h2v2h-2z"/>
+<path fill="#3c5967" d="M16 0h16v16H16z"/><path fill="#4f7180" d="M16 11h16v2H16z"/><path fill="#263e4a" d="M16 13h16v3H16z"/>
+<path fill="#5f7d88" d="M32 0h16v16H32z"/><path fill="#91a5a8" d="M32 0h16v3H32z"/><path fill="#395867" d="M32 13h16v3H32z"/>
+<path fill="#52707d" d="M48 0h16v16H48z"/><path fill="#7796a0" d="M48 0h16v3H48z"/>
+<!-- row 2: screen off, screen on, plant, chair -->
+<path fill="#182d38" d="M0 16h16v16H0z"/><path fill="#79909a" d="M1 17h14v11H1z"/><path fill="#304b5a" d="M2 18h12v9H2z"/><path fill="#6d8491" d="M7 28h2v4H7z"/>
+<path fill="#182d38" d="M16 16h16v16H16z"/><path fill="#79909a" d="M17 17h14v11H17z"/><path fill="#48b7a0" d="M18 18h12v9H18z"/><path fill="#8bd7c0" d="M20 20h8v1h-8zM20 23h6v1h-6z"/><path fill="#6d8491" d="M23 28h2v4h-2z"/>
+<path fill="#203440" d="M32 16h16v16H32z"/><path fill="#3d8b6c" d="M38 19h4v9h-4zM35 22h10v4H35z"/><path fill="#a37658" d="M38 27h4v5h-4z"/>
+<path fill="#203440" d="M48 16h16v16H48z"/><path fill="#597887" d="M51 19h10v9H51z"/><path fill="#75919b" d="M52 18h8v2h-8z"/><path fill="#344e5d" d="M50 29h12v3H50z"/>
+</svg>
