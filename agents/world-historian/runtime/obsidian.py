@@ -27,6 +27,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+import yaml
+
 CLOSED_DIR = "closed_threads"
 MANUAL_SECTION = "手工批注"
 _INDEX_VERSION = 1
@@ -54,14 +56,25 @@ def _real_home() -> Path:
 def vault_dir() -> Path | None:
     """Resolve the sync target directory; ``None`` disables syncing.
 
-    ``WORLD_HISTORIAN_VAULT_DIR`` overrides the location; setting it to an
-    empty string disables the Obsidian export entirely.
+    The environment variable wins, including an empty value that disables
+    export. Otherwise read the machine-local config beside this checkout.
     """
     env = os.environ.get("WORLD_HISTORIAN_VAULT_DIR")
     if env is not None:
         value = env.strip()
         return Path(value) if value else None
-    return None
+    config_path = Path(__file__).resolve().parents[3] / "var" / "config" / "world-historian.yaml"
+    try:
+        config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return None
+    if not isinstance(config, dict):
+        return None
+    value = config.get("vault_dir")
+    if not isinstance(value, str) or not value.strip():
+        return None
+    path = Path(value.strip())
+    return path if path.is_absolute() else None
 
 
 _UNSAFE_CHARS = re.compile(r'[\\/:*?"<>|#\[\]^]+')

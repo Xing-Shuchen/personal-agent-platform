@@ -2,6 +2,7 @@
 
 import json
 import os
+import shutil
 import sqlite3
 import subprocess
 import sys
@@ -126,6 +127,50 @@ def test_store_bundle_syncs_to_configured_vault(tmp_path):
     text = (vault / files[0]).read_text(encoding="utf-8")
     assert "thread_id:" in text and "# 手工批注" in text
     assert (tmp_path / "obsidian-index.json").exists()  # index lives next to the DB
+
+
+def test_sync_uses_machine_local_vault_config_without_runner_env(tmp_path):
+    """A CLI process with no PAP or vault env reads config beside its runtime."""
+    runtime = tmp_path / "agents/world-historian/runtime"
+    shutil.copytree(CLI.parent, runtime, ignore=shutil.ignore_patterns("__pycache__"))
+    env = {key: value for key, value in os.environ.items()
+           if not key.startswith("PAP_") and key != "WORLD_HISTORIAN_VAULT_DIR"}
+    bundle = tmp_path / "bundle.json"
+    bundle.write_text(json.dumps(sample_bundle()), encoding="utf-8")
+
+    def run(*args: str):
+        return subprocess.run(
+            [sys.executable, str(runtime / "cli.py"), *args],
+            capture_output=True, text=True, cwd=tmp_path, env=env,
+        )
+
+    stored = run("store-bundle", "--json", str(bundle))
+    assert stored.returncode == 0, stored.stderr
+    payload = json.loads(stored.stdout)
+    assert payload["obsidian"]["skipped"] is True
+    thread_id = payload["refs"]["thread"]
+    assert json.loads(run("sync", "--thread", thread_id).stdout)["skipped"] is True
+
+    vault = tmp_path / "vault"
+    config = tmp_path / "var/config/world-historian.yaml"
+    config.parent.mkdir(parents=True, exist_ok=True)
+    config.write_text(f"vault_dir: {vault}\n", encoding="utf-8")
+    synced = run("sync", "--thread", thread_id)
+    assert synced.returncode == 0, synced.stderr
+    result = json.loads(synced.stdout)
+    notes = list(vault.glob("*.md"))
+    assert result["skipped"] is False
+    assert result["written"] == [str(notes[0])]
+    assert f'thread_id: "{thread_id}"' in notes[0].read_text(encoding="utf-8")
+
+    update = tmp_path / "update.json"
+    update.write_text(json.dumps({"threads": [
+        {"id": thread_id, "title": "Example transition updated"},
+    ]}), encoding="utf-8")
+    projected = run("store-bundle", "--json", str(update))
+    assert projected.returncode == 0, projected.stderr
+    assert json.loads(projected.stdout)["obsidian"]["skipped"] is False
+    assert (vault / "Example transition updated.md").is_file()
 
 
 def test_roster_formats_orders_and_filters_delivery_threads(tmp_path):

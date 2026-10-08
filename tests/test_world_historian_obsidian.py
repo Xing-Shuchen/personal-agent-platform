@@ -419,6 +419,30 @@ def test_empty_vault_dir_env_disables_sync(tmp_path, monkeypatch):
     assert obsidian.vault_dir() == tmp_path / "custom"
 
 
+def test_vault_dir_uses_machine_local_config(tmp_path, monkeypatch):
+    monkeypatch.delenv("WORLD_HISTORIAN_VAULT_DIR", raising=False)
+    monkeypatch.setattr(
+        obsidian, "__file__",
+        str(tmp_path / "agents/world-historian/runtime/obsidian.py"),
+    )
+    config = tmp_path / "var/config/world-historian.yaml"
+    assert obsidian.vault_dir() is None  # Missing config keeps export disabled.
+
+    config.parent.mkdir(parents=True)
+    vault = tmp_path / "vault"
+    config.write_text(f"vault_dir: {vault}\n", encoding="utf-8")
+    assert obsidian.vault_dir() == vault
+
+    config.write_text("vault_dir: '   '\n", encoding="utf-8")
+    assert obsidian.vault_dir() is None
+
+    config.write_text(f"vault_dir: {vault}\n", encoding="utf-8")
+    monkeypatch.setenv("WORLD_HISTORIAN_VAULT_DIR", str(tmp_path / "override"))
+    assert obsidian.vault_dir() == tmp_path / "override"
+    monkeypatch.setenv("WORLD_HISTORIAN_VAULT_DIR", "")
+    assert obsidian.vault_dir() is None
+
+
 def test_store_bundle_failure_leaves_vault_untouched(tmp_path):
     conn = fresh(tmp_path)
     db.store_bundle(conn, capture_bundle())
