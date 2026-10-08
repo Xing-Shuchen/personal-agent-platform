@@ -65,6 +65,68 @@ AI 编译器与高性能计算软件栈简报｜YYYY-MM-DD
 
 若没有重大进展，仍然输出上述标题、检索窗口和「过去 24 小时暂无重大进展」，并保留固定结尾；不得静默。
 
-## 可选本地归档
+## 落盘归档与 vault 同步（生成简报后必做）
 
-仅在用户配置 `PAP_VAULT` 并要求归档时，把本次简报写入该 vault。不要自动提交、推送或同步用户的其他仓库。未配置时直接返回简报。
+简报生成后，必须把与推送内容完全一致的正文归档到 Obsidian vault，并按 vault 同步 SOP 提交推送。只做归档，不改动简报内容本身，也不改动运行模型。
+
+### 归档文件
+
+- 路径：`/home/xingzeng/文档/Obsidian/Second_Brain/2Area/41 新闻及事件/AI Compiler/AI编译器简报-YYYY-MM-DD.md`（`YYYY-MM-DD` 为简报日期，Asia/Shanghai）。
+- 同日已存在则覆盖更新（幂等），不得新建 `-2`、` (1)` 之类副本。
+- frontmatter 固定为下式；`model` 填本次实际运行模型（取自运行时上下文或 `agent.yaml` 的 `spec.model`），不得改写模型：
+
+```text
+---
+type: note
+area: world-historian
+kind: briefing-archive
+source: compiler-hpc-brief (PAP scheduled job, agent=compiler-news, runner=OpenClaw Gateway, model=<本次实际模型>)
+date: YYYY-MM-DD
+archived: YYYY-MM-DD
+---
+```
+
+- 正文：一级标题 `# AI 编译器与高性能计算软件栈简报｜YYYY-MM-DD`，随后逐条列出简报条目，格式与推送完全一致：`- **标题**：描述。来源：[标题｜来源](url)`。不得裁剪、改写或省略任何条目；不写固定结尾行，不加「关联」等额外小节。
+
+### 同步 SOP（以 vault 根 AGENTS.md 为准，按顺序执行）
+
+以下命令都在 vault 根目录 `/home/xingzeng/文档/Obsidian/Second_Brain` 下执行。
+
+1. 先同步拉取远端最新，等待约 20–25 秒：
+
+   ```bash
+   HOME=/home/xingzeng /home/xingzeng/.local/bin/obsidian command id=remotely-save:start-sync
+   ```
+
+2. 显式暂存本期归档文件，禁止 `git add .`：
+
+   ```bash
+   git add -- "2Area/41 新闻及事件/AI Compiler/AI编译器简报-YYYY-MM-DD.md"
+   ```
+
+3. 审阅暂存内容：`git diff --cached --stat` 与 `git diff --cached --check`（`--check` 应无输出）。
+4. 提交，一次提交只含这一期简报，不带入工作区其他无关改动：
+
+   ```bash
+   git commit -m "docs(41 新闻及事件): 归档 AI 编译器与高性能计算软件栈简报 YYYY-MM-DD"
+   ```
+
+5. 推送：`git push origin main`。
+6. 再同步一次，把提交产物推到 COS：
+
+   ```bash
+   HOME=/home/xingzeng /home/xingzeng/.local/bin/obsidian command id=remotely-save:start-sync
+   ```
+
+7. 校验同步（用装有 boto3 的本机解释器；这不是 Hermes 网关）：
+
+   ```bash
+   /home/xingzeng/.hermes/hermes-agent/venv/bin/python \
+     /home/xingzeng/.openclaw/workspace-feishu4/skills/obsidian-remotely-save-sync/scripts/verify_sync_diff.py
+   ```
+
+   本期文件出现在「本地有但 COS 缺失」即未同步成功；按 `obsidian-remotely-save-sync` skill 处理（feishu3 可直传兜底，其他 profile 报告用户）。
+
+### 失败处理
+
+归档或同步任一步失败都不得静默：在推送正文末尾追加一行简短说明（如 `归档失败：<原因>`），简报本体照常推送。
