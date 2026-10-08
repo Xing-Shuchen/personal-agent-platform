@@ -60,7 +60,14 @@ sub/superscripts inside formulas (`log₃`, `π₁` → `\log_3`, `\pi_1`);
 
 ## Optional vault projection
 
-If `WORLD_HISTORIAN_VAULT_DIR` is configured, the runtime may update local projected files. Do not commit, push, or invoke third-party sync services as part of this skill. Preserve manually annotated sections.
+Configure the Obsidian projection machine-locally in `var/config/world-historian.yaml`
+with `vault_dir: <absolute vault area path>`, or set `WORLD_HISTORIAN_VAULT_DIR`.
+The environment variable takes precedence; an explicit empty value disables
+projection. Scheduled pap runs project touched threads automatically because
+the runtime reads the config file directly. Gateway-hosted exec does not inherit
+`PAP_*` variables from the `openclaw agent` process. Do not commit, push, or
+invoke third-party sync services as part of this skill. Preserve manually
+annotated sections.
 
 Initialize or inspect storage with `$PAP_ROOT/agents/world-historian/runtime/cli.py init`, `search`, `thread`,
 and `stats`. Never place the SQLite database or raw snapshots under `profile/`.
