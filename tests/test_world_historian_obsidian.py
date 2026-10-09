@@ -124,6 +124,32 @@ def test_timeline_is_rendered_newest_first(tmp_path):
     assert timeline.index("Later development") < timeline.index("Example changed")
 
 
+def test_each_event_carries_an_invisible_span_with_its_id(tmp_path):
+    """Every event block ends with a hidden span carrying its Chronicle event id."""
+    conn = fresh(tmp_path)
+    result = db.store_bundle(conn, capture_bundle())
+    tid = result["refs"]["t1"]
+    e1 = result["refs"]["e1"]
+    result2 = db.store_bundle(conn, {
+        "events": [{"ref": "e2", "title": "Later development", "summary": "Later development",
+                    "occurred_at": "2026-09-10", "occurred_at_precision": "day",
+                    "reported_at": "2026-09-10T09:00:00+08:00",
+                    "observed_at": "2026-09-10T10:00:00+08:00",
+                    "thread_refs": [tid]}],
+    })
+    e2 = result2["refs"]["e2"]
+    vault, outcome = sync(conn, tmp_path, [tid])
+    assert outcome["written"] and not outcome["errors"]
+    lines = only_file(vault).read_text(encoding="utf-8").splitlines()
+    spans = [ln for ln in lines if "data-chronicle-event" in ln]
+    assert len(spans) == 2, spans
+    for eid in (e1, e2):
+        span = f'<span hidden data-chronicle-event="{eid}"></span>'
+        assert span in spans
+        # the span is the last content line of its event block
+        assert lines[lines.index(span) + 1] == ""
+
+
 def test_legacy_event_uses_a_short_date_heading_and_keeps_summary_in_body(tmp_path):
     conn = fresh(tmp_path)
     result = db.store_bundle(conn, capture_bundle())

@@ -181,6 +181,16 @@ def _event_heading(event: dict[str, Any]) -> str:
     return f"{date} · 事件记录"
 
 
+def _event_ref_span(event_id: Any) -> str:
+    """Invisible per-event anchor for precise referencing.
+
+    Mirrors the vault librarian convention (``<span hidden
+    data-librarian-trace=...></span>``): renders as nothing in Obsidian but
+    carries the Chronicle event id so a single event can be cited exactly.
+    """
+    return f'<span hidden data-chronicle-event="{str(event_id)}"></span>'
+
+
 def _endpoint_label(endpoint_type: str, endpoint_id: str,
                     snapshot: dict[str, Any]) -> str:
     if endpoint_type == "thread":
@@ -335,6 +345,7 @@ def render_snapshot(snapshot: dict[str, Any], synced_at: str,
                 lines.append(">")
                 for raw_line in str(quote.get("quote_text", "")).splitlines() or [""]:
                     lines.append(f"> {raw_line}" if raw_line.strip() else ">")
+        lines.append(_event_ref_span(event.get("id")))
         lines.append("")
 
     questions = snapshot.get("questions", [])
