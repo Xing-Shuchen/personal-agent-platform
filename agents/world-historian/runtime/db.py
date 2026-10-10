@@ -617,7 +617,9 @@ def thread_detail(conn: sqlite3.Connection, thread_id: str) -> dict[str, Any] | 
     )]
     result["events"] = [dict(item) for item in conn.execute(
         """SELECT events.* FROM events JOIN thread_events ON events.id = thread_events.event_id
-           WHERE thread_events.thread_id = ? ORDER BY COALESCE(occurred_at, reported_at, observed_at)""",
+           WHERE thread_events.thread_id = ?
+           ORDER BY COALESCE(datetime(reported_at), datetime(occurred_at), datetime(observed_at)),
+                    events.id""",
         (thread_id,),
     )]
     return result
@@ -645,11 +647,16 @@ def thread_snapshot(conn: sqlite3.Connection, thread_id: str) -> dict[str, Any] 
         "SELECT * FROM watch_queries WHERE thread_id = ? AND active = 1 ORDER BY created_at",
         (thread_id,),
     )]
+    # Canonical event order is by 报道时间 (reported_at), with occurred_at /
+    # observed_at as fallbacks. datetime() normalizes mixed timezone offsets
+    # (e.g. +00:00 vs +08:00); events.id makes the order deterministic. The
+    # Obsidian projection reverses this for its newest-first display.
     events = [dict(item) for item in conn.execute(
         """SELECT events.* FROM events JOIN thread_events
            ON events.id = thread_events.event_id
            WHERE thread_events.thread_id = ?
-           ORDER BY COALESCE(occurred_at, reported_at, observed_at)""",
+           ORDER BY COALESCE(datetime(reported_at), datetime(occurred_at), datetime(observed_at)),
+                    events.id""",
         (thread_id,),
     )]
     for event in events:
