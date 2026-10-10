@@ -1,0 +1,12 @@
+{
+  "portals": [
+    {
+      "name": "agent-office-floor",
+      "command": "PAP_OFFICE_PORTAL_MODE=1 PORT=${PORT:-4184} npm run start -w @pap/office-server",
+      "cwd": "agent-office-floor",
+      "port": 4184,
+      "title": "专员办公室",
+      "description": "Open this dedicated port first. Start the server with the returned PORT and PUBLIC_URL, portal mode, a private viewer secret, ignored office config, and an exact Gateway read credential. Never proxy the local-only office port."
+    }
+  ]
+}
