@@ -43,7 +43,7 @@ def test_validate_invalid_spec_fails(tmp_path):
     assert "INVALID" in r.stderr
 
 
-def test_release_jobs_have_no_author_model_routes():
+def test_jobs_shows_job_model_overrides_only():
     r = run(["jobs", "--root", str(REPO), "--agent", "world-historian"])
     assert r.returncode == 0, r.stderr
     lines = r.stdout.splitlines()
@@ -52,7 +52,10 @@ def test_release_jobs_have_no_author_model_routes():
         for line in lines
         if (fields := line.split("\t")) and any(field.startswith("model=") for field in fields)
     }
-    assert actual_overrides == {}
+    assert actual_overrides == {
+        f"world-historian/world-follow-{priority}": "qwen/qwen3.8-max"
+        for priority in ("high", "normal", "low")
+    }
 
 
 def test_gate_cli_allow_and_deny(tmp_path):
