@@ -34,6 +34,7 @@ agents/*/profile/var/
 *.sqlite-wal
 *.sqlite-shm
 /obsidian/world-historian-dashboard/node_modules/
+agent-office-floor/node_modules/
 .DS_Store
 
 # Generated run artifacts

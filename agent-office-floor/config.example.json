@@ -1,0 +1,7 @@
+{
+  "gatewayId": "local-gateway",
+  "gatewayUrl": "ws://127.0.0.1:18789",
+  "selectedAgentIds": [],
+  "feishuAgentIds": [],
+  "bindings": {}
+}
