@@ -19,4 +19,4 @@ Audit date: 2026-09-18. The Vault was inspected read-only except for the explici
 
 ## Phase 1 layout
 
-`pap/cognition.py` contains the small local store, scanner adapter, conservative classifier, heading segmenter, FTS query service and CLI. It has no runtime hook into either production agent.
+`pap/cognition.py` contains the small local store, scanner adapter, conservative classifier, heading segmenter, FTS query service and CLI. (Status note 2026-10: runtime hooks now exist — both production agents run `agents/{intelligence,serendipity}/runtime/cognition.py` adapters through their scheduled jobs.)

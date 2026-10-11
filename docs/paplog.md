@@ -46,8 +46,10 @@ the same identifiers across legacy diagnostics and the canonical ledger.
 Every canonical event receives a valid ULID `event_id`; a malformed legacy
 caller-supplied value is replaced at the ledger boundary rather than persisted.
 
-PAP emits scheduler due/dispatch events at `pap.scheduler`, run and model
-events at `pap.run.invoke`, artifact lifecycle events at `pap.artifact`, and
+PAP emits scheduler due/dispatch events as `pap.schedule.due`,
+`pap.schedule.dispatched`, and `pap.schedule.skipped`; run, agent, skill, and
+model events as `pap.run.*`, `pap.agent.invoke`, `pap.skill.invoke`, and
+`pap.model.call`; artifact lifecycle events as `pap.artifact.created`; and
 Personal Historian ContextPack/PeriodSummary events in its runtime adapter.
 Historian telemetry remains in the ledger: it is not automatically converted
 into historian evidence.
@@ -89,7 +91,7 @@ Cognition SQLite remain operator/domain state, not canonical paplog storage.
 | `pap.artifact.append` | `pap.artifact.created` plus `derived_from` links |
 | World Historian `world-feeds` RSS fetch/ingest command | `pap.http.request` and `pap.database.write` action lifecycles |
 | Historian PAP adapter | `historian.context_pack.created`, `historian.period_summary.generated` |
-| Historian `GLMChatCompletionsClient` / `DeepSeekChatCompletionsClient` | nested `pap.model.call` and `pap.http.request` action lifecycles |
+| Historian LLM chat client classes (external checkout) | nested `pap.model.call` and `pap.http.request` action lifecycles |
 
 Personal Historian's own execution is repository-native and independent: its
 collectors write Sources/Observations, deterministic derivation writes Derived
@@ -251,7 +253,9 @@ points are `pap/run.py`, `pap/scheduler.py`, `pap/artifact.py`, and
 updated runner, scheduler, artifact, and cognition tests.
 
 Personal Historian keeps only a small bridge in `paplog/__init__.py` and an
-explicit policy boundary in `historian/paplog_projection.py`. Its semantic
+explicit policy boundary in `historian/paplog_projection.py`. (The
+`historian/...` and `tests/test_paplog_projection.py` paths in this section
+live in the separate Personal Historian checkout, not in this repository.) Its semantic
 instrumentation is in `historian/revisions/store.py`,
 `historian/summarization/store.py`, `historian/derivation/engine.py`, and
 `historian/reconstruction/engine.py`, with focused coverage in

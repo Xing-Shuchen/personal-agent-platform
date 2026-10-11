@@ -17,7 +17,7 @@
 | 规范性数据契约 | `schemas/contracts.schema.json` 及其 18 个模型入口 |
 | 基础材料 | 用户提供的《PAP Librarian — Physical Reading Ingestion Specification v0.1》 |
 
-> PAP 仓库落地状态与现有组件映射见 [`LIBRARIAN_REPO_MAPPING.md`](LIBRARIAN_REPO_MAPPING.md)。本文件描述目标契约和验收条件，不代表这些条件已经通过。当前 Schema、合成 examples 和离线验证报告位于 `agents/librarian/runtime/`；原稿的 `references/source-design.txt` 未随此文件提供。
+> PAP 仓库落地状态与现有组件映射见 `LIBRARIAN_REPO_MAPPING.md`（该映射文档不在本仓库内，属于作者的本地工作笔记）。本文件描述目标契约和验收条件，不代表这些条件已经通过。当前 Schema、合成 examples 和离线验证报告位于 `agents/librarian/runtime/`；原稿的 `references/source-design.txt` 未随此文件提供。
 
 ### 0.1 本文与底稿的关系
 

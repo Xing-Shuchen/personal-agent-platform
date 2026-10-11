@@ -96,6 +96,8 @@ office-scene	地图和角色可视化	React、Pixi、契约、场景资源	Gatew
 
 以下路径是本项目新增接口，不是 OpenClaw 原生 API。
 
+> 状态说明（2026-10）：实现已超出本 v0.9 规格书——`/api/floor/identities`、`/api/floor/coverage`、`/api/floor/progress`、`POST /api/floor/view`、`/api/office/unlock` 与 PAP 任务面板 `/api/pap/tasks` 为规格书之后的新增端点，以 `agent-office-floor/README.md` 的描述为准。
+
 接口	用途	约束
 GET /api/floor/state	当前完整 FloorState	禁止缓存；经过应用访问检查
 GET /api/floor/events	SSE，发送完整快照或增量	首条业务消息为快照；每 15 秒发送传输心跳
