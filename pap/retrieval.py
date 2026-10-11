@@ -81,6 +81,10 @@ def embedding(text: str) -> tuple[str, list[float]]:
 
 def cosine(a: Sequence[float], b: Sequence[float]) -> float:
     if not a or not b: return 0.0
+    # Vectors from different embedding models (e.g. the 256-d hash fallback vs
+    # the 384-d transformer) are not comparable; zip() would silently score a
+    # truncated dot product. Mixed dimensions score neutral instead.
+    if len(a) != len(b): return 0.0
     return max(-1.0, min(1.0, sum(x * y for x, y in zip(a, b))))
 
 

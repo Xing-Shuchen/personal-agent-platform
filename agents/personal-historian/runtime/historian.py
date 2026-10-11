@@ -42,25 +42,37 @@ def _historian_root() -> Path:
 
 sys.path.insert(0, str(_historian_root()))
 
-from historian.summarization import (  # noqa: E402
-    MIN_CREATION_EVIDENCE,
-    ArtifactStore,
-    CardLifecycle,
-    ContextBuilder,
-    SummaryRunStatus,
-    ThreadRegistry,
-    assess_readiness,
-    candidates_for_period,
-    complete_period_summary,
-    create_thread,
-    input_manifest_hash,
-    load_policy,
-    render_markdown,
-    resolve_period,
-    seal_with_provenance,
-)
-from historian.summarization.pipeline import parse_model_json  # noqa: E402
-from historian.revisions.store import RevisionStore  # noqa: E402
+# A missing handoff checkout is an unmet readiness condition, not a crash: the
+# guarded import lets prepare answer NOT_READY (and complete answer error) with
+# a clear reason instead of a ModuleNotFoundError traceback. Note the confusing
+# raw error this avoids: this script's own directory contains historian.py,
+# which shadows the missing package ("'historian' is not a package").
+_HANDOFF_ERROR: str | None = None
+try:
+    from historian.summarization import (  # noqa: E402
+        MIN_CREATION_EVIDENCE,
+        ArtifactStore,
+        CardLifecycle,
+        ContextBuilder,
+        SummaryRunStatus,
+        ThreadRegistry,
+        assess_readiness,
+        candidates_for_period,
+        complete_period_summary,
+        create_thread,
+        input_manifest_hash,
+        load_policy,
+        render_markdown,
+        resolve_period,
+        seal_with_provenance,
+    )
+    from historian.summarization.pipeline import parse_model_json  # noqa: E402
+    from historian.revisions.store import RevisionStore  # noqa: E402
+except ImportError as _import_exc:  # pragma: no cover - environment dependent
+    _HANDOFF_ERROR = (
+        "personal-historian handoff checkout is not importable at "
+        f"PERSONAL_HISTORIAN_ROOT={_historian_root()}: {_import_exc}"
+    )
 
 
 def _read_stdin() -> dict[str, Any]:
@@ -97,7 +109,10 @@ def _watermarks() -> dict[str, datetime | None] | None:
     raw = _decode_env_json("PERSONAL_HISTORIAN_WATERMARKS_JSON", dict, None)
     if raw is None:
         discovered, watermarks = _discover_collection_state()
-        return watermarks if discovered else None
+        # A reconstruction watermark from the revision journal counts on its
+        # own; requiring coverage records too discarded it and reported
+        # "watermarks are not configured" although one was found.
+        return watermarks if (discovered or watermarks) else None
     result: dict[str, datetime | None] = {}
     for name, value in raw.items():
         if not isinstance(name, str) or (value is not None and not isinstance(value, str)):
@@ -858,6 +873,11 @@ def _complete_thread_creation(payload: dict[str, Any], prepared: dict[str, Any],
 
 
 def main() -> int:
+    if _HANDOFF_ERROR is not None and len(sys.argv) == 2 and sys.argv[1] in {"prepare", "complete"}:
+        payload = ({"status": "not_ready", "reason": _HANDOFF_ERROR} if sys.argv[1] == "prepare"
+                   else {"status": "error", "error": _HANDOFF_ERROR})
+        print(json.dumps(payload, ensure_ascii=False))
+        return 0
     if len(sys.argv) != 2 or sys.argv[1] not in {"prepare", "complete"}:
         raise SystemExit("usage: historian.py prepare|complete")
     output = prepare(_read_stdin()) if sys.argv[1] == "prepare" else complete(_read_stdin())

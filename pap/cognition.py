@@ -186,6 +186,10 @@ def _terms(text: str) -> set[str]:
 def _run_baseline(agent: str) -> dict[str, Any]:
     """Best-effort aggregate from PAP's canonical audit; no production rerun."""
     path = Path(os.environ.get("PAP_RUN_LOG", "var/state/runs.jsonl"))
+    if not path.is_absolute():
+        # Runtime adapters run with an arbitrary cwd; the canonical log is
+        # repo-relative and PAP_ROOT is exported to every child by pap.run.
+        path = Path(os.environ.get("PAP_ROOT", ".")) / path
     if not path.is_file():
         return {"state":"unavailable", "reason":"PAP run audit is absent"}
     rows=[]
@@ -226,6 +230,9 @@ class Index:
         path.parent.mkdir(parents=True, exist_ok=True)
         self.db = sqlite3.connect(path)
         self.db.row_factory = sqlite3.Row
+        # Concurrent writers (two pulse jobs, a manual index, a model-invoked
+        # evidence read) are expected; wait out short writer windows.
+        self.db.execute("PRAGMA busy_timeout = 10000")
         self.db.executescript(DDL)
         try:
             self.db.execute("ALTER TABLE candidate_rejections ADD COLUMN anchor_refs_json TEXT NOT NULL DEFAULT '[]'")
@@ -295,10 +302,14 @@ class Index:
             raise FileNotFoundError(f"Vault directory unavailable: {vault}")
         files = sorted(p for p in vault.rglob("*.md") if not any(x in SKIP for x in p.relative_to(vault).parts))
         if dry_run: return {"candidates": len(files), "dry_run": True}
-        self.db.execute("BEGIN IMMEDIATE")
-        generation = self.db.execute("INSERT INTO index_generations(started_at,status,scanner_version,schema_version) VALUES(?,?,?,?)", (now(), "BUILDING", SCANNER_VERSION, SCHEMA_VERSION)).lastrowid
         seen: set[str] = set(); skipped = failed = 0
+        embeddings_enabled = self.retrieval_flags()["candidate_retrieval_embeddings_enabled"]
         try:
+            # BEGIN IMMEDIATE lives inside the try on purpose: lock contention
+            # with a concurrent build must be recorded as a FAILED generation
+            # and surface as an error, not escape unrecorded.
+            self.db.execute("BEGIN IMMEDIATE")
+            generation = self.db.execute("INSERT INTO index_generations(started_at,status,scanner_version,schema_version) VALUES(?,?,?,?)", (now(), "BUILDING", SCANNER_VERSION, SCHEMA_VERSION)).lastrowid
             for file in files:
                 before = file.stat()
                 if os.environ.get("PAP_RUN_ID") or os.environ.get("PAP_OBSERVABILITY_DIR"):
@@ -307,8 +318,16 @@ class Index:
                 else:
                     raw = file.read_text("utf-8", errors="replace")
                 after = file.stat()
-                if (before.st_mtime_ns, before.st_size) != (after.st_mtime_ns, after.st_size): failed += 1; continue
-                path = file.relative_to(vault).as_posix(); content_hash = digest(raw); normalized_hash = digest(normalize(raw))
+                path = file.relative_to(vault).as_posix()
+                if (before.st_mtime_ns, before.st_size) != (after.st_mtime_ns, after.st_size):
+                    failed += 1
+                    # A file written during the scan stays on its prior good
+                    # revision and is retried next build (INDEX_LIFECYCLE
+                    # contract); it must not be tombstoned by the sweep below.
+                    prior = self.db.execute("SELECT document_id FROM documents WHERE current_path=? AND deleted=0", (path,)).fetchone()
+                    if prior: seen.add(prior["document_id"])
+                    continue
+                content_hash = digest(raw); normalized_hash = digest(normalize(raw))
                 meta, body, base = parse_markdown(raw)
                 # Namespace source IDs by their field; a Thread ID is not an ID
                 # for every source-material file attached to that Thread.
@@ -328,9 +347,12 @@ class Index:
                     anchor = f"h{unit.ordinal}"; family = "evf_" + digest(doc_id + anchor)[:24]; evidence_id = family + f":r{rev}"; synth = int(unit_c.pop("already_synthesized", 0) or ("对影成" in unit.heading)); field = {"classification":"source_adapter","heading_path":"markdown_structure","spans":"markdown_structure","timestamps":"frontmatter","permissions":"deterministic_rule"}
                     derived = int(unit_c["source_type"] == "world_historian_thread" or any(x in unit.heading.lower() for x in ("weekly", "monthly", "周报", "月报", "总结")))
                     self.db.execute("INSERT INTO evidence_units VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (evidence_id,family,rev,doc_id,path,unit_c["source_type"],unit_c["voice"],unit_c["origin_type"],unit_c["assertion_kind"],"conservative",unit.heading,unit.start,unit.end,anchor,unit.text,digest(unit.text),digest(normalize(unit.text)),json.dumps(ts,ensure_ascii=False),str(meta.get("status") or ""),str(meta.get("sensitivity") or "S1_personal"),None,derived,synth,unit_c["retrieval_only"],unit_c["requires_source_verification"],json.dumps({"fields":field,"permissions":permissions(unit_c)},ensure_ascii=False),SEGMENTER_VERSION,"typed-rules-v1",SCHEMA_VERSION,generation,1))
-                    embedding_hash = digest(normalize(unit.text))
-                    embedding_model, embedding_vector = embedding(unit.text)
-                    self.db.execute("INSERT OR IGNORE INTO evidence_embeddings VALUES(?,?,?,?,?,?)", (evidence_id, embedding_model, embedding_hash, len(embedding_vector), json.dumps(embedding_vector, separators=(",", ":")), now()))
+                    if embeddings_enabled:
+                        # PAP_CANDIDATE_RETRIEVAL_EMBEDDINGS_ENABLED=0 must also
+                        # disable build-time embedding, not only the pair lookup.
+                        embedding_hash = digest(normalize(unit.text))
+                        embedding_model, embedding_vector = embedding(unit.text)
+                        self.db.execute("INSERT OR IGNORE INTO evidence_embeddings VALUES(?,?,?,?,?,?)", (evidence_id, embedding_model, embedding_hash, len(embedding_vector), json.dumps(embedding_vector, separators=(",", ":")), now()))
                     self.db.execute("INSERT INTO evidence_fts(evidence_id,text,heading,source_path) VALUES(?,?,?,?)", (evidence_id,unit.text,unit.heading,path))
                     for link in WIKILINK.findall(unit.text):
                         target = link.split("|",1)[0].split("#",1)[0]
@@ -346,7 +368,15 @@ class Index:
             counts = {"candidates":len(files),"skipped":skipped,"failed":failed,"documents":len(seen),"evidence":self.db.execute("SELECT count(*) FROM evidence_units WHERE active=1").fetchone()[0]}
             self.db.execute("UPDATE index_generations SET status='COMPLETE',completed_at=?,counts_json=? WHERE generation_id=?", (now(),json.dumps(counts),generation)); self.db.commit(); return {"generation":generation,**counts}
         except Exception as exc:
-            self.db.rollback(); self.db.execute("INSERT INTO index_generations(started_at,completed_at,status,scanner_version,schema_version,errors_json) VALUES(?,?,?,?,?,?)", (now(),now(),"FAILED",SCANNER_VERSION,SCHEMA_VERSION,json.dumps([str(exc)[:1000]]))); self.db.commit(); raise
+            try:
+                self.db.rollback()
+            except sqlite3.Error:
+                pass
+            try:
+                self.db.execute("INSERT INTO index_generations(started_at,completed_at,status,scanner_version,schema_version,errors_json) VALUES(?,?,?,?,?,?)", (now(),now(),"FAILED",SCANNER_VERSION,SCHEMA_VERSION,json.dumps([str(exc)[:1000]]))); self.db.commit()
+            except sqlite3.Error:
+                pass  # under lock contention even the failure record is best effort
+            raise
 
     @_observed_read.__func__
     def get(self, evidence_id: str, excerpt: int = DEFAULT_EXCERPT) -> dict[str, Any] | None:

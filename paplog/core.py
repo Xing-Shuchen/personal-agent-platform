@@ -119,9 +119,13 @@ def _estimate_model_cost(event: dict[str, Any]) -> None:
         price = prices.get(f"{provider}/{model}") if isinstance(prices, Mapping) else None
         if not isinstance(price, Mapping) or not version:
             return
-        input_tokens = attrs.get("input_tokens") or 0
-        output_tokens = attrs.get("output_tokens") or 0
-        if not isinstance(input_tokens, (int, float)) or not isinstance(output_tokens, (int, float)):
+        # Usage that was not measured must stay absent, never become cost 0.0:
+        # a fabricated zero reads as "this run was free".
+        input_tokens = attrs.get("input_tokens")
+        output_tokens = attrs.get("output_tokens")
+        if (isinstance(input_tokens, bool) or isinstance(output_tokens, bool)
+                or not isinstance(input_tokens, (int, float))
+                or not isinstance(output_tokens, (int, float))):
             return
         input_rate = price.get("input_per_million")
         output_rate = price.get("output_per_million")
@@ -133,6 +137,26 @@ def _estimate_model_cost(event: dict[str, Any]) -> None:
         attrs["cost.pricing_version"] = str(version)
     except (OSError, TypeError, ValueError, json.JSONDecodeError):
         return
+
+
+def _sanitized_iso(value: Any, fallback: str) -> str:
+    """Return *value* as a fromisoformat-parseable string, else *fallback*."""
+    if isinstance(value, str):
+        candidate = value[:-1] + "+00:00" if value.endswith("Z") else value
+        try:
+            datetime.fromisoformat(candidate)
+        except ValueError:
+            return fallback
+        return candidate
+    return fallback
+
+
+def _ts_seconds(value: Any) -> float:
+    """Tolerant timestamp parse for projection/stat readers of stored events."""
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00")).timestamp()
+    except (ValueError, TypeError):
+        return 0.0
 
 
 def redact(value: Any, *, mode: str | None = None, key: str = "") -> Any:
@@ -233,7 +257,12 @@ class Ledger:
                      "attributes": {"rejected_event_name": content_metadata(str(event.get("event_name")))}}
         if not isinstance(event.get("event_id"), str) or not _ULID.fullmatch(event["event_id"]):
             event["event_id"] = ulid()
-        stamp = now(); event.setdefault("timestamp", stamp.isoformat()); event.setdefault("observed_timestamp", now().isoformat())
+        stamp = now()
+        for time_key in ("timestamp", "observed_timestamp"):
+            # Fail-open contract: a caller-supplied timestamp that cannot be
+            # parsed (or a Z suffix on Python 3.10) must never crash the
+            # instrumented process inside _persist; replace it instead.
+            event[time_key] = _sanitized_iso(event.get(time_key), stamp.isoformat())
         event.setdefault("kind", "event"); event.setdefault("phase", None); event.setdefault("severity", "INFO")
         for key, fallback in (("trace", {}), ("execution", {}), ("attributes", {}),
                               ("job", {}), ("agent", {}), ("skill", {}),
@@ -262,7 +291,7 @@ class Ledger:
                 if "locked" not in str(exc).lower() and "busy" not in str(exc).lower():
                     break
                 time.sleep(0.02 * (attempt + 1))
-            except (sqlite3.Error, OSError):
+            except (sqlite3.Error, OSError, TypeError, ValueError):
                 break
         if not persisted:
             # Observability is strictly fail-open.  A read-only filesystem can
@@ -271,11 +300,11 @@ class Ledger:
             # secondary diagnostic failure.
             try:
                 self._jsonl(event)
-            except OSError:
+            except (OSError, TypeError, ValueError):
                 pass
             try:
                 self._spool(event)
-            except OSError:
+            except (OSError, TypeError, ValueError):
                 pass
         return event
 
@@ -288,10 +317,10 @@ class Ledger:
         err = event.get("error", {}) if isinstance(event.get("error"), Mapping) else {}
         error_message = err.get("message")
         if error_message is not None and not isinstance(error_message, str):
-            error_message = json.dumps(error_message, ensure_ascii=False, sort_keys=True)
+            error_message = json.dumps(error_message, ensure_ascii=False, sort_keys=True, default=str)
         severity = {"DEBUG": 5, "INFO": 9, "WARN": 13, "ERROR": 17, "FATAL": 21}.get(event.get("severity"), 9)
-        body = json.dumps(event, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-        values = (event["event_id"], int(timestamp * 1_000_000), int(observed * 1_000_000), 2, event["event_name"], event["kind"], event.get("phase"), severity, trace.get("trace_id"), trace.get("span_id"), trace.get("parent_span_id"), execution.get("run_id"), execution.get("operation_id"), execution.get("action_id"), execution.get("node_id"), event.get("repository") or event.get("repo"), event.get("service"), event.get("component"), job.get("id"), job.get("definition_version"), agent.get("id"), skill.get("id"), skill.get("definition_version"), actor.get("type"), actor.get("id"), subject.get("type"), subject.get("id"), outcome.get("status"), event.get("duration_ms"), err.get("type"), error_message, json.dumps(event.get("attributes", {}), ensure_ascii=False, sort_keys=True), body, event["privacy"].get("classification"), event["privacy"].get("content_mode", "metadata"))
+        body = json.dumps(event, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str)
+        values = (event["event_id"], int(timestamp * 1_000_000), int(observed * 1_000_000), 2, event["event_name"], event["kind"], event.get("phase"), severity, trace.get("trace_id"), trace.get("span_id"), trace.get("parent_span_id"), execution.get("run_id"), execution.get("operation_id"), execution.get("action_id"), execution.get("node_id"), event.get("repository") or event.get("repo"), event.get("service"), event.get("component"), job.get("id"), job.get("definition_version"), agent.get("id"), skill.get("id"), skill.get("definition_version"), actor.get("type"), actor.get("id"), subject.get("type"), subject.get("id"), outcome.get("status"), event.get("duration_ms"), err.get("type"), error_message, json.dumps(event.get("attributes", {}), ensure_ascii=False, sort_keys=True, default=str), body, event["privacy"].get("classification"), event["privacy"].get("content_mode", "metadata"))
         with self._connect() as con:
             con.execute("""INSERT OR IGNORE INTO events VALUES (NULL,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", values)
             source = subject.get("id")
@@ -306,12 +335,12 @@ class Ledger:
         self.jsonl.mkdir(parents=True, exist_ok=True)
         date = str(event["timestamp"])[:10]
         with (self.jsonl / f"{date}.jsonl").open("a", encoding="utf-8") as out:
-            out.write(json.dumps(event, ensure_ascii=False, sort_keys=True) + "\n")
+            out.write(json.dumps(event, ensure_ascii=False, sort_keys=True, default=str) + "\n")
 
     def _spool(self, event: Mapping[str, Any]) -> None:
         self.spool.mkdir(parents=True, exist_ok=True)
         path = self.spool / f"{os.getpid()}-{event['event_id']}.json"
-        path.write_text(json.dumps(event, ensure_ascii=False, sort_keys=True), encoding="utf-8")
+        path.write_text(json.dumps(event, ensure_ascii=False, sort_keys=True, default=str), encoding="utf-8")
 
     def reconcile(self) -> tuple[int, int]:
         imported = failed = 0
@@ -351,7 +380,11 @@ class Ledger:
                 record["execution"].setdefault("node_id", node_id())
                 self._persist(record, mirror=False); path.unlink(); imported += 1
             except Exception:
-                path.replace(quarantine / path.name); failed += 1
+                failed += 1
+                try:
+                    path.replace(quarantine / path.name)
+                except OSError:
+                    pass  # a concurrent reconciler already moved it
         return imported, failed
 
     def query(self, **filters: Any) -> list[dict[str, Any]]:
@@ -400,13 +433,13 @@ class Ledger:
                                    "completed_at_us": None, "outcome": None, "duration_ms": None}
                     row = target.setdefault(scope_id, initial)
                     if event.get("phase") == "started":
-                        row.update(started_event_id=event_id, started_at_us=int(datetime.fromisoformat(event["timestamp"]).timestamp() * 1_000_000))
+                        row.update(started_event_id=event_id, started_at_us=int(_ts_seconds(event["timestamp"]) * 1_000_000))
                     elif event.get("phase") in {"completed", "failed", "abandoned"}:
-                        row.update(terminal_event_id=event_id, completed_at_us=int(datetime.fromisoformat(event["timestamp"]).timestamp() * 1_000_000), outcome=(event.get("outcome") or {}).get("status"), duration_ms=event.get("duration_ms"))
+                        row.update(terminal_event_id=event_id, completed_at_us=int(_ts_seconds(event["timestamp"]) * 1_000_000), outcome=(event.get("outcome") or {}).get("status"), duration_ms=event.get("duration_ms"))
                 if isinstance(run_id, str):
                     row = run_rows.setdefault(run_id, {"run_id": run_id, "trace_id": event.get("trace", {}).get("trace_id"), "job_id": event.get("job", {}).get("id"), "agent_id": event.get("agent", {}).get("id"), "skill_id": event.get("skill", {}).get("id"), "started_event_id": None, "terminal_event_id": None, "started_at_us": None, "completed_at_us": None, "outcome": None, "duration_ms": None})
-                    if event.get("event_name") == "pap.run.started": row.update(started_event_id=event_id, started_at_us=int(datetime.fromisoformat(event["timestamp"]).timestamp() * 1_000_000))
-                    if event.get("event_name") in {"pap.run.completed", "pap.run.failed", "pap.operation.abandoned"}: row.update(terminal_event_id=event_id, completed_at_us=int(datetime.fromisoformat(event["timestamp"]).timestamp() * 1_000_000), outcome=event.get("outcome", {}).get("status"), duration_ms=event.get("duration_ms"))
+                    if event.get("event_name") == "pap.run.started": row.update(started_event_id=event_id, started_at_us=int(_ts_seconds(event["timestamp"]) * 1_000_000))
+                    if event.get("event_name") in {"pap.run.completed", "pap.run.failed", "pap.operation.abandoned"}: row.update(terminal_event_id=event_id, completed_at_us=int(_ts_seconds(event["timestamp"]) * 1_000_000), outcome=event.get("outcome", {}).get("status"), duration_ms=event.get("duration_ms"))
                 if event.get("event_name") == "pap.model.call":
                     attrs = event.get("attributes", {})
                     con.execute("""INSERT OR REPLACE INTO model_usage
@@ -471,7 +504,7 @@ class Ledger:
             job = event.get("job", {}).get("id")
             if not isinstance(klass, str) or not isinstance(job, str):
                 continue
-            by_class.setdefault(klass, []).append((datetime.fromisoformat(event["timestamp"]).timestamp(), job))
+            by_class.setdefault(klass, []).append((_ts_seconds(event["timestamp"]), job))
         cadence: dict[str, float | None] = {}
         for klass, entries in by_class.items():
             per_job: dict[str, list[float]] = {}
@@ -508,4 +541,4 @@ class Ledger:
 def _time_filter(value: str) -> int:
     if value.endswith("d") and value[:-1].isdigit(): return int((time.time() - int(value[:-1]) * 86400) * 1_000_000)
     if value.endswith("h") and value[:-1].isdigit(): return int((time.time() - int(value[:-1]) * 3600) * 1_000_000)
-    return int(datetime.fromisoformat(value).timestamp() * 1_000_000)
+    return int(_ts_seconds(value) * 1_000_000)
