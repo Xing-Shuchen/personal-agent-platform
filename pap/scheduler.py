@@ -30,6 +30,8 @@ RESERVATION_TTL = timedelta(hours=6)  # 必须大于最长单次运行时长（P
 RETRY_DELAY = timedelta(minutes=5)
 MAX_ATTEMPTS_PER_SLOT = 3
 JITTER_MAX_MINUTES = 5
+MAX_DELIVERY_ATTEMPTS = 3
+DELIVERY_RETRY_DELAY = timedelta(minutes=5)
 LEAK_MARKERS = (
     "<invoke name=",
     "</｜｜DSML｜",
@@ -184,6 +186,10 @@ def due_jobs(
             jitter_seed = state.get("jitter_seed", "pap-scheduler-jitter-preview-v1")
         previous_tick = _parse_time(state.get("last_tick_at"))
         lower = previous_tick or (now - timedelta(minutes=1))
+        # A last_tick_at in the future (clock jump, VM resume, an operator's
+        # `tick --now` mistake) would invert the scan window and silently stall
+        # the whole scheduler; clamp the lower bound to just before this tick.
+        lower = min(lower, now - timedelta(minutes=1))
         lower = max(lower, now - MAX_CATCHUP)
         job_state = state.setdefault("jobs", {})
         for spec in specs:
@@ -191,9 +197,12 @@ def due_jobs(
                 continue
             for job in spec.jobs:
                 if not job.enabled:
-                    # §40: declared, auditable, not yet scheduled.
-                    paplog.event("pap.schedule.skipped", job={"id": f"{spec.name}/{job.name}", "definition_version": "sha256:" + hashlib.sha256(spec.source_path.read_bytes()).hexdigest() if spec.source_path and spec.source_path.is_file() else None},
-                                 agent={"id": spec.name}, attributes={"reason": "disabled", "tracking_class": spec.proactive_class})
+                    # §40: declared, auditable, not yet scheduled. Preview ticks
+                    # must not emit these: scheduler_health derives missed runs
+                    # from due/skipped counts, and a dry-run never dispatches.
+                    if reserve:
+                        paplog.event("pap.schedule.skipped", job={"id": f"{spec.name}/{job.name}", "definition_version": "sha256:" + hashlib.sha256(spec.source_path.read_bytes()).hexdigest() if spec.source_path and spec.source_path.is_file() else None},
+                                     agent={"id": spec.name}, attributes={"reason": "disabled", "tracking_class": spec.proactive_class})
                     continue
                 key = f"{spec.name}/{job.name}"
                 entry = job_state.get(key, {})
@@ -251,8 +260,12 @@ def due_jobs(
                     slot=slot,
                     jitter_minutes=jitter_minutes,
                 ))
-                paplog.event("pap.schedule.due", job={"id": key, "definition_version": "sha256:" + hashlib.sha256(spec.source_path.read_bytes()).hexdigest() if spec.source_path and spec.source_path.is_file() else None},
-                             agent={"id": spec.name}, attributes={"scheduled_for": slot.isoformat(), "due_at": now.isoformat(), "schedule_lag_ms": max(0, (now-slot).total_seconds()*1000), "tracking_class": spec.proactive_class, "target_interval_s": _target_interval_seconds(job.schedule)})
+                if reserve:
+                    # Only real ticks feed scheduler_health's due/dispatched
+                    # accounting; a dry-run preview must not inflate missed-run
+                    # statistics in the canonical ledger.
+                    paplog.event("pap.schedule.due", job={"id": key, "definition_version": "sha256:" + hashlib.sha256(spec.source_path.read_bytes()).hexdigest() if spec.source_path and spec.source_path.is_file() else None},
+                                 agent={"id": spec.name}, attributes={"scheduled_for": slot.isoformat(), "due_at": now.isoformat(), "schedule_lag_ms": max(0, (now-slot).total_seconds()*1000), "tracking_class": spec.proactive_class, "target_interval_s": _target_interval_seconds(job.schedule)})
                 if reserve:
                     job_state[key] = {
                         **entry,
@@ -413,15 +426,143 @@ def _drain_deferred_deliveries(
                 paplog.event("pap.delivery.queue", kind="operation", phase="failed", severity="ERROR",
                              outcome={"status": "error"}, error={"type": "ValueError", "message": "malformed queue entry"})
                 continue
-            if deliver_at > now:
+            retry_after = _parse_time(entry.get("retry_after"))
+            if deliver_at > now or (retry_after is not None and retry_after > now):
                 remaining.append(entry)
                 continue
             sent = _send_message(response, run_id=run_id, target=target, sender=sender)
-            delivery = "deferred-sent" if sent == "sent" else "deferred-failed"
+            if sent == "sent":
+                delivery = "deferred-sent"
+            else:
+                # A transient channel trouble must not silently drop an approved
+                # message: requeue with a bounded retry budget, then expire it
+                # loudly in the run log rather than keeping a stale message forever.
+                attempts = entry.get("attempts", 0)
+                attempts = attempts + 1 if isinstance(attempts, int) and attempts >= 0 else 1
+                if attempts >= MAX_DELIVERY_ATTEMPTS:
+                    delivery = "deferred-expired"
+                else:
+                    delivery = "deferred-retrying"
+                    entry["attempts"] = attempts
+                    entry["retry_after"] = (now + DELIVERY_RETRY_DELAY).isoformat(timespec="seconds")
+                    remaining.append(entry)
             append_jsonl(run_log, {"event": "run.delivery", "run_id": run_id,
                                    "delivery": delivery,
                                    "delivery_target_configured": bool(target)})
         entries[:] = remaining
+
+
+def _dispatch_due_job(
+    due: DueJob,
+    *,
+    root: Path,
+    state_path: Path,
+    run_log: Path,
+    delivery_queue_path: Path,
+    target: str | None,
+    command_runner: Callable[..., subprocess.CompletedProcess[str]] | None,
+    sender: Callable[..., subprocess.CompletedProcess[str]] | None,
+) -> TickResult:
+    """Execute one reserved slot: invoke, deliver, and settle scheduler state."""
+    dispatched_at = _now()
+    paplog.event("pap.schedule.dispatched", job={"id": due.key}, agent={"id": due.spec.name},
+                 attributes={"scheduled_for": due.slot.isoformat(), "dispatched_at": dispatched_at.isoformat(), "jitter_minutes": due.jitter_minutes, "tracking_class": due.spec.proactive_class, "target_interval_s": _target_interval_seconds(due.job.schedule)})
+    result = invoke(
+        root=root,
+        spec=due.spec,
+        skill=due.job.skill,
+        args=due.job.args,
+        trigger={
+            "type": "schedule",
+            # Use the same stable key emitted by due/dispatched events so
+            # one job filter follows the entire scheduler-to-run trace.
+            "job_id": due.key,
+            "job_name": due.job.name,
+            "scheduled_for": due.slot.isoformat(),
+            "dispatched_at": dispatched_at.isoformat(),
+            "jitter_minutes": due.jitter_minutes,
+        },
+        run_log=run_log,
+        command_runner=command_runner,
+        runtime=due.job.runtime,
+        model=due.job.model,
+        runner_backend=due.job.runner,
+        command=due.job.command,
+    )
+    response, _ = normalize_terminal_response(result.response)
+    completed_at = _parse_time(result.completed_at) or _now()
+    deadline = _delivery_deadline(due.job, completed_at) if due.job.deliver_at else None
+    if (deadline is not None and completed_at < deadline and result.status == "success"
+            and response and not _intentional_silence(response)
+            and not _requests_silence(response) and not _looks_like_leaked_output(response)
+            and due.job.delivery != "local"):
+        _queue_deferred_delivery(delivery_queue_path, run_id=result.run_id, job_key=due.key,
+                                 response=response, deliver_at=deadline)
+        delivery = "deferred"
+    elif result.status == "not_ready" and due.job.notify:
+        reason = result.error.strip() or "未说明原因"
+        signature = hashlib.sha256(f"{due.key}\n{reason}".encode("utf-8")).hexdigest()
+        with _locked_state(state_path) as state:
+            entry = state.setdefault("jobs", {}).setdefault(due.key, {})
+            already_notified = entry.get("notify_signature") == signature
+        if already_notified:
+            delivery = "notified"
+        else:
+            notify = due.job.notify
+            # Job-agnostic wording: notify can be declared on any job, not
+            # only weekly reports.
+            reminder = f"【PAP 提醒】任务 {due.key} 未就绪：{reason}"
+            sent = _send_message(reminder, run_id=result.run_id, target=notify["target"],
+                                 channel=notify["channel"], account=notify["account"], sender=sender)
+            delivery = "notified" if sent == "sent" else "notify-failed"
+            with _locked_state(state_path) as state:
+                state.setdefault("jobs", {}).setdefault(due.key, {})["notify_signature"] = signature
+    else:
+        delivery = _deliver(result, due.job, target=target, sender=sender)
+    append_jsonl(run_log, {
+        "event": "run.delivery",
+        "run_id": result.run_id,
+        "delivery": delivery,
+        "delivery_target_configured": bool(target),
+    })
+    with _locked_state(state_path) as state:
+        entry = state.setdefault("jobs", {}).setdefault(due.key, {})
+        entry.update({"last_run_id": result.run_id, "last_status": result.status,
+                      "last_failure_kind": getattr(result, "failure_kind", ""),
+                      "last_retryable": is_retryable(getattr(result, "failure_kind", ""))
+                      if result.status == "failed" else None,
+                      "last_delivery": delivery,
+                      "last_finished_at": _now().isoformat(timespec="seconds")})
+        if result.status == "success":
+            entry.pop("notify_signature", None)
+    return TickResult(
+        job_key=due.key,
+        slot=due.slot.isoformat(timespec="minutes"),
+        run=result,
+        delivery=delivery,
+    )
+
+
+def _settle_tick_error(
+    due: DueJob, exc: Exception, *, state_path: Path, run_log: Path,
+) -> TickResult:
+    """Settle a job whose dispatch crashed as failed, without touching others."""
+    paplog.event("pap.tick.job_error", kind="operation", phase="failed", severity="ERROR",
+                 job={"id": due.key}, agent={"id": due.spec.name},
+                 outcome={"status": "error"},
+                 error={"type": type(exc).__name__, "message": str(exc)[:2000]},
+                 attributes={"slot": due.slot.isoformat(timespec="minutes")})
+    append_jsonl(run_log, {"event": "tick.job_error", "job": due.key,
+                           "slot": due.slot.isoformat(timespec="minutes"),
+                           "error": f"{type(exc).__name__}: {exc}"[:1000]})
+    with _locked_state(state_path) as state:
+        entry = state.setdefault("jobs", {}).setdefault(due.key, {})
+        entry.update({"last_run_id": None, "last_status": "failed",
+                      "last_failure_kind": "tick-error", "last_retryable": False,
+                      "last_delivery": "tick-error",
+                      "last_finished_at": _now().isoformat(timespec="seconds")})
+    return TickResult(job_key=due.key, slot=due.slot.isoformat(timespec="minutes"),
+                      run=None, delivery="tick-error")
 
 
 def tick(
@@ -454,79 +595,16 @@ def tick(
                               target=target, sender=sender)
     results: list[TickResult] = []
     for due in jobs:
-        dispatched_at = _now()
-        paplog.event("pap.schedule.dispatched", job={"id": due.key}, agent={"id": due.spec.name},
-                     attributes={"scheduled_for": due.slot.isoformat(), "dispatched_at": dispatched_at.isoformat(), "jitter_minutes": due.jitter_minutes, "tracking_class": due.spec.proactive_class, "target_interval_s": _target_interval_seconds(due.job.schedule)})
-        result = invoke(
-            root=root,
-            spec=due.spec,
-            skill=due.job.skill,
-            args=due.job.args,
-            trigger={
-                "type": "schedule",
-                # Use the same stable key emitted by due/dispatched events so
-                # one job filter follows the entire scheduler-to-run trace.
-                "job_id": due.key,
-                "job_name": due.job.name,
-                "scheduled_for": due.slot.isoformat(),
-                "dispatched_at": dispatched_at.isoformat(),
-                "jitter_minutes": due.jitter_minutes,
-            },
-            run_log=run_log,
-            command_runner=command_runner,
-            runtime=due.job.runtime,
-            model=due.job.model,
-            runner_backend=due.job.runner,
-            command=due.job.command,
-        )
-        response, _ = normalize_terminal_response(result.response)
-        completed_at = _parse_time(result.completed_at) or _now()
-        deadline = _delivery_deadline(due.job, completed_at) if due.job.deliver_at else None
-        if (deadline is not None and completed_at < deadline and result.status == "success"
-                and response and not _intentional_silence(response)
-                and not _requests_silence(response) and not _looks_like_leaked_output(response)
-                and due.job.delivery != "local"):
-            _queue_deferred_delivery(delivery_queue_path, run_id=result.run_id, job_key=due.key,
-                                    response=response, deliver_at=deadline)
-            delivery = "deferred"
-        elif result.status == "not_ready" and due.job.notify:
-            reason = result.error.strip() or "未说明原因"
-            signature = hashlib.sha256(f"{due.key}\n{reason}".encode("utf-8")).hexdigest()
-            with _locked_state(state_path) as state:
-                entry = state.setdefault("jobs", {}).setdefault(due.key, {})
-                already_notified = entry.get("notify_signature") == signature
-            if already_notified:
-                delivery = "notified"
-            else:
-                notify = due.job.notify
-                reminder = f"【PAP 提醒】{due.key} 本周周报未生成：{reason}"
-                sent = _send_message(reminder, run_id=result.run_id, target=notify["target"],
-                                     channel=notify["channel"], account=notify["account"], sender=sender)
-                delivery = "notified" if sent == "sent" else "notify-failed"
-                with _locked_state(state_path) as state:
-                    state.setdefault("jobs", {}).setdefault(due.key, {})["notify_signature"] = signature
-        else:
-            delivery = _deliver(result, due.job, target=target, sender=sender)
-        append_jsonl(run_log, {
-            "event": "run.delivery",
-            "run_id": result.run_id,
-            "delivery": delivery,
-            "delivery_target_configured": bool(target),
-        })
-        with _locked_state(state_path) as state:
-            entry = state.setdefault("jobs", {}).setdefault(due.key, {})
-            entry.update({"last_run_id": result.run_id, "last_status": result.status,
-                          "last_failure_kind": getattr(result, "failure_kind", ""),
-                          "last_retryable": is_retryable(getattr(result, "failure_kind", ""))
-                          if result.status == "failed" else None,
-                          "last_delivery": delivery,
-                          "last_finished_at": _now().isoformat(timespec="seconds")})
-            if result.status == "success":
-                entry.pop("notify_signature", None)
-        results.append(TickResult(
-            job_key=due.key,
-            slot=due.slot.isoformat(timespec="minutes"),
-            run=result,
-            delivery=delivery,
-        ))
+        try:
+            results.append(_dispatch_due_job(
+                due, root=root, state_path=state_path, run_log=run_log,
+                delivery_queue_path=delivery_queue_path, target=target,
+                command_runner=command_runner, sender=sender,
+            ))
+        except Exception as exc:
+            # One job crashing (misconfiguration that slipped past validate, a
+            # state-write failure, a bug) must never abort the tick and strand
+            # the other reserved jobs for a whole RESERVATION_TTL. Settle this
+            # job as failed and non-retryable; the log and exit code show it.
+            results.append(_settle_tick_error(due, exc, state_path=state_path, run_log=run_log))
     return results

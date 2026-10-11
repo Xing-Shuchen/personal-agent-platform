@@ -309,6 +309,43 @@ def load_spec(path: Path) -> AgentSpec:
     )
 
 
+def _apply_job_overrides(
+    local_config: Path, agent_name: str, spec: AgentSpec, jobs_override: Any
+) -> None:
+    """Apply ignored local per-job overrides (currently: model route).
+
+    Tracked manifests must stay free of provider-specific model routes, so a
+    deployment that wants to pin one job to a model declares it here instead.
+    """
+    if jobs_override is None:
+        return
+    if not isinstance(jobs_override, dict):
+        raise SpecError(f"{local_config}: {agent_name}: jobs must be a mapping of job name to overrides")
+    jobs_by_name = {job.name: job for job in spec.jobs}
+    for job_name, job_config in jobs_override.items():
+        job = jobs_by_name.get(job_name)
+        if job is None or not isinstance(job_config, dict):
+            raise SpecError(f"{local_config}: {agent_name}: unknown job or invalid job config: {job_name!r}")
+        unknown = set(job_config) - {"model"}
+        if unknown:
+            raise SpecError(
+                f"{local_config}: {agent_name}: {job_name}: unknown job override keys: {sorted(unknown)}"
+            )
+        model = job_config.get("model")
+        if model is None:
+            continue
+        if not isinstance(model, str) or not model.strip():
+            raise SpecError(f"{local_config}: {agent_name}: {job_name}: model must be a non-empty string")
+        if job.runner == "command":
+            raise SpecError(f"{local_config}: {agent_name}: {job_name}: model cannot be set for runner 'command'")
+        if job.runner == "opencode" and not _is_provider_model(model):
+            raise SpecError(
+                f"{local_config}: {agent_name}: {job_name}: "
+                "model must be '<provider>/<model>' for runner 'opencode'"
+            )
+        job.model = model
+
+
 def load_platform(root: Path) -> list[AgentSpec]:
     """Load every agents/*/agent.yaml under *root*, sorted by name."""
     root = Path(root)
@@ -322,6 +359,12 @@ def load_platform(root: Path) -> list[AgentSpec]:
             skill_file = agent_yaml.parent / "profile" / "skills" / job.skill / "SKILL.md"
             if not skill_file.is_file():
                 raise _err(agent_yaml, f"job {job.name!r}: skill file not found: {skill_file}")
+            if job.runtime is not None:
+                # A declared runtime adapter is part of the job contract; catch a
+                # missing one at validate time instead of mid-tick at invoke time.
+                runtime_file = agent_yaml.parent / "runtime" / f"{job.runtime}.py"
+                if not runtime_file.is_file():
+                    raise _err(agent_yaml, f"job {job.name!r}: runtime adapter not found: {runtime_file}")
         specs.append(loaded)
     # Machine-local activation is stored under var/, which is excluded from Git.
     local_config = root / "var" / "config" / "agents.yaml"
@@ -336,7 +379,7 @@ def load_platform(root: Path) -> list[AgentSpec]:
         for name, config in overrides.get("agents", {}).items():
             if name not in by_name or not isinstance(config, dict):
                 raise SpecError(f"{local_config}: unknown agent or invalid config: {name!r}")
-            unknown = set(config) - {"enabled", "provider_rejection_fallback"}
+            unknown = set(config) - {"enabled", "provider_rejection_fallback", "jobs"}
             if unknown:
                 raise SpecError(f"{local_config}: {name}: unknown override keys: {sorted(unknown)}")
             if not isinstance(config.get("enabled"), bool):
@@ -350,6 +393,7 @@ def load_platform(root: Path) -> list[AgentSpec]:
             by_name[name].enabled = config["enabled"]
             if provider_rejection_fallback is not None:
                 by_name[name].provider_rejection_fallback = provider_rejection_fallback
+            _apply_job_overrides(local_config, name, by_name[name], config.get("jobs"))
     if not specs:
         raise SpecError(f"no agent.yaml files found under {agents_dir}")
     names = [s.name for s in specs]

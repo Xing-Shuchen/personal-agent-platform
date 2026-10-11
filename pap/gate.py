@@ -19,7 +19,7 @@ import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from .state import append_jsonl, load_state, save_state
+from .state import append_jsonl, file_lock, load_state, save_state
 
 DEFAULT_DB = Path("var/state/gate-state.json")
 DEFAULT_LOG = Path("var/state/gate-log.jsonl")
@@ -62,6 +62,16 @@ def _parse_ts(value: object) -> datetime | None:
         return None
 
 
+def _locked_state(db_path: Path):
+    """Serialize gate decisions: dedupe/backoff is a read-modify-write cycle.
+
+    Two proactive agents asking at the same moment must not both see the key as
+    undelivered and both get ``allowed``; the lock makes one wait for the
+    other's recorded decision.
+    """
+    return file_lock(db_path)
+
+
 def decide(
     agent: str,
     dedupe_key: str,
@@ -79,69 +89,70 @@ def decide(
         return GateDecision(allowed=False, reason="priority must be an integer in 0..100")
 
     now = now or _now()
-    state = load_state(db_path)
-    agents = state.setdefault("agents", {})
-    entry = agents.setdefault(agent, {"delivered": {}, "attempts": []})
-    attempts = [a for a in entry.get("attempts", []) if isinstance(a, dict)]
-    delivered: dict[str, str] = entry.get("delivered", {})
+    with _locked_state(db_path):
+        state = load_state(db_path)
+        agents = state.setdefault("agents", {})
+        entry = agents.setdefault(agent, {"delivered": {}, "attempts": []})
+        attempts = [a for a in entry.get("attempts", []) if isinstance(a, dict)]
+        delivered: dict[str, str] = entry.get("delivered", {})
 
-    reasons: list[str] = []
+        reasons: list[str] = []
 
-    # 1. Exponential denial backoff: repeated denials raise the silence floor.
-    if attempts:
-        last = attempts[-1]
-        last_ts = _parse_ts(last.get("ts"))
-        if last_ts is not None:
-            streak = 0
-            for a in reversed(attempts):
-                if a.get("allowed"):
-                    break
-                streak += 1
-            floor = min(BACKOFF_BASE_HOURS * (2 ** max(0, streak - 1)), BACKOFF_MAX_HOURS)
-            if not last.get("allowed") and now - last_ts < timedelta(hours=floor):
+        # 1. Exponential denial backoff: repeated denials raise the silence floor.
+        if attempts:
+            last = attempts[-1]
+            last_ts = _parse_ts(last.get("ts"))
+            if last_ts is not None:
+                streak = 0
+                for a in reversed(attempts):
+                    if a.get("allowed"):
+                        break
+                    streak += 1
+                floor = min(BACKOFF_BASE_HOURS * (2 ** max(0, streak - 1)), BACKOFF_MAX_HOURS)
+                if not last.get("allowed") and now - last_ts < timedelta(hours=floor):
+                    reasons.append(
+                        f"backoff: agent denied {streak}x; silence floor {floor}h not elapsed"
+                    )
+
+        # 2. Dedupe by stable key within the TTL window.
+        last_delivered = _parse_ts(delivered.get(dedupe_key))
+        if last_delivered is not None:
+            elapsed = now - last_delivered
+            if elapsed < timedelta(hours=DEDUPE_TTL_HOURS):
                 reasons.append(
-                    f"backoff: agent denied {streak}x; silence floor {floor}h not elapsed"
+                    f"dedupe: key delivered {elapsed.total_seconds() / 3600:.1f}h ago "
+                    f"(TTL {DEDUPE_TTL_HOURS}h)"
                 )
 
-    # 2. Dedupe by stable key within the TTL window.
-    last_delivered = _parse_ts(delivered.get(dedupe_key))
-    if last_delivered is not None:
-        elapsed = now - last_delivered
-        if elapsed < timedelta(hours=DEDUPE_TTL_HOURS):
-            reasons.append(
-                f"dedupe: key delivered {elapsed.total_seconds() / 3600:.1f}h ago "
-                f"(TTL {DEDUPE_TTL_HOURS}h)"
-            )
+        # 3. Priority bar, higher during local quiet hours.
+        if _in_quiet_hours(now):
+            if priority < QUIET_PRIORITY:
+                reasons.append(f"quiet-hours: priority {priority} < {QUIET_PRIORITY}")
+        elif priority < MIN_PRIORITY:
+            reasons.append(f"priority: {priority} < {MIN_PRIORITY}")
 
-    # 3. Priority bar, higher during local quiet hours.
-    if _in_quiet_hours(now):
-        if priority < QUIET_PRIORITY:
-            reasons.append(f"quiet-hours: priority {priority} < {QUIET_PRIORITY}")
-    elif priority < MIN_PRIORITY:
-        reasons.append(f"priority: {priority} < {MIN_PRIORITY}")
+        allowed = not reasons
+        record = {
+            "ts": now.isoformat(timespec="seconds"),
+            "agent": agent,
+            "dedupe_key": dedupe_key,
+            "priority": priority,
+            "allowed": allowed,
+            "reason": reasons[0] if reasons else "passed",
+        }
 
-    allowed = not reasons
-    record = {
-        "ts": now.isoformat(timespec="seconds"),
-        "agent": agent,
-        "dedupe_key": dedupe_key,
-        "priority": priority,
-        "allowed": allowed,
-        "reason": reasons[0] if reasons else "passed",
-    }
+        attempts.append({"ts": record["ts"], "allowed": allowed, "priority": priority,
+                         "key": dedupe_key, "reason": record["reason"]})
+        entry["attempts"] = attempts[-100:]  # bounded history
+        if allowed:
+            delivered[dedupe_key] = record["ts"]
+            entry["delivered"] = delivered
+        agents[agent] = entry
+        state["agents"] = agents
 
-    attempts.append({"ts": record["ts"], "allowed": allowed, "priority": priority,
-                     "key": dedupe_key, "reason": record["reason"]})
-    entry["attempts"] = attempts[-100:]  # bounded history
-    if allowed:
-        delivered[dedupe_key] = record["ts"]
-        entry["delivered"] = delivered
-    agents[agent] = entry
-    state["agents"] = agents
-
-    save_state(db_path, state)
-    log_path = db_path.parent / "gate-log.jsonl"
-    append_jsonl(log_path, record)
+        save_state(db_path, state)
+        log_path = db_path.parent / "gate-log.jsonl"
+        append_jsonl(log_path, record)
     return GateDecision(record)
 
 
@@ -151,7 +162,13 @@ def history(agent: str | None = None, log_path: Path = DEFAULT_LOG) -> list[dict
         for line in log_path.read_text(encoding="utf-8").splitlines():
             if not line.strip():
                 continue
-            rec = json.loads(line)
+            try:
+                rec = json.loads(line)
+            except json.JSONDecodeError:
+                # A truncated append must not make the whole audit log unreadable.
+                continue
+            if not isinstance(rec, dict):
+                continue
             if agent is None or rec.get("agent") == agent:
                 records.append(rec)
     return records

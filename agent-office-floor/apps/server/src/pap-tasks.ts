@@ -3,7 +3,9 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const papRoot = fileURLToPath(new URL('../../../../', import.meta.url));
-const python = join(papRoot, '.venv/bin/python');
+// PAP_PYTHON lets deployments whose interpreter is not <repo>/.venv still use
+// the tasks endpoint; the repository venv remains the default.
+const python = process.env.PAP_PYTHON ?? join(papRoot, '.venv/bin/python');
 const script = fileURLToPath(new URL('../../../scripts/pap_tasks.py', import.meta.url));
 let cache: { at: number; json: string } | null = null;
 let pending: Promise<string> | null = null;

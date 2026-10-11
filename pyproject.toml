@@ -11,6 +11,11 @@ requires-python = ">=3.10"
 license = { text = "MIT" }
 dependencies = ["PyYAML>=6.0", "sentence-transformers>=5.0,<6", "jsonschema>=4.10,<5", "Pillow>=10,<12"]
 
+[project.optional-dependencies]
+# `make test` collects tests that import bookscan (cv2/lxml) and the librarian
+# runtime (rapidfuzz); a fresh `make setup` must install them or collection fails.
+test = ["pytest>=8", "opencv-python>=4.10", "lxml>=5", "rapidfuzz>=3"]
+
 [project.scripts]
 pap = "pap.cli:main"
 paplog = "paplog.cli:main"
@@ -22,4 +27,6 @@ include = ["pap*", "paplog*"]
 paplog = ["*.json"]
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+# The office-floor Python projector tests ship beside the TypeScript contract
+# tests; collect them too so `make test` covers everything runnable offline.
+testpaths = ["tests", "agent-office-floor/tests"]

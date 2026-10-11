@@ -161,6 +161,13 @@ def _cmd_job_run(args: argparse.Namespace) -> int:
         job = next((item for item in spec.jobs if item.name == args.job), None)
         if job is None:
             raise ValueError(f"unknown job {args.agent}/{args.job}")
+        if not job.enabled:
+            # AGENTS.md: a job-level `enabled: false` in a manifest remains off —
+            # for the scheduler and for manual runs alike.
+            raise ValueError(
+                f"job {args.agent}/{args.job} is disabled in the manifest; "
+                "set enabled: true on the job to run it"
+            )
         job_args = dict(job.args)
         job_args.update(_parse_kv(args.arg))
         result = run_mod.invoke(
@@ -210,7 +217,7 @@ def _cmd_tick(args: argparse.Namespace) -> int:
         print(f"{item.job_key}\t{item.slot}\t{status}\t{run_id}\tdelivery={item.delivery}")
         if item.run and item.run.status not in {"success", "not_ready"}:
             failed = True
-        if item.delivery in {"failed", "unconfigured"}:
+        if item.delivery in {"failed", "unconfigured", "tick-error"}:
             failed = True
     return 1 if failed else 0
 
@@ -283,7 +290,11 @@ def _cmd_artifact(args: argparse.Namespace) -> int:
 def _cmd_status(args: argparse.Namespace) -> int:
     root = Path(args.root).resolve()
     state_path = _path_under(root, args.state)
-    state = load_json(state_path, {"version": 1, "jobs": {}})
+    try:
+        state = load_json(state_path, {"version": 1, "jobs": {}})
+    except ValueError as exc:
+        print(f"ERROR: scheduler state at {state_path} is unreadable: {exc}", file=sys.stderr)
+        return 2
     specs = _specs(root)
     print(f"agents={len(specs)} jobs={sum(len(spec.jobs) for spec in specs)}")
     print(f"scheduler_state={state_path} last_tick={state.get('last_tick_at', 'never')}")

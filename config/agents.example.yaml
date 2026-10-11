@@ -10,4 +10,9 @@ agents:
   wechat-archivist: {enabled: false}
   # Optional local fallback example:
   # world-historian: {enabled: false, provider_rejection_fallback: provider/model}
+  # Optional per-job model route (kept out of tracked manifests):
+  # world-historian:
+  #   enabled: false
+  #   jobs:
+  #     world-follow-high: {model: provider/model}
   world-historian: {enabled: false}

@@ -4,7 +4,7 @@ PYTHON ?= python3
 
 setup:
 	$(PYTHON) -m venv .venv
-	. .venv/bin/activate && pip install -e . pytest
+	. .venv/bin/activate && pip install -e '.[test]'
 
 validate:
 	.venv/bin/pap validate

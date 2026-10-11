@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from pathlib import Path
 
-from .state import load_json, save_json
+from .state import file_lock, load_json, save_json
 
 
 DEFAULT_DB = Path("var/state/gate-dismissed.json")
@@ -38,27 +38,29 @@ def dismiss(
         except ValueError as exc:
             raise ValueError(f"invalid dismissed date: {dismissed_at}") from exc
 
-    state = load_json(db_path, {"agents": {}})
-    agents = state.setdefault("agents", {})
-    if not isinstance(agents, dict):
-        raise ValueError(f"{db_path}: agents must be a JSON object")
-    agent_state = agents.setdefault(agent, {"topics": {}})
-    if not isinstance(agent_state, dict):
-        raise ValueError(f"{db_path}: agent state must be a JSON object")
-    topics = agent_state.setdefault("topics", {})
-    if not isinstance(topics, dict):
-        raise ValueError(f"{db_path}: topics must be a JSON object")
+    # Serialized read-modify-write: two concurrent dismissals must not lose
+    # one of the recorded topics.
+    with file_lock(db_path):
+        state = load_json(db_path, {"agents": {}})
+        agents = state.setdefault("agents", {})
+        if not isinstance(agents, dict):
+            raise ValueError(f"{db_path}: agents must be a JSON object")
+        agent_state = agents.setdefault(agent, {"topics": {}})
+        if not isinstance(agent_state, dict):
+            raise ValueError(f"{db_path}: agent state must be a JSON object")
+        topics = agent_state.setdefault("topics", {})
+        if not isinstance(topics, dict):
+            raise ValueError(f"{db_path}: topics must be a JSON object")
 
-    entry: dict[str, object] = {
-        "topic": topic,
-        "terms": cleaned_terms,
-        "reason": reason,
-        "dismissed_at": dismissed_at,
-    }
-    topics[topic] = entry
-    save_json(db_path, state)
+        entry: dict[str, object] = {
+            "topic": topic,
+            "terms": cleaned_terms,
+            "reason": reason,
+            "dismissed_at": dismissed_at,
+        }
+        topics[topic] = entry
+        save_json(db_path, state)
     return entry
-
 
 def dismissed(agent: str, *, db_path: Path = DEFAULT_DB) -> list[dict[str, object]]:
     """Return an agent's dismissed topics in deterministic topic order."""

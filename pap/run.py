@@ -101,6 +101,15 @@ class RunResult:
     failure_kind: str = ""
 
 
+class InvokeConfigError(RuntimeError):
+    """Permanent invocation misconfiguration; retrying cannot fix it.
+
+    Raised only after ``run.started`` was recorded, so the run finalizes as a
+    failed record (``failure_kind="config"``, not retryable) instead of leaking
+    an orphan ``run.started`` and aborting the whole scheduler tick.
+    """
+
+
 def _input_fingerprint(value: str) -> dict[str, Any]:
     raw = value.encode("utf-8")
     return {"sha256": hashlib.sha256(raw).hexdigest(), "chars": len(value)}
@@ -117,11 +126,12 @@ def is_retryable(failure_kind: str) -> bool:
 
 
 #: A provider refusal gets its own kind and never joins the retryable ``runner``
-#: bucket reserved for transport trouble.  As of 2026-09-24, refusals from the
-#: China-side routes fall back once to the official DeepSeek API; that pinned
-#: attempt is worthwhile because it is a different provider with different
-#: validation.  This supersedes the earlier exclusion of malformed-400 payload
-#: rejections, which assumed that re-sending the identical prompt would fail.
+#: bucket reserved for transport trouble.  A deployment may configure one pinned
+#: fallback route (``provider_rejection_fallback`` in the local config): that
+#: single attempt is worthwhile because it is a different provider with
+#: different validation.  This supersedes the earlier exclusion of
+#: malformed-400 payload rejections, which assumed that re-sending the
+#: identical prompt would fail.
 PROVIDER_REJECTION = "provider_rejection"
 PROVIDER_REJECTION_MARKERS = (
     "inappropriate content",
@@ -483,34 +493,43 @@ def invoke(
     if runtime:
         adapter = root / "agents" / spec.name / "runtime" / f"{runtime}.py"
         if not adapter.is_file():
-            raise ValueError(f"runtime {runtime!r} not found for agent {spec.name!r}")
-        try:
-            prepared = _runtime_call(adapter, "prepare", {"run_id": run_id, "skill": skill, "args": args}, env)
-        except Exception as exc:
-            error = str(exc)
-            failure_kind = "runtime"
+            # Permanent misconfiguration: finalize as a failed run below rather
+            # than raising past the run.started record and the enclosing tick.
+            error = f"runtime {runtime!r} not found for agent {spec.name!r}"
+            failure_kind = "config"
         else:
-            if prepared.get("status") == "not_ready":
-                completed_at = _now()
-                status = "not_ready"
-                response = "NOT_READY"
-                error = str(prepared.get("reason", "upstream readiness is unmet"))
-                append_jsonl(run_log, {"event": "run.completed", "run_id": run_id, "agent_id": spec.name, "job_id": job_id, "skill": skill, "args": args, "runner": runner_backend, "model": model_name, "provider": provider_name, "completed_at": completed_at.isoformat(timespec="seconds"), "status": status, "returncode": 0, "response": _input_fingerprint(response), "error": error[:1000], "usage": usage})
-                close_invocation_scopes(completed_at, status)
-                paplog.event("pap.run.completed", kind="operation", trace=run_trace, phase="completed", subject={"type": "run", "id": run_id},
-                             outcome={"status": "not_ready"}, attributes={"returncode": 0, "not_ready_reason": error},
-                             duration_ms=(completed_at - started).total_seconds() * 1000,
-                             execution={"run_id": run_id, "operation_id": run_id}, agent=agent_metadata,
-                             skill={"id": skill, "definition_version": skill_version}, job={"id": job_id} if job_id else {}, **code_provenance)
-                return RunResult(run_id, spec.name, skill, status, 0, response, error, started.isoformat(timespec="seconds"), completed_at.isoformat(timespec="seconds"), usage)
-            if prepared.get("status") != "ready" or not isinstance(prepared.get("input_text"), str):
-                error = str(prepared.get("error", "runtime did not prepare an invocation"))
+            try:
+                prepared = _runtime_call(adapter, "prepare", {"run_id": run_id, "skill": skill, "args": args}, env)
+            except subprocess.TimeoutExpired as exc:
+                # A slow prepare is transient trouble (§34), not a deterministic
+                # runtime error; classify it like the model-turn timeout.
+                error = f"runtime prepare timed out after {exc.timeout}s"
+                failure_kind = "timeout"
+            except Exception as exc:
+                error = str(exc)
                 failure_kind = "runtime"
             else:
-                input_text = prepared["input_text"]
-                usage["runtime"] = {"prepared": True}
-                if isinstance(prepared.get("metadata"), dict):
-                    usage["runtime"].update(prepared["metadata"])
+                if prepared.get("status") == "not_ready":
+                    completed_at = _now()
+                    status = "not_ready"
+                    response = "NOT_READY"
+                    error = str(prepared.get("reason", "upstream readiness is unmet"))
+                    append_jsonl(run_log, {"event": "run.completed", "run_id": run_id, "agent_id": spec.name, "job_id": job_id, "skill": skill, "args": args, "runner": runner_backend, "model": model_name, "provider": provider_name, "completed_at": completed_at.isoformat(timespec="seconds"), "status": status, "returncode": 0, "response": _input_fingerprint(response), "error": error[:1000], "usage": usage})
+                    close_invocation_scopes(completed_at, status)
+                    paplog.event("pap.run.completed", kind="operation", trace=run_trace, phase="completed", subject={"type": "run", "id": run_id},
+                                 outcome={"status": "not_ready"}, attributes={"returncode": 0, "not_ready_reason": error},
+                                 duration_ms=(completed_at - started).total_seconds() * 1000,
+                                 execution={"run_id": run_id, "operation_id": run_id}, agent=agent_metadata,
+                                 skill={"id": skill, "definition_version": skill_version}, job={"id": job_id} if job_id else {}, **code_provenance)
+                    return RunResult(run_id, spec.name, skill, status, 0, response, error, started.isoformat(timespec="seconds"), completed_at.isoformat(timespec="seconds"), usage)
+                if prepared.get("status") != "ready" or not isinstance(prepared.get("input_text"), str):
+                    error = str(prepared.get("error", "runtime did not prepare an invocation"))
+                    failure_kind = "runtime"
+                else:
+                    input_text = prepared["input_text"]
+                    usage["runtime"] = {"prepared": True}
+                    if isinstance(prepared.get("metadata"), dict):
+                        usage["runtime"].update(prepared["metadata"])
     tmp_path: str | None = None
     if runner_backend != "command":
         with tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".md", delete=False) as tmp_file:
@@ -518,11 +537,11 @@ def invoke(
             tmp_path = tmp_file.name
     try:
         if error:
-            raise RuntimeError(error)
+            raise InvokeConfigError(error) if failure_kind == "config" else RuntimeError(error)
         timeout = timeout_seconds or int(os.environ.get("PAP_COMMAND_TIMEOUT_SECONDS" if runner_backend == "command" else "PAP_RUN_TIMEOUT_SECONDS", "300" if runner_backend == "command" else "900"))
         if runner_backend == "command":
             if command is None:
-                raise ValueError("command runner requires command")
+                raise InvokeConfigError("command runner requires command")
             invocation = command
         elif runner_backend == "codex":
             invocation = [
@@ -536,7 +555,7 @@ def invoke(
                 invocation[1:1] = ["--model", effective_model]
         elif runner_backend == "opencode":
             if not effective_model:
-                raise ValueError("opencode runner requires a model")
+                raise InvokeConfigError("opencode runner requires a model")
             invocation = [
                 os.environ.get("PAP_OPENCODE_BIN", "opencode"), "run", "--pure",
                 "--format", "json", "--title", f"{spec.name}/{job_name or job_id or skill}",
@@ -559,7 +578,7 @@ def invoke(
             if effective_model and (model is not None or not spec.model_fallback):
                 invocation += ["--model", effective_model]
         else:
-            raise ValueError(f"unsupported runner backend: {runner_backend}")
+            raise InvokeConfigError(f"unsupported runner backend: {runner_backend}")
         invoked = True
         completed = _run_process(runner, invocation,
             trace=skill_trace,
@@ -684,10 +703,17 @@ def invoke(
         failure_kind = "launch"
         # The runner never started, so there is no session to attribute usage to.
         invoked = False
+    except InvokeConfigError as exc:
+        error = str(exc)
+        returncode = 1
+        failure_kind = "config"
     except RuntimeError as exc:
         error = str(exc)
         returncode = 1
-        failure_kind = "runtime"
+        # A failure already classified upstream (e.g. a prepare timeout marked
+        # 'timeout' = retryable) keeps its kind; only unclassified RuntimeErrors
+        # default to 'runtime'.
+        failure_kind = failure_kind or "runtime"
     finally:
         if tmp_path is not None:
             Path(tmp_path).unlink(missing_ok=True)

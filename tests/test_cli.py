@@ -43,19 +43,39 @@ def test_validate_invalid_spec_fails(tmp_path):
     assert "INVALID" in r.stderr
 
 
-def test_jobs_shows_job_model_overrides_only():
-    r = run(["jobs", "--root", str(REPO), "--agent", "world-historian"])
+def test_jobs_shows_local_job_model_overrides(tmp_path):
+    """`pap jobs` renders per-job model pins that live in the ignored local config."""
+    skill = tmp_path / "agents/sample/profile/skills/sample-skill"
+    skill.mkdir(parents=True)
+    (skill / "SKILL.md").write_text(
+        "---\nname: sample-skill\ndescription: Test.\n---\n# Test\n", encoding="utf-8")
+    (tmp_path / "agents/sample/agent.yaml").write_text(
+        "apiVersion: pap/v1\nkind: Agent\nmetadata:\n  name: sample\n"
+        "  description: Sample.\nspec:\n  profile:\n    name: sample\n"
+        "    source: profile\n  proactive:\n    enabled: true\n    class: ambient\n"
+        '    desired_jobs:\n      - name: pulse\n        schedule: "17 18 * * *"\n'
+        "        skill: sample-skill\n        delivery: local\n", encoding="utf-8")
+    config = tmp_path / "var/config"
+    config.mkdir(parents=True)
+    (config / "agents.yaml").write_text(
+        "agents:\n  sample:\n    enabled: true\n    jobs:\n"
+        "      pulse: {model: test-provider/test-model}\n", encoding="utf-8")
+    r = run(["jobs", "--root", str(tmp_path)])
     assert r.returncode == 0, r.stderr
-    lines = r.stdout.splitlines()
-    actual_overrides = {
-        fields[0]: next(field.removeprefix("model=") for field in fields if field.startswith("model="))
-        for line in lines
-        if (fields := line.split("\t")) and any(field.startswith("model=") for field in fields)
-    }
-    assert actual_overrides == {
-        f"world-historian/world-follow-{priority}": "qwen/qwen3.8-max"
-        for priority in ("high", "normal", "low")
-    }
+    fields = r.stdout.strip().split("\t")
+    assert fields[0] == "sample/pulse"
+    assert "model=test-provider/test-model" in fields
+
+
+def test_tracked_manifests_ship_without_model_routes():
+    """AGENTS.md: tracked files stay free of provider-specific model routes."""
+    import re
+
+    manifests = sorted((REPO / "agents").glob("*/agent.yaml"))
+    assert manifests
+    for manifest in manifests:
+        text = manifest.read_text(encoding="utf-8")
+        assert not re.search(r"^\s*model:\s*\S", text, re.MULTILINE), manifest
 
 
 def test_gate_cli_allow_and_deny(tmp_path):
