@@ -45,11 +45,11 @@ def report() -> dict:
         "pages": [{"processing_status": "processed", "issues": [],
                    "page_number": {"status": "observed", "observed_value": 39,
                                    "observed_label": "39"}}],
-        "lines": [{"line_id": "l1", "ocr_raw": "正是帕森斯", "ocr_score": .8},
-                  {"line_id": "l2", "ocr_raw": "社会学思想的核心部分", "ocr_score": .7}],
+        "lines": [{"line_id": "l1", "ocr_raw": "正是测试学者", "ocr_score": .8},
+                  {"line_id": "l2", "ocr_raw": "合成文本的核心部分", "ocr_score": .7}],
         "groups": [{"group_id": "g1", "line_ids": ["l1"], "group_bbox": [10, 10, 90, 25],
                     "underline_bboxes": [[15, 23, 85, 26]], "mark_type": "underline",
-                    "match_status": "matched", "epub_expanded_text": "正是帕森斯，后面还有照片外的词。"},
+                    "match_status": "matched", "epub_expanded_text": "正是测试学者，后面还有照片外的词。"},
                    {"group_id": "g2", "line_ids": ["l2"], "group_bbox": [10, 40, 90, 55],
                     "underline_bboxes": [[15, 53, 85, 56]], "mark_type": "underline",
                     "match_status": "needs_review"}],
@@ -62,7 +62,7 @@ def report() -> dict:
 def test_bookscan_groups_map_to_separate_traces_without_epub_only_words(tmp_path):
     payload = adapt_report(report(), 100, 100)
     assert len(payload["marks"]) == 2
-    assert payload["printed_regions"][0]["text"]["text"] == "正是帕森斯"
+    assert payload["printed_regions"][0]["text"]["text"] == "正是测试学者"
     assert payload["marks"][0]["linked_text_region_ids"] == ["bookscan_0_text"]
     assert payload["pages"][0]["page"]["value"]["number"] == 39
     stream = io.BytesIO()
@@ -78,7 +78,7 @@ def test_bookscan_groups_map_to_separate_traces_without_epub_only_words(tmp_path
                                  extractor_version="bookscan-test")
         assert len(traces) == 3
         assert {trace["content"]["printed_text"]["text"] for trace in traces} == {
-            "正是帕森斯", "社会学思想的核心部分", None}
+            "正是测试学者", "合成文本的核心部分", None}
 
 
 def test_bookscan_unknown_page_and_invalid_source_box():
@@ -94,12 +94,12 @@ def test_reviewable_epub_text_is_used_without_hiding_review_warning():
     source = report()
     source["groups"][1].update({
         "text_basis": "epub_punctuation_expansion",
-        "text_effective": "社会学思想的核心部分。",
+        "text_effective": "合成文本的核心部分。",
         "epub_candidate": {"similarity": .72},
         "review_reasons": ["weak_similarity"],
     })
     observed = adapt_report(source, 100, 100)
-    assert observed["printed_regions"][1]["text"]["text"] == "社会学思想的核心部分。"
+    assert observed["printed_regions"][1]["text"]["text"] == "合成文本的核心部分。"
     assert observed["printed_regions"][1]["text"]["basis"] == "source_payload"
     assert observed["printed_regions"][1]["text"]["confidence"] == 1.0
     assert "bookscan_1:epub_alignment_needs_review" in observed["warnings"]

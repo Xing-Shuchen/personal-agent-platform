@@ -250,8 +250,9 @@ export function workerArgs(config, ownerId) {
   if (!ownerId || configuredOwnerIds(config).length !== 1 ||
       configuredOwnerIds(config)[0] !== ownerId) return null;
   const args = ["-m", "agents.librarian.runtime.worker",
-    "--root", config.stateRoot, "--owner", ownerId,
-    "--vision-model", config.visionModel ?? "zai/glm-5.3-flash"];
+    "--root", config.stateRoot, "--owner", ownerId];
+  // No baked-in model route: the deployment's own config selects one if needed.
+  if (config.visionModel) args.push("--vision-model", config.visionModel);
   if (config.vaultRoot) args.push("--vault", config.vaultRoot);
   const digital = config.digitalSources ?? {};
   if (digital.ownerId === ownerId && digital.koodo) args.push("--koodo-source-id", digital.koodo.sourceId,

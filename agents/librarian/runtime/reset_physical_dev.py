@@ -14,7 +14,7 @@ import sqlite3
 from contextlib import ExitStack
 from pathlib import Path
 
-from docs.audits.librarian_object_integrity import SIDECARS, audit, object_refs
+from .object_integrity import SIDECARS, audit, object_refs
 
 from .store import Library, LibrarianError
 

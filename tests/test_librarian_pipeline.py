@@ -287,7 +287,7 @@ def test_late_edition_fingerprint_binds_unknown_capture_without_reextracting(tmp
     from agents.librarian.runtime.gateway_search import search_inbound
     from agents.librarian.runtime.worker import _catalog
 
-    epub = tmp_path / "9787208171411.epub"
+    epub = tmp_path / "9780000000002.epub"
     with ZipFile(epub, "w") as archive:
         archive.writestr("content.opf", "<package xmlns:dc='http://purl.org/dc/elements/1.1/'>"
                          "<metadata><dc:title>Test Work</dc:title></metadata></package>")

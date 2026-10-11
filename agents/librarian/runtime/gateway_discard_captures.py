@@ -10,6 +10,8 @@ from pathlib import Path
 from .gateway_errors import write_error
 from .store import Library, LibrarianError
 
+MAX_INPUT_BYTES = 8192
+
 
 def discard_recent(lib: Library, message: dict) -> dict:
     owner = message.get("owner_id")
@@ -57,8 +59,9 @@ def discard_recent(lib: Library, message: dict) -> dict:
             if lib.db.execute("SELECT 1 FROM extractor_attempts WHERE owner_id=? AND capture_id=?",
                               (owner, capture_id)).fetchone():
                 raise LibrarianError("CONTEXT_CONFLICT", "a photo has entered extraction")
-            if lib.db.execute("SELECT 1 FROM records WHERE owner_id=? AND model='ExtractionRun' "
-                              "AND body LIKE ?", (owner, f'%{capture_id}%')).fetchone():
+            if lib.db.execute("SELECT 1 FROM records WHERE owner_id=? AND model='ProcessingRun' "
+                              "AND json_extract(body,'$.capture_id')=?",
+                              (owner, capture_id)).fetchone():
                 raise LibrarianError("CONTEXT_CONFLICT", "a photo has extraction results")
             if lib.db.execute("SELECT 1 FROM records WHERE owner_id=? AND model='ReadingTrace' "
                               "AND body LIKE ?", (owner, f'%{capture_id}%')).fetchone():
@@ -78,8 +81,16 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--root", type=Path, required=True)
     args = parser.parse_args()
+    raw = sys.stdin.buffer.read(MAX_INPUT_BYTES + 1)
+    if len(raw) > MAX_INPUT_BYTES:
+        return write_error(LibrarianError("VALIDATION_FAILED", "input too large"),
+                           "gateway.discard_captures")
     try:
-        message = json.load(sys.stdin)
+        message = json.loads(raw)
+        # Match the sibling read bridges: never create a store as a side effect
+        # of a call that is about to fail anyway.
+        if not (args.root / "librarian.sqlite").is_file():
+            raise LibrarianError("OBJECT_STORE_UNAVAILABLE", "Librarian store is unavailable")
         with Library(args.root) as lib:
             receipt = discard_recent(lib, message)
     except Exception as error:

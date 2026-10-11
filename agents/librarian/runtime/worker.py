@@ -872,6 +872,27 @@ def _remove_vault_images(vault: Path, batch: dict) -> bool:
     return changed
 
 
+def _openclaw_bin() -> str:
+    return os.environ.get("PAP_OPENCLAW_BIN", "openclaw")
+
+
+def _origin_route(batch: dict) -> list[str]:
+    """Delivery route = the batch's own inbound channel/account.
+
+    Falls back to the platform's PAP_OPENCLAW_CHANNEL/ACCOUNT environment
+    convention (same as pap.scheduler) when the recorded origin is incomplete;
+    a hardcoded channel/account must never appear in tracked code.
+    """
+    origin = batch.get("origin") or {}
+    channel = str(origin.get("transport") or "") or os.environ.get("PAP_OPENCLAW_CHANNEL", "")
+    account = str(origin.get("account_id") or "") or os.environ.get("PAP_OPENCLAW_ACCOUNT", "")
+    if not channel or not account:
+        raise RuntimeError(
+            "batch origin does not identify a delivery route "
+            "(set PAP_OPENCLAW_CHANNEL/PAP_OPENCLAW_ACCOUNT as a fallback)")
+    return ["--channel", channel, "--account", account]
+
+
 def _notify(root: Path, batch: dict, note: Path, count: int, *,
             unresolved: int = 0, issues: int = 0) -> None:
     marker = root / "notifications" / f"{batch['id']}.json"
@@ -882,11 +903,11 @@ def _notify(root: Path, batch: dict, note: Path, count: int, *,
                f"当前 {count} 条画线/笔记；{unresolved} 条页码、{issues} 张提取差异待核对。"
                f"请在「2Area/40 学习与阅读/阅读笔记/{note.name}」review；"
                "手写文字标为待核对。")
-    command = ["openclaw", "message", "send", "--channel", "feishu", "--account", "librarian",
+    command = [_openclaw_bin(), "message", "send", *_origin_route(batch),
                "--target", batch["origin"]["conversation_id"], "--message", message, "--json"]
     result = subprocess.run(command, capture_output=True, text=True, timeout=45)
     if result.returncode:
-        raise RuntimeError("Feishu review notification failed")
+        raise RuntimeError("review notification failed")
     _atomic_write(marker, json.dumps({"batch_id": batch["id"], "sent_at": _now()}).encode())
 
 
@@ -908,12 +929,11 @@ def _notify_correction(root: Path, batch: dict, note: Path, count: int, *,
     message = (f"《{note.stem}》的页码与画线识别已更新，数据库和 Obsidian 已同步更新。"
                f"现有 {count} 条画线/笔记；{unresolved} 条页码、{issues} 张提取差异待核对。"
                f"请在「2Area/40 学习与阅读/阅读笔记/{note.name}」review。")
-    result = subprocess.run(["openclaw", "message", "send", "--channel", "feishu",
-                             "--account", "librarian", "--target",
-                             batch["origin"]["conversation_id"], "--message", message,
+    result = subprocess.run([_openclaw_bin(), "message", "send", *_origin_route(batch),
+                             "--target", batch["origin"]["conversation_id"], "--message", message,
                              "--json"], capture_output=True, text=True, timeout=45)
     if result.returncode:
-        raise RuntimeError("Feishu correction notification failed")
+        raise RuntimeError("correction notification failed")
     _atomic_write(marker, json.dumps({"batch_id": batch["id"],
                                        "sent_at": _now()}).encode())
 
@@ -1188,7 +1208,7 @@ def _process_batch(lib: Library, root: Path, vault: Path | None, owner: str,
 
 
 def run(root: Path, vault: Path | None, owner: str, *,
-        vision_model: str = "zai/glm-5.3-flash",
+        vision_model: str | None = None,
         koodo: tuple[str, Path, Path] | None = None,
         weread: tuple[str, Path, list[str]] | None = None,
         physical_only: bool = False, digital_only: bool = False) -> list[dict]:
@@ -1210,8 +1230,6 @@ def run(root: Path, vault: Path | None, owner: str, *,
                     retry_fingerprint = _retry_fingerprint(root, vision_model)
                     for batch in _processing_batches([item for item in _current(lib, owner, "CaptureBatch")
                                                       if item["status"] != "discarded"]):
-                        if batch["origin"]["transport"] != "feishu":
-                            continue
                         newest = max((lib.get(owner, "PageCapture", capture_id)["received_at"]
                                       for capture_id in batch["capture_ids"]),
                                      default=batch["received_at"])
@@ -1277,7 +1295,7 @@ def main() -> None:
     parser.add_argument("--root", type=Path, required=True)
     parser.add_argument("--vault", type=Path)
     parser.add_argument("--owner", required=True)
-    parser.add_argument("--vision-model", default="zai/glm-5.3-flash")
+    parser.add_argument("--vision-model", default=None)
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--physical-only", action="store_true")
     mode.add_argument("--digital-only", action="store_true")

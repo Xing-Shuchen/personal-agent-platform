@@ -220,6 +220,11 @@ def sync_koodo_sqlite(lib: Library, owner_id: str, source_id: str,
             if row["note_key"] in seen or row["state"] == "deleted":
                 continue
             prior = lib.get(owner_id, "ReadingTrace", row["trace_id"])
+            # Mirror the WeRead guard: a note the user corrected (or a held
+            # pending edit) must never be silently retired by a source
+            # deletion; it needs explicit reconciliation.
+            if row["state"] == "pending" or not _matches_accepted_source(lib, prior):
+                raise LibrarianError("RECONCILIATION_REQUIRED", "corrected Koodo note was removed")
             _revise(lib, owner_id, prior, status="superseded",
                     reason="Koodo source record removed", source_id=source_id)
             lib.db.execute("UPDATE koodo_native_records SET state='deleted',pending_sha256=NULL,pending_asset=NULL "

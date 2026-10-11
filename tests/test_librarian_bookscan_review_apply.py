@@ -35,7 +35,7 @@ def _setup(lib: Library) -> tuple[str, dict]:
                                    "observed_label": None}}],
         "lines": [
             {"line_id": "line-one", "page_id": page_id, "mark_type": "underline",
-             "line_bbox": [10, 10, 90, 25], "ocr_raw": "正是帕森斯", "ocr_score": .8},
+             "line_bbox": [10, 10, 90, 25], "ocr_raw": "正是测试学者", "ocr_score": .8},
             {"line_id": "line-two", "page_id": page_id, "mark_type": "underline",
              "line_bbox": [10, 35, 90, 50], "ocr_raw": "误检", "ocr_score": .7},
         ],
@@ -43,8 +43,8 @@ def _setup(lib: Library) -> tuple[str, dict]:
             {"group_id": "group-one", "page_id": page_id,
              "line_ids": ["line-one"], "group_bbox": [10, 10, 90, 25],
              "underline_bboxes": [[10, 23, 90, 26]], "mark_type": "underline",
-             "match_status": "needs_review", "ocr_raw": "正是帕森斯",
-             "text_effective": "正是帕森斯"},
+             "match_status": "needs_review", "ocr_raw": "正是测试学者",
+             "text_effective": "正是测试学者"},
             {"group_id": "group-two", "page_id": page_id,
              "line_ids": ["line-two"], "group_bbox": [10, 35, 90, 50],
              "underline_bboxes": [[10, 48, 90, 51]], "mark_type": "underline",
@@ -72,7 +72,7 @@ def _setup(lib: Library) -> tuple[str, dict]:
                   "missing": [{"bbox": [10, 78, 90, 90],
                                "text": "新增的完整划线句子。"}]},
         "groups": {"group-one": {"decision": "accepted",
-                                 "text": "正是帕森斯，在20世纪30年代。"},
+                                 "text": "正是测试学者，在20世纪30年代。"},
                    "group-two": {"decision": "rejected", "text": ""}},
         "annotations": {"note-one": {"decision": "accepted", "text": "人工旁注"}},
     }}
@@ -102,14 +102,14 @@ def test_complete_review_versions_rejections_corrections_and_missing_mark(tmp_pa
         assert all(row["review"]["state"] == "resolved" for row in active)
         assert all(row["location"]["page"]["number"] == 39 for row in active)
         assert {row["content"]["printed_text"]["text"] for row in active} == {
-            "正是帕森斯，在20世纪30年代。", "新增的完整划线句子。", None}
+            "正是测试学者，在20世纪30年代。", "新增的完整划线句子。", None}
         assert any(row["content"]["annotation"]["text"] == "人工旁注" for row in active)
         assert apply_review(lib, "owner", bundle)["status"] == "already_applied"
         context = review_context(lib, "owner", bundle["run_id"])
         revised_bundle = json.loads(json.dumps(bundle))
         revised_bundle.update(context)
         revised_bundle["pages"]["groups"]["group-one"]["text"] = \
-            "正是帕森斯，第二次人工校正。"
+            "正是测试学者，第二次人工校正。"
         second = apply_review(lib, "owner", revised_bundle)
         assert second["status"] == "applied"
         assert second["run_id"] != result["run_id"]
@@ -117,7 +117,7 @@ def test_complete_review_versions_rejections_corrections_and_missing_mark(tmp_pa
             "SELECT body FROM records WHERE owner_id='owner' AND model='ReadingTrace' "
             "AND current=1")]
         assert any(row["content"]["printed_text"]["text"] ==
-                   "正是帕森斯，第二次人工校正。" for row in current)
+                   "正是测试学者，第二次人工校正。" for row in current)
         with pytest.raises(LibrarianError) as stale:
             apply_review(lib, "owner", bundle)
         assert stale.value.code == "REVISION_CONFLICT"

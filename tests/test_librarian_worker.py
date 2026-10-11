@@ -87,7 +87,7 @@ def _batch(chat: str, capture: str) -> dict:
 
 
 def test_catalog_uses_conversation_session_and_rejects_ambiguous_copies(tmp_path: Path) -> None:
-    epub = tmp_path / "9787208171411.epub"
+    epub = tmp_path / "9780000000002.epub"
     _epub(epub)
     with Library(tmp_path / "state") as lib:
         assert _catalog(lib, "owner", epub.stem, epub, _batch("chat-a", "capture-a")) == "测试图书"
@@ -133,21 +133,21 @@ def test_catalog_uses_conversation_session_and_rejects_ambiguous_copies(tmp_path
 
 
 def test_catalog_reuses_existing_legacy_isbn_edition(tmp_path: Path) -> None:
-    epub = tmp_path / "9787208171411.epub"
+    epub = tmp_path / "9780000000002.epub"
     _epub(epub)
     with Library(tmp_path / "state") as lib:
         common = {"schema_version": "0.1.0", "owner_id": "owner",
                   "created_at": _now(), "revision": 1, "supersedes_revision": None}
-        lib.register("owner", {**common, "object_type": "Work", "id": "work_9787208171411",
+        lib.register("owner", {**common, "object_type": "Work", "id": "work_9780000000002",
                                "title": "测试图书", "original_title": None, "authors": [],
                                "identifiers": []})
-        lib.register("owner", {**common, "object_type": "Edition", "id": "edition_9787208171411",
-                               "work_id": "work_9787208171411", "edition_label": None,
+        lib.register("owner", {**common, "object_type": "Edition", "id": "edition_9780000000002",
+                               "work_id": "work_9780000000002", "edition_label": None,
                                "publisher": None, "publication_year": None,
                                "isbn": {"isbn13": epub.stem, "isbn10": None},
                                "language": None, "page_count": None, "volume_label": None})
-        lib.register("owner", {**common, "object_type": "BookInstance", "id": "copy_9787208171411",
-                               "edition_id": "edition_9787208171411", "medium": "physical",
+        lib.register("owner", {**common, "object_type": "BookInstance", "id": "copy_9780000000002",
+                               "edition_id": "edition_9780000000002", "medium": "physical",
                                "acquired_at": _unknown_time(), "ownership_status": "unknown",
                                "physical": {"qr_id": None, "shelf": None},
                                "reading_status": {"state": "unknown", "current_page": None,
@@ -155,7 +155,7 @@ def test_catalog_reuses_existing_legacy_isbn_edition(tmp_path: Path) -> None:
         assert _catalog(lib, "owner", epub.stem, epub, _batch("chat", "capture")) == "测试图书"
         assert len(_current(lib, "owner", "Work")) == 1
         assert len(_current(lib, "owner", "Edition")) == 1
-        assert _current(lib, "owner", "ReadingSession")[0]["book_instance_id"] == "copy_9787208171411"
+        assert _current(lib, "owner", "ReadingSession")[0]["book_instance_id"] == "copy_9780000000002"
 
 
 def test_old_vault_page_images_are_removed_without_rewriting_review_text(tmp_path: Path) -> None:
@@ -182,7 +182,11 @@ def test_correction_notice_dedupes_each_distinct_trace_state(tmp_path: Path,
         sent.append(command)
         return type("Result", (), {"returncode": 0})()
     monkeypatch.setattr(worker.subprocess, "run", send)
-    batch = {"id": "batch_one", "origin": {"conversation_id": "owner-chat"}}
+    # Production batches always carry a complete origin (ingest validates it);
+    # the notification routes back on exactly that channel/account.
+    batch = {"id": "batch_one",
+             "origin": {"transport": "feishu", "account_id": "librarian",
+                        "conversation_id": "owner-chat"}}
     note = tmp_path / "book.md"
     trace = {"id": "rt_one", "revision": 1,
              "location": {"page": {"number": 23, "label": "23"}},
@@ -302,7 +306,7 @@ def test_failed_batch_retries_with_backoff_then_stops(tmp_path: Path, monkeypatc
     assert json.loads(status_file.read_text())["retry_attempts"] == 1
     source_books = state / "source-books"
     source_books.mkdir()
-    (source_books / "9787208171411.epub").write_bytes(b"new ground truth")
+    (source_books / "9780000000002.epub").write_bytes(b"new ground truth")
     assert len(worker.run(state, None, "owner", vision_model="fixture/new-model")) == 1
     assert json.loads(status_file.read_text())["retry_attempts"] == 1
     assert len(calls) == 5
@@ -541,20 +545,20 @@ bookId: "book-1"
 
 
 def test_physical_note_uses_weread_layout_and_upgrades_unchanged_legacy(tmp_path: Path) -> None:
-    batch = {"id": "batch_fixture", "isbn": "9787208171411"}
+    batch = {"id": "batch_fixture", "isbn": "9780000000002"}
     trace = {"id": "rt_fixture", "revision": 1,
              "created_at": "2026-09-28T12:00:00+00:00", "trace_types": ["underline"],
              "location": {"page": {"label": "39", "number": 39},
                           "bbox": [.1, .2, .8, .3]},
-             "content": {"printed_text": {"text": "正是帕森斯，\n完成整合。"},
+             "content": {"printed_text": {"text": "正是测试学者，\n完成整合。"},
                          "annotation": {"text": None}},
              "source": {"capture_id": "capture_fixture"}}
     received = {"capture_fixture": "2026-09-27T12:00:00+00:00"}
-    new = _render_batch_note(batch, "社会理论二十讲", [trace], created="2026-09-28",
+    new = _render_batch_note(batch, "合成测试书目", [trace], created="2026-09-28",
                              received_at_by_capture=received)
     assert "# 元数据" in new and "# 高亮划线" in new
     assert "## 第 39 页" in new
-    assert "> 📌 正是帕森斯，完成整合。" in new
+    assert "> 📌 正是测试学者，完成整合。" in new
     assert "^rt_fixture" not in new
     assert "原图" not in new
     assert "capture_fixture" not in new
@@ -563,65 +567,65 @@ def test_physical_note_uses_weread_layout_and_upgrades_unchanged_legacy(tmp_path
     assert "<span hidden data-librarian-trace=" in new
     assert "![[" not in new
 
-    note_v6 = _render_batch_note(batch, "社会理论二十讲", [trace], created="2026-09-28",
+    note_v6 = _render_batch_note(batch, "合成测试书目", [trace], created="2026-09-28",
                                  presentation_version=6,
                                  received_at_by_capture=received)
-    assert "> 📌 正是帕森斯，完成整合。 ^rt_fixture" in note_v6
-    note_v7 = _render_batch_note(batch, "社会理论二十讲", [trace], created="2026-09-28",
+    assert "> 📌 正是测试学者，完成整合。 ^rt_fixture" in note_v6
+    note_v7 = _render_batch_note(batch, "合成测试书目", [trace], created="2026-09-28",
                                  presentation_version=7,
                                  received_at_by_capture=received)
     assert "^rt_fixture" not in note_v7
     assert "> 原图证据：`capture_fixture`" in note_v7
-    note_v8 = _render_batch_note(batch, "社会理论二十讲", [trace], created="2026-09-28",
+    note_v8 = _render_batch_note(batch, "合成测试书目", [trace], created="2026-09-28",
                                  presentation_version=8,
                                  received_at_by_capture=received)
     assert "> 📷 原图：可向图书专员索取" in note_v8
 
     folder = tmp_path / "2Area" / "40 学习与阅读" / "阅读笔记"
     folder.mkdir(parents=True)
-    note = folder / "社会理论二十讲.md"
-    note.write_text(_render_batch_note_legacy(batch, "社会理论二十讲", [trace],
+    note = folder / "合成测试书目.md"
+    note.write_text(_render_batch_note_legacy(batch, "合成测试书目", [trace],
                                                created="2026-09-28"), encoding="utf-8")
-    _refresh_generated_note(tmp_path, batch, "社会理论二十讲", [trace], [trace], received)
+    _refresh_generated_note(tmp_path, batch, "合成测试书目", [trace], [trace], received)
     assert note.read_text(encoding="utf-8") == new
     note.write_text(note_v8, encoding="utf-8")
-    _refresh_generated_note(tmp_path, batch, "社会理论二十讲", [trace], [trace], received)
+    _refresh_generated_note(tmp_path, batch, "合成测试书目", [trace], [trace], received)
     assert note.read_text(encoding="utf-8") == new
     note.write_text(note_v7, encoding="utf-8")
-    _refresh_generated_note(tmp_path, batch, "社会理论二十讲", [trace], [trace], received)
+    _refresh_generated_note(tmp_path, batch, "合成测试书目", [trace], [trace], received)
     assert note.read_text(encoding="utf-8") == new
     note.write_text(note_v6, encoding="utf-8")
-    _refresh_generated_note(tmp_path, batch, "社会理论二十讲", [trace], [trace], received)
+    _refresh_generated_note(tmp_path, batch, "合成测试书目", [trace], [trace], received)
     assert note.read_text(encoding="utf-8") == new
     trace["revision"] = 2
     trace["created_at"] = "2026-09-29T12:00:00+00:00"
-    revised = _render_batch_note(batch, "社会理论二十讲", [trace], created="2026-09-28",
+    revised = _render_batch_note(batch, "合成测试书目", [trace], created="2026-09-28",
                                   received_at_by_capture=received)
     assert "> ⏱ 收图：2026-09-27 20:00:00" in revised
     assert "2026-09-29 20:00:00" not in revised
     trace["revision"] = 1
     trace["created_at"] = "2026-09-28T12:00:00+00:00"
-    note.write_text(_render_batch_note(batch, "社会理论二十讲", [trace],
+    note.write_text(_render_batch_note(batch, "合成测试书目", [trace],
                                        created="2026-09-28", presentation_version=5),
                     encoding="utf-8")
-    _refresh_generated_note(tmp_path, batch, "社会理论二十讲", [trace], [trace], received)
+    _refresh_generated_note(tmp_path, batch, "合成测试书目", [trace], [trace], received)
     assert note.read_text(encoding="utf-8") == new
     note.write_text(new + "我的审阅\n", encoding="utf-8")
     with pytest.raises(LibrarianError) as error:
-        _refresh_generated_note(tmp_path, batch, "社会理论二十讲", [trace], [trace], received)
+        _refresh_generated_note(tmp_path, batch, "合成测试书目", [trace], [trace], received)
     assert error.value.code == "REVIEW_EDIT_CONFLICT"
 
 
 def test_isbn_metadata_fills_note_and_upgrades_unchanged_v9(tmp_path: Path) -> None:
-    isbn = "9787208171411"
+    isbn = "9780000000002"
     source = tmp_path / "source-books"
     source.mkdir()
     (source / f"{isbn}.metadata.json").write_text(json.dumps({
-        "isbn13": isbn, "authors": ["汉斯·约阿斯", "沃尔夫冈·克诺伯"],
-        "translator": "郑作彧", "publisher": "上海人民出版社",
+        "isbn13": isbn, "authors": ["合成作者甲", "合成作者乙"],
+        "translator": "合成译者", "publisher": "合成出版社",
         "publication_date": "2021-09-01",
         "original_title": "Sozialtheorie. Zwanzig einführende Vorlesungen",
-        "source_url": "https://book.douban.com/subject/35596074/",
+        "source_url": "https://example.test/synthetic-book",
     }, ensure_ascii=False), encoding="utf-8")
     batch = {"id": "batch_fixture", "isbn": isbn,
              "bibliography": _isbn_metadata(tmp_path, isbn)}
@@ -629,26 +633,26 @@ def test_isbn_metadata_fills_note_and_upgrades_unchanged_v9(tmp_path: Path) -> N
              "created_at": "2026-09-28T12:00:00+00:00", "trace_types": ["underline"],
              "location": {"page": {"label": "39", "number": 39},
                           "bbox": [.1, .2, .8, .3]},
-             "content": {"printed_text": {"text": "正是帕森斯，完成整合。"},
+             "content": {"printed_text": {"text": "正是测试学者，完成整合。"},
                          "annotation": {"text": None}},
              "source": {"capture_id": "capture_fixture"}}
     folder = tmp_path / "2Area" / "40 学习与阅读" / "阅读笔记"
     folder.mkdir(parents=True)
-    note = folder / "社会理论二十讲.md"
-    note.write_text(_render_batch_note(batch, "社会理论二十讲", [trace],
+    note = folder / "合成测试书目.md"
+    note.write_text(_render_batch_note(batch, "合成测试书目", [trace],
                                        created="2026-09-28", presentation_version=9),
                     encoding="utf-8")
-    _refresh_generated_note(tmp_path, batch, "社会理论二十讲", [trace], [trace])
+    _refresh_generated_note(tmp_path, batch, "合成测试书目", [trace], [trace])
     rendered = note.read_text(encoding="utf-8")
-    assert 'authors: ["汉斯·约阿斯", "沃尔夫冈·克诺伯"]' in rendered
-    assert "> - 译者： 郑作彧" in rendered
+    assert 'authors: ["合成作者甲", "合成作者乙"]' in rendered
+    assert "> - 译者： 合成译者" in rendered
     assert "> - 出版日期： 2021-09-01" in rendered
-    assert "> - 书目来源： [ISBN 书目](https://book.douban.com/subject/35596074/)" in rendered
+    assert "> - 书目来源： [ISBN 书目](https://example.test/synthetic-book)" in rendered
     assert rendered.count('data-librarian-trace="rt_fixture"') == 1
 
 
 def test_legacy_worker_selected_session_becomes_expiring_affinity(tmp_path: Path) -> None:
-    epub = tmp_path / "9787208171411.epub"
+    epub = tmp_path / "9780000000002.epub"
     _epub(epub)
     state = tmp_path / "state"
     stream = BytesIO()
@@ -672,7 +676,7 @@ def test_legacy_worker_selected_session_becomes_expiring_affinity(tmp_path: Path
 
 
 def test_chapter_note_layout_uses_epub_order_without_page_grouping() -> None:
-    batch = {"id": "batch_fixture", "isbn": "9787208171411"}
+    batch = {"id": "batch_fixture", "isbn": "9780000000002"}
     def trace(identifier, page, printed, annotation=None):
         return {"id": identifier, "revision": 1,
                 "created_at": "2026-09-28T12:00:00+00:00",
@@ -686,10 +690,10 @@ def test_chapter_note_layout_uses_epub_order_without_page_grouping() -> None:
     second = trace("rt_second", 39, "第二段的句子。")
     first = trace("rt_first", 40, "第一段的句子。")
     note = trace("rt_note", 39, None, "手写内容")
-    layout = ({8: "第一讲 什么是理论？", 9: "第二讲 帕森斯"},
+    layout = ({8: "第一讲 什么是理论？", 9: "第二讲 测试学者"},
               {"rt_later": (8, 10), "rt_first": (9, 20),
                "rt_note": (9, 20.5), "rt_second": (9, 30)})
-    rendered = _render_batch_note(batch, "社会理论二十讲",
+    rendered = _render_batch_note(batch, "合成测试书目",
                                   [second, later, note, first], created="2026-09-28",
                                   presentation_version=11, chapter_layout=layout)
     assert rendered.index("## 第一讲") < rendered.index("## 第二讲")

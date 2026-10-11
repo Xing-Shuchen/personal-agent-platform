@@ -69,18 +69,18 @@ def test_identity_ambiguity_and_conflicting_retry(lib):
 
 def test_explicit_title_and_isbn_register_new_book_once(tmp_path):
     with Library(tmp_path) as lib:
-        first = _message("new-1", "start", book="社会理论二十讲", isbn="9787208171411")
+        first = _message("new-1", "start", book="合成测试书目", isbn="9780000000002")
         started = session_inbound(lib, first)
         assert started["status"] == "active"
         assert session_inbound(lib, first) == started
-        assert session_inbound(lib, _message("new-2", "start", book="社会理论二十讲",
-                                                  isbn="9787208171411"))["status"] == "unchanged"
+        assert session_inbound(lib, _message("new-2", "start", book="合成测试书目",
+                                                  isbn="9780000000002"))["status"] == "unchanged"
         for model in ("Work", "Edition", "BookInstance", "ReadingSession"):
             assert lib.db.execute("SELECT count(*) FROM records WHERE owner_id=? AND model=?",
                                   ("owner_fixture", model)).fetchone()[0] == 1
         with pytest.raises(LibrarianError, match="title conflicts"):
             session_inbound(lib, _message("new-3", "start", book="另一书",
-                                          isbn="9787208171411"))
+                                          isbn="9780000000002"))
         with pytest.raises(LibrarianError, match="valid ISBN"):
             session_inbound(lib, _message("new-4", "start", book="另一书",
                                           isbn="9787208171412"))

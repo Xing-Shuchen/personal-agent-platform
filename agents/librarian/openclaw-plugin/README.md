@@ -52,8 +52,8 @@ Configure absolute repository and private state paths, a Python interpreter, and
 
 Install the package's `librarian-ocr` extra in that interpreter. An owner-supplied EPUB at
 `stateRoot/source-books/<isbn13>.epub` enables local OCR alignment; without it,
-the worker still runs local OCR for printed lines and underlines, then uses the
-configured image-capable OpenClaw model only when local OCR finds no mark.
+the worker still runs local OCR for printed lines and underlines. Extraction is
+purely local: no image-capable model call happens in the worker.
 Unknown books and page numbers remain unresolved in stored observations.
 Replace the example channel, account, sender and owner IDs with trusted values
 from your OpenClaw deployment:
@@ -104,9 +104,6 @@ handwriting crops, writes current traces and a review note under
 `2Area/40 学习与阅读/阅读笔记`, and sends a Feishu review message after both stores are
 written. Existing generated blocks are consolidated into one WeRead-style
 note only after verifying their trace anchors and exact generated text.
-The first-book five-photo run and a later 22-photo burst were processed;
-unresolved page labels and one conflicting old extraction remain for review.
-The separate
-pp.159/166/171/184 M1 acceptance set remains deferred. The official OpenClaw
+The official OpenClaw
 [message hook contract](https://docs.openclaw.ai/plugins/hooks/messages)
 defines the staged `media` fields used here.

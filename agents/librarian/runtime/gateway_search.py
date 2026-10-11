@@ -46,28 +46,40 @@ def search_inbound(lib: Library, message: dict) -> dict:
             raise LibrarianError("OBJECT_NOT_FOUND", "trace is not active")
         work = lib.get(owner, "Work", trace["work_id"]) if trace["work_id"] else None
         alignment = None
-        observation = lib.get(owner, "PageObservation", trace["source"]["observation_id"])
-        try:
-            report = json.loads(lib._read_object(observation["raw_output_asset"]))
-            ids = trace["source"]["detection_ids"]
-            indexes = {int(identifier.split("_")[1]) for identifier in ids
-                       if identifier.startswith("bookscan_") and
-                       identifier.split("_")[1].isdigit()}
-            if len(indexes) == 1:
-                group = report["groups"][next(iter(indexes))]
-                candidate = group.get("epub_candidate") or {}
-                alignment = {"match_status": group.get("match_status"),
-                             "text_basis": group.get("text_basis"),
-                             "review_reasons": group.get("review_reasons", []),
-                             "epub_expanded_text": group.get("epub_expanded_text"),
-                             "similarity": candidate.get("similarity"),
-                             "query_coverage": candidate.get("query_coverage"),
-                             "runner_up_margin": candidate.get("runner_up_margin")}
-        except (KeyError, IndexError, TypeError, ValueError, UnicodeDecodeError):
-            pass
+        # Alignment evidence only exists for physical captures; digital traces
+        # (koodo/weread) carry {kind, raw_payload, source_record_id} and must
+        # still answer a trace_id lookup instead of failing the whole bridge.
+        source = trace.get("source") if isinstance(trace.get("source"), dict) else {}
+        observation_id = source.get("observation_id")
+        if isinstance(observation_id, str):
+            try:
+                observation = lib.get(owner, "PageObservation", observation_id)
+                report = json.loads(lib._read_object(observation["raw_output_asset"]))
+                ids = source.get("detection_ids") or []
+                indexes = {int(identifier.split("_")[1]) for identifier in ids
+                           if identifier.startswith("bookscan_") and
+                           identifier.split("_")[1].isdigit()}
+                if len(indexes) == 1:
+                    group = report["groups"][next(iter(indexes))]
+                    candidate = group.get("epub_candidate") or {}
+                    alignment = {"match_status": group.get("match_status"),
+                                 "text_basis": group.get("text_basis"),
+                                 "review_reasons": group.get("review_reasons", []),
+                                 "epub_expanded_text": group.get("epub_expanded_text"),
+                                 "similarity": candidate.get("similarity"),
+                                 "query_coverage": candidate.get("query_coverage"),
+                                 "runner_up_margin": candidate.get("runner_up_margin")}
+            except (KeyError, IndexError, TypeError, ValueError, UnicodeDecodeError,
+                    LibrarianError):
+                pass
+        location = trace.get("location") if isinstance(trace.get("location"), dict) else {}
         return {"trace_id": trace_id, "revision": trace["revision"],
                 "book_title": work["title"] if work else None,
-                "page": trace["location"]["page"],
+                # Digital traces carry {kind, chapter, epub_cfi, paragraph,
+                # source_locator} and have no page; physical traces have one.
+                "page": location.get("page"),
+                "location_kind": location.get("kind"),
+                "chapter": location.get("chapter"),
                 "printed_text": trace["content"]["printed_text"],
                 "annotation": trace["content"]["annotation"],
                 "review": trace["review"], "alignment": alignment}
