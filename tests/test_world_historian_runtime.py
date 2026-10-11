@@ -271,18 +271,20 @@ def test_daily_stats_combines_run_log_and_chronicle_for_requested_day(tmp_path):
         conn.execute("UPDATE threads SET updated_at = ?", ("2026-09-16T10:00:00+08:00",))
 
     runs = tmp_path / "runs.jsonl"
+    # Record shape mirrors what pap/run.py actually writes: job_id is a
+    # top-level field of run.completed, not nested under a trigger object.
     records = [
         {"event": "run.delivery", "run_id": "brief", "delivery": "sent"},
         {"event": "run.completed", "run_id": "brief", "agent_id": "world-historian",
          "completed_at": "2026-09-16T09:00:00+08:00", "status": "success",
-         "trigger": {"job_id": "morning-brief"}},
+         "job_id": "world-historian/world-morning-brief"},
         {"event": "run.completed", "run_id": "stats", "agent_id": "world-historian",
          "completed_at": "2026-09-16T23:59:00+08:00", "status": "timeout",
-         "trigger": {"job_id": "daily-stats"}},
+         "job_id": "world-historian/world-daily-report"},
         {"event": "run.delivery", "run_id": "stats", "delivery": "silent"},
         {"event": "run.completed", "run_id": "other", "agent_id": "other-agent",
          "completed_at": "2026-09-16T12:00:00+08:00", "status": "success",
-         "trigger": {"job_id": "other"}},
+         "job_id": "other"},
     ]
     runs.write_text("".join(json.dumps(record) + "\n" for record in records), encoding="utf-8")
 
@@ -291,8 +293,8 @@ def test_daily_stats_combines_run_log_and_chronicle_for_requested_day(tmp_path):
     assert result.stdout == (
         "day 2026-09-16\n"
         "runs\n"
-        "job daily-stats delivery:silent=1 timeout=1\n"
-        "job morning-brief delivery:sent=1 success=1\n"
+        "job world-historian/world-daily-report delivery:silent=1 timeout=1\n"
+        "job world-historian/world-morning-brief delivery:sent=1 success=1\n"
         "chronicle\n"
         "threads 1\n"
         "events 1\n"

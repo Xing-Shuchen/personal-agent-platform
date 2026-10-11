@@ -70,23 +70,43 @@ def _relation(kind: str) -> str:
     return "experienced"
 
 
-def _observations(paths: Iterable[Path]) -> Iterable[dict[str, Any]]:
+def _load_observations(paths: Iterable[Path]) -> tuple[list[dict[str, Any]], list[str]]:
+    """Load every approved export exactly once; unreadable files become errors.
+
+    A missing, non-UTF-8, truncated, or non-list export must not crash the
+    crosslink run with a traceback (the skill then reports a confusing failure
+    instead of finishing with zero candidates). Error entries carry the
+    operator-configured path and the error kind, never observation content.
+    """
+    observations: list[dict[str, Any]] = []
+    errors: list[str] = []
     for path in paths:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            errors.append(f"{type(exc).__name__}: {path}")
+            continue
         if not isinstance(data, list):
-            raise ValueError(f"approved personal input is not a list: {path}")
+            errors.append(f"NotAListError: approved personal input is not a list: {path}")
+            continue
         for item in data:
             if isinstance(item, dict) and isinstance(item.get("observation_id"), str):
-                yield item
+                observations.append(item)
+    return observations, errors
 
 
 def _date(value: object) -> datetime | None:
     if not isinstance(value, str):
         return None
     try:
-        return datetime.fromisoformat(value.replace("Z", "+00:00")).replace(tzinfo=None)
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
     except ValueError:
         return None
+    # Normalize offsets before dropping them, so a Z-stamped and a +08:00-stamped
+    # instant compare equal in the ±30-day window check.
+    if parsed.tzinfo is not None:
+        parsed = parsed.astimezone()
+    return parsed.replace(tzinfo=None)
 
 
 def lookup(*, db_path: Path = DEFAULT_DB, personal_paths: Iterable[Path] = PERSONAL_INPUTS,
@@ -98,25 +118,33 @@ def lookup(*, db_path: Path = DEFAULT_DB, personal_paths: Iterable[Path] = PERSO
     """
     if not 1 <= limit <= 10:
         raise ValueError("limit must be between 1 and 10")
-    with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True) as conn:
-        events = conn.execute(
-            """SELECT id, summary, occurred_at, observed_at, confidence
-                 FROM events WHERE status IN ('active', 'confirmed')
-                 ORDER BY COALESCE(occurred_at, observed_at) DESC LIMIT 30"""
-        ).fetchall()
-        existing = {
-            (row[0], row[1], row[2])
-            for row in conn.execute(
-                "SELECT world_event_id, personal_event_id, relation_type FROM personal_links"
-            )
-        }
+    observations, errors = _load_observations(personal_paths)
+    try:
+        with sqlite3.connect(f"{Path(db_path).resolve().as_uri()}?mode=ro", uri=True) as conn:
+            events = conn.execute(
+                """SELECT id, summary, occurred_at, observed_at, confidence
+                     FROM events WHERE status IN ('active', 'confirmed')
+                     ORDER BY COALESCE(occurred_at, observed_at) DESC LIMIT 30"""
+            ).fetchall()
+            existing = {
+                (row[0], row[1], row[2])
+                for row in conn.execute(
+                    "SELECT world_event_id, personal_event_id, relation_type FROM personal_links"
+                )
+            }
+    except sqlite3.Error as exc:
+        errors.append(f"{type(exc).__name__}: {db_path}")
+        events, existing = [], set()
+
+    def _output(candidates: list[dict[str, object]]) -> dict[str, Any]:
+        return {"candidates": candidates, "errors": errors} if errors else {"candidates": candidates}
 
     result: list[dict[str, object]] = []
     for event_id, summary, occurred_at, observed_at, confidence in events:
         public_tokens = _tokens(summary)
         if not public_tokens:
             continue
-        for observation in _observations(personal_paths):
+        for observation in observations:
             # Only the personal observation's local content participates in
             # matching.  Provenance/normalization metadata is not a topic.
             private_tokens = _tokens(" ".join(_flatten({
@@ -152,14 +180,16 @@ def lookup(*, db_path: Path = DEFAULT_DB, personal_paths: Iterable[Path] = PERSO
                 "evidence": [personal_id],
             })
             if len(result) >= limit:
-                return {"candidates": result}
-    return {"candidates": result}
+                return _output(result)
+    return _output(result)
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="privacy-bounded personal lookup")
     parser.add_argument("--limit", type=int, default=10)
     args = parser.parse_args()
+    if not 1 <= args.limit <= 10:
+        parser.error("--limit must be between 1 and 10")
     print(json.dumps(lookup(limit=args.limit), ensure_ascii=False, indent=2, sort_keys=True))
     return 0
 

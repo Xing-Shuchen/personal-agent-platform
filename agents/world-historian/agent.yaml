@@ -20,7 +20,6 @@ spec:
     desired_jobs:
       - name: world-follow-high
         schedule: "43 0,6,12,18 * * *"
-        model: qwen/qwen3.8-max
         skill: news-follow
         args:
           priority: high
@@ -34,7 +33,7 @@ spec:
         delivery: local
         runner: command
         command:
-          - python3
+          - .venv/bin/python
           - agents/world-historian/runtime/cli.py
           - feeds
           - update
@@ -51,7 +50,6 @@ spec:
         enabled: false
       - name: world-follow-normal
         schedule: "43 3,13,22 * * *"
-        model: qwen/qwen3.8-max
         skill: news-follow
         args:
           priority: normal
@@ -59,7 +57,6 @@ spec:
         delivery: user-home
       - name: world-follow-low
         schedule: "43 20 * * *"
-        model: qwen/qwen3.8-max
         skill: news-follow
         args:
           priority: low

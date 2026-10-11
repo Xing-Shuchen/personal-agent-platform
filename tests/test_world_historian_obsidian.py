@@ -253,6 +253,11 @@ def test_follow_up_sync_recovers_legacy_manual_notes_from_git(tmp_path, monkeypa
 
     def fake_git_run(command, **_kwargs):
         calls.append(command)
+        if "rev-parse" in command:
+            if "--show-toplevel" in command:
+                return subprocess.CompletedProcess(command, 0, stdout=str(vault) + "\n", stderr="")
+            # --show-prefix: the vault is the repository root in this test.
+            return subprocess.CompletedProcess(command, 0, stdout="\n", stderr="")
         if "log" in command:
             return subprocess.CompletedProcess(command, 0, stdout="abc123\n", stderr="")
         if "show" in command:

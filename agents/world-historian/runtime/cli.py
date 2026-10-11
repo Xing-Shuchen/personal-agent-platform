@@ -221,20 +221,30 @@ def _print_daily_stats(conn: sqlite3.Connection, day: str, run_log: Path) -> Non
     """Print the two former daily-ledger query results in a stable text format."""
     completed: dict[str, dict[str, Any]] = {}
     deliveries: dict[str, str] = {}
-    with run_log.open(encoding="utf-8") as handle:
-        for line in handle:
-            record = json.loads(line)
-            if (record.get("event") == "run.completed"
-                    and str(record.get("completed_at", "")).startswith(day)):
-                completed[str(record["run_id"])] = record
-            elif record.get("event") == "run.delivery":
-                deliveries[str(record["run_id"])] = str(record.get("delivery", "not-attempted"))
+    if run_log.is_file():
+        with run_log.open(encoding="utf-8") as handle:
+            for line in handle:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    record = json.loads(line)
+                except json.JSONDecodeError:
+                    # A truncated trailing line (a kill mid-append) must not
+                    # make the whole daily report unusable.
+                    continue
+                if (record.get("event") == "run.completed"
+                        and str(record.get("completed_at", "")).startswith(day)):
+                    completed[str(record["run_id"])] = record
+                elif record.get("event") == "run.delivery":
+                    deliveries[str(record["run_id"])] = str(record.get("delivery", "not-attempted"))
 
     by_job: dict[str, Counter[str]] = defaultdict(Counter)
     for run_id, record in completed.items():
         if record.get("agent_id") != "world-historian":
             continue
-        job = str(record.get("trigger", {}).get("job_id", "unknown"))
+        # pap/run.py writes job_id at the top level of run.completed records.
+        job = str(record.get("job_id") or "unknown")
         by_job[job][str(record.get("status", "unknown"))] += 1
         by_job[job][f"delivery:{deliveries.get(run_id, 'not-attempted')}"] += 1
 
@@ -261,18 +271,26 @@ def _lifecycle_timestamp(value: str | None) -> datetime | None:
     if not value:
         return None
     text = value.strip()
+
+    def _local_naive(parsed: datetime) -> datetime:
+        # Offsets must be normalized before they are dropped: a Z-stamped and a
+        # +08:00-stamped instant are otherwise compared 8 hours apart, and the
+        # comparisons here run against naive local `datetime.now()`.
+        if parsed.tzinfo is not None:
+            parsed = parsed.astimezone()
+        return parsed.replace(tzinfo=None)
+
     for fmt in ("%Y-%m-%dT%H:%M:%S%z", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d"):
         try:
             parsed = datetime.strptime(text, fmt)
-            return parsed.replace(tzinfo=None)
         except ValueError:
             continue
+        return _local_naive(parsed)
     try:
         parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
-        return parsed.replace(tzinfo=None)
     except ValueError:
-        pass
-    return None
+        return None
+    return _local_naive(parsed)
 
 
 def _print_lifecycle_candidates(conn: sqlite3.Connection, args: argparse.Namespace) -> None:

@@ -238,3 +238,14 @@ def test_runtime_state_is_gitignored():
         r = subprocess.run(["git", "check-ignore", "-q", path],
                            cwd=REPO, capture_output=True, text=True)
         assert r.returncode == 0, path
+
+    # Ignore rules never untrack an already-committed file: two owner follow-*
+    # digests stayed tracked for weeks despite the rule. Pin the tracked set
+    # itself, not just the ignore behavior.
+    listing = subprocess.run(["git", "ls-files", "agents"],
+                             cwd=REPO, capture_output=True, text=True, check=True)
+    tracked = listing.stdout.splitlines()
+    leaked = [path for path in tracked
+              if "/runtime/follow-" in path or "/runtime/reflect-" in path
+              or path.endswith((".sqlite", ".sqlite-wal", ".sqlite-shm"))]
+    assert leaked == []

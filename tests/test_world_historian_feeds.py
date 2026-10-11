@@ -131,9 +131,17 @@ def test_ingested_source_ids_match_store_bundle_scheme(tmp_path):
                       feed_url="https://example.test/feed",
                       fetch=lambda url: RSS_SAMPLE)
     row = conn.execute(
-        "SELECT id, canonical_url, content_hash FROM sources LIMIT 1").fetchone()
-    expected = db.stable_id("src", row["canonical_url"], None, row["content_hash"])
+        "SELECT id, canonical_url, title, published_at, content_hash "
+        "FROM sources LIMIT 1").fetchone()
     assert row["id"].startswith("src_")
+    # Pin the real cross-path invariant: the row id must be exactly the stable id
+    # store_bundle derives from (url, published_at, content_hash), so a bundle
+    # describing the same article collapses onto the RSS-ingested row whenever
+    # it carries the identical published_at and content_hash.
+    assert row["content_hash"] == feeds._content_hash(
+        row["title"], row["canonical_url"], row["published_at"])
+    assert row["id"] == db.stable_id(
+        "src", row["canonical_url"], row["published_at"], row["content_hash"])
 
 
 def test_metadata_json_carries_summary(tmp_path):

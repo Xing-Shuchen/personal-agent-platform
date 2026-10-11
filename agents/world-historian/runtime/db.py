@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+import fcntl
 import hashlib
 import json
 import os
+import re
 import sqlite3
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 PERSONAL_RELATIONS = {
     "experienced", "affected_by", "worked_on", "discussed", "read_about",
@@ -54,25 +57,83 @@ def connect(path: Path | None = None) -> sqlite3.Connection:
     return conn
 
 
+_MIGRATION_STEM = re.compile(r"[0-9A-Za-z_-]+")
+_OWN_TRANSACTION = re.compile(r"^\s*BEGIN\s*(?:IMMEDIATE\s*|EXCLUSIVE\s*|TRANSACTION\s*)?;",
+                              re.IGNORECASE | re.MULTILINE)
+
+
+def _db_file(conn: sqlite3.Connection) -> Path | None:
+    row = conn.execute("PRAGMA database_list").fetchone()
+    name = row["file"] if row is not None else None
+    return Path(name) if name else None
+
+
+@contextmanager
+def _migration_lock(db_file: Path | None) -> Iterator[None]:
+    """Serialize migration application across processes.
+
+    The hourly ``feeds`` command job and model runs that store bundles can
+    overlap; without a shared lock two fresh-DB inits race and non-idempotent
+    ALTER scripts fail with ``duplicate column name``.
+    """
+    if db_file is None:  # :memory: — single process by definition
+        yield
+        return
+    lock_path = db_file.with_name(db_file.name + ".migrate.lock")
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(lock_path, "a+", encoding="utf-8") as lock:
+        fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
+
+
 def migrate(conn: sqlite3.Connection) -> list[str]:
-    conn.execute(
-        "CREATE TABLE IF NOT EXISTS schema_migrations ("
-        "version TEXT PRIMARY KEY, applied_at TEXT NOT NULL)"
-    )
-    applied = {row[0] for row in conn.execute("SELECT version FROM schema_migrations")}
-    completed: list[str] = []
-    migrations = Path(__file__).with_name("migrations")
-    for path in sorted(migrations.glob("*.sql")):
-        if path.stem in applied:
-            continue
-        conn.executescript(path.read_text(encoding="utf-8"))
+    with _migration_lock(_db_file(conn)):
         conn.execute(
-            "INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)",
-            (path.stem, _now()),
+            "CREATE TABLE IF NOT EXISTS schema_migrations ("
+            "version TEXT PRIMARY KEY, applied_at TEXT NOT NULL)"
         )
-        conn.commit()
-        completed.append(path.stem)
-    return completed
+        applied = {row[0] for row in conn.execute("SELECT version FROM schema_migrations")}
+        completed: list[str] = []
+        migrations = Path(__file__).with_name("migrations")
+        for path in sorted(migrations.glob("*.sql")):
+            if path.stem in applied:
+                continue
+            if not _MIGRATION_STEM.fullmatch(path.stem):
+                raise ChronicleError(f"unsafe migration filename: {path.name}")
+            script = path.read_text(encoding="utf-8")
+            if _OWN_TRANSACTION.search(script):
+                # The script manages its own transaction; record the version
+                # right after it. (Legacy shape, kept for already-shipped scripts.)
+                conn.executescript(script)
+                conn.execute(
+                    "INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)",
+                    (path.stem, _now()),
+                )
+                conn.commit()
+            else:
+                # One transaction for script + version record: a crash in between
+                # must never re-run non-idempotent DDL (duplicate column) or leave
+                # a half-applied rebuild (0006 DROP/RENAME) unrecorded.
+                # PRAGMA foreign_keys is a no-op inside a transaction, so scripts
+                # that rely on it (0006 drops a parent table) get enforcement
+                # switched off at the connection level for the wrapped run.
+                fk_enabled = conn.execute("PRAGMA foreign_keys").fetchone()[0]
+                if fk_enabled:
+                    conn.execute("PRAGMA foreign_keys = OFF")
+                try:
+                    version_sql = (
+                        "INSERT INTO schema_migrations(version, applied_at) "
+                        f"VALUES ('{path.stem}', '{_now()}');"
+                    )
+                    conn.executescript(f"BEGIN IMMEDIATE;\n{script}\n;\n{version_sql}\nCOMMIT;")
+                finally:
+                    if fk_enabled:
+                        conn.execute("PRAGMA foreign_keys = ON")
+            completed.append(path.stem)
+        return completed
 
 
 def initialize(path: Path | None = None) -> tuple[Path, list[str]]:
@@ -151,17 +212,23 @@ def _entity_kind(value: object, where: str) -> str:
 
 def _ensure_entity(conn: sqlite3.Connection, name: str, kind: str, now: str,
                    aliases: object | None = None) -> str:
-    """Find an entity by name and only upgrade an unclassified row in place."""
-    row = conn.execute("SELECT id, kind FROM entities WHERE name = ?", (name,)).fetchone()
+    """Find an entity by its casefold-stable id; upgrade an unclassified row in place.
+
+    Entity ids are casefolded digests, so a differently-cased spelling of an
+    existing name must resolve to the same row instead of colliding on the
+    primary key (``UNIQUE constraint failed: entities.id`` would roll back the
+    whole bundle). The first-seen spelling stays canonical.
+    """
+    entity_id = _stable("ent", name)
+    row = conn.execute("SELECT id, kind FROM entities WHERE id = ?", (entity_id,)).fetchone()
     if row is None:
-        entity_id = _stable("ent", name)
         conn.execute(
             "INSERT INTO entities(id, name, kind, aliases_json, created_at) "
             "VALUES (?, ?, ?, ?, ?)",
             (entity_id, name, kind, _json(aliases, []), now),
         )
         return entity_id
-    entity_id, existing_kind = str(row["id"]), str(row["kind"])
+    existing_kind = str(row["kind"])
     if existing_kind == "unknown" and kind != "unknown":
         conn.execute("UPDATE entities SET kind = ? WHERE id = ?", (kind, entity_id))
     if aliases is not None:
@@ -253,6 +320,24 @@ def store_bundle(conn: sqlite3.Connection, bundle: dict[str, Any]) -> dict[str, 
             identifier = str(item.get("id") or _stable("thr", title))
             remember(item, identifier)
             touched.add(identifier)
+            # A re-declared thread must not silently reset lifecycle state that
+            # the bundle omitted: an earlier CLOSE/DEMOTE (or a quiet_count the
+            # follow skill accumulated) would otherwise be undone by any later
+            # bundle that touches the thread. Omitted fields carry through.
+            existing = conn.execute(
+                "SELECT status, priority, seed_type, quiet_count FROM threads WHERE id = ?",
+                (identifier,),
+            ).fetchone()
+
+            def keep_thread(value: Any, column: str, default: Any) -> Any:
+                if value is not None:
+                    return value
+                return existing[column] if existing is not None else default
+
+            status = keep_thread(item.get("status"), "status", "active")
+            priority = keep_thread(item.get("priority"), "priority", "normal")
+            seed_type = keep_thread(item.get("seed_type"), "seed_type", "user_instruction")
+            quiet_count = int(keep_thread(item.get("quiet_count"), "quiet_count", 0))
             conn.execute(
                 """INSERT INTO threads
                    (id, title, status, priority, seed_type, seed_text, last_checked_at,
@@ -265,10 +350,10 @@ def store_bundle(conn: sqlite3.Connection, bundle: dict[str, Any]) -> dict[str, 
                      last_checked_at=COALESCE(excluded.last_checked_at, threads.last_checked_at),
                      next_check_at=COALESCE(excluded.next_check_at, threads.next_check_at),
                      quiet_count=excluded.quiet_count, updated_at=excluded.updated_at""",
-                (identifier, title, item.get("status", "active"), item.get("priority", "normal"),
-                 item.get("seed_type", "user_instruction"), item.get("seed_text"),
+                (identifier, title, status, priority,
+                 seed_type, item.get("seed_text"),
                  item.get("last_checked_at"), item.get("next_check_at"),
-                 int(item.get("quiet_count", 0)), now, now),
+                 quiet_count, now, now),
             )
             counts["threads"] = counts.get("threads", 0) + 1
 
@@ -310,6 +395,30 @@ def store_bundle(conn: sqlite3.Connection, bundle: dict[str, Any]) -> dict[str, 
                 "evt", summary, item.get("occurred_at"), item.get("reported_at")
             ))
             remember(item, identifier)
+            # Same carry-through rule as threads: an upsert of an existing event
+            # must not null/reset evidence fields the bundle omitted (a partial
+            # re-declaration used to clear occurred_at/reported_at and downgrade
+            # a confirmed event back to active/0.5).
+            existing = conn.execute(
+                "SELECT occurred_at, occurred_at_precision, reported_at, confidence, status "
+                "FROM events WHERE id = ?",
+                (identifier,),
+            ).fetchone()
+
+            def keep_event(value: Any, column: str, default: Any) -> Any:
+                if value is not None:
+                    return value
+                return existing[column] if existing is not None else default
+
+            occurred_at = keep_event(item.get("occurred_at"), "occurred_at", None)
+            precision = keep_event(item.get("occurred_at_precision"),
+                                   "occurred_at_precision", "unknown")
+            reported_at = keep_event(item.get("reported_at"), "reported_at", None)
+            confidence_raw = item.get("confidence")
+            confidence = (_confidence(confidence_raw, "event.confidence")
+                          if confidence_raw is not None
+                          else float(keep_event(None, "confidence", 0.5)))
+            status = keep_event(item.get("status"), "status", "active")
             conn.execute(
                 """INSERT INTO events
                    (id, title, summary, occurred_at, occurred_at_precision, reported_at,
@@ -321,10 +430,8 @@ def store_bundle(conn: sqlite3.Connection, bundle: dict[str, Any]) -> dict[str, 
                      occurred_at_precision=excluded.occurred_at_precision,
                      reported_at=excluded.reported_at, confidence=excluded.confidence,
                      status=excluded.status, updated_at=excluded.updated_at""",
-                (identifier, title, summary, item.get("occurred_at"),
-                 item.get("occurred_at_precision", "unknown"), item.get("reported_at"),
-                 item.get("observed_at", now), _confidence(item.get("confidence"), "event.confidence"),
-                 item.get("status", "active"), now, now),
+                (identifier, title, summary, occurred_at, precision, reported_at,
+                 item.get("observed_at", now), confidence, status, now, now),
             )
             counts["events"] = counts.get("events", 0) + 1
             for thread_ref in item.get("thread_refs", []):
@@ -392,7 +499,8 @@ def store_bundle(conn: sqlite3.Connection, bundle: dict[str, Any]) -> dict[str, 
                    VALUES (?, ?, ?, ?, ?, ?)
                    ON CONFLICT(thread_id) DO UPDATE SET body=excluded.body,
                      provenance=excluded.provenance, source_refs_json=excluded.source_refs_json,
-                     revision=excluded.revision, updated_at=excluded.updated_at""",
+                     revision=COALESCE(excluded.revision, thread_current_states.revision),
+                     updated_at=excluded.updated_at""",
                 (thread_id, body, provenance, _json(source_refs, []), item.get("revision"), now),
             )
             touched.add(thread_id)
@@ -409,8 +517,8 @@ def store_bundle(conn: sqlite3.Connection, bundle: dict[str, Any]) -> dict[str, 
             source_id = resolve(item["source_ref"], "quote.source_ref") if item.get("source_ref") else None
             if event_id is None and source_id is None:
                 raise ChronicleError("quote requires event_ref and/or source_ref")
-            quote_format = item.get("quote_format", "text")
-            if quote_format not in ("text", "markdown"):
+            quote_format = item.get("quote_format")
+            if quote_format is not None and quote_format not in ("text", "markdown"):
                 raise ChronicleError("quote.quote_format must be 'text' or 'markdown'")
             identifier = str(item.get("id") or _stable(
                 "qte", speaker, title, quote_text[:400]
@@ -421,21 +529,33 @@ def store_bundle(conn: sqlite3.Connection, bundle: dict[str, Any]) -> dict[str, 
                 raise ChronicleError("quote.slug must be a non-empty string when present")
             if slug is not None and summary is None:
                 raise ChronicleError("quote.summary is required when quote.slug is present")
+            if quote_format is None:
+                # quote_format is NOT NULL: an omitted format keeps the stored
+                # one instead of downgrading markdown quotes to text.
+                prior = conn.execute(
+                    "SELECT quote_format FROM quotes WHERE id = ?", (identifier,)
+                ).fetchone()
+                quote_format = str(prior["quote_format"]) if prior else "text"
             conn.execute(
                 """INSERT INTO quotes
                    (id, event_id, source_id, speaker, title, quote_text, summary, quote_format,
                     url, slug, fetched_at, created_at, updated_at)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                    ON CONFLICT(id) DO UPDATE SET
-                     event_id=excluded.event_id, source_id=excluded.source_id,
-                     speaker=excluded.speaker, title=excluded.title,
-                     quote_text=excluded.quote_text, summary=excluded.summary,
+                     event_id=COALESCE(excluded.event_id, quotes.event_id),
+                     source_id=COALESCE(excluded.source_id, quotes.source_id),
+                     speaker=COALESCE(excluded.speaker, quotes.speaker),
+                     title=COALESCE(excluded.title, quotes.title),
+                     quote_text=excluded.quote_text,
+                     summary=COALESCE(excluded.summary, quotes.summary),
                      quote_format=excluded.quote_format,
-                     url=excluded.url, slug=excluded.slug, fetched_at=excluded.fetched_at,
+                     url=COALESCE(excluded.url, quotes.url),
+                     slug=COALESCE(excluded.slug, quotes.slug),
+                     fetched_at=COALESCE(excluded.fetched_at, quotes.fetched_at),
                      updated_at=excluded.updated_at""",
                 (identifier, event_id, source_id, speaker, title, quote_text, summary,
                  quote_format, item.get("url"), slug,
-                 item.get("fetched_at", now), now, now),
+                 item.get("fetched_at"), now, now),
             )
             counts["quotes"] = counts.get("quotes", 0) + 1
             if event_id:

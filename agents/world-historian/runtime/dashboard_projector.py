@@ -136,14 +136,23 @@ def _claim_state(value: str) -> str:
 def _thread_note_paths(index_path: Path | None, vault_dir: Path | None) -> dict[str, str]:
     paths = {}
     if index_path and index_path.exists():
-        data = json.loads(index_path.read_text(encoding="utf-8"))
+        # One corrupt index or note must not abort the whole projection; the
+        # affected threads simply keep no obsidian_path this generation.
+        try:
+            data = json.loads(index_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError, UnicodeDecodeError):
+            data = {}
         candidates = data.get("threads", data) if isinstance(data, dict) else {}
         paths.update({key: "2Area/41 新闻及事件/" + value for key, value in candidates.items()
                       if isinstance(key, str) and isinstance(value, str)})
     if vault_dir:
         note_dir = vault_dir / "2Area" / "41 新闻及事件"
         for note in sorted((*note_dir.glob("*.md"), *(note_dir / "closed_threads").glob("*.md"))):
-            head = note.read_text(encoding="utf-8")[:2000]
+            try:
+                with note.open(encoding="utf-8", errors="replace") as handle:
+                    head = handle.read(2000)
+            except OSError:
+                continue
             match = re.search(r'^thread_id:\s*["\']?([A-Za-z0-9_-]+)', head, re.MULTILINE)
             if match:
                 paths[match.group(1)] = str(note.relative_to(vault_dir))
@@ -158,7 +167,10 @@ def _manual_annotations(vault_dir: Path | None, note_paths: dict[str, str]) -> d
         path = vault_dir / relative
         if not path.is_file():
             continue
-        text = path.read_text(encoding="utf-8")
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
         match = re.search(r"^#{1,6}\s+手工批注\s*\n(?P<body>[\s\S]*)\Z", text, re.MULTILINE)
         if match:
             body = match.group("body").strip()
@@ -709,7 +721,9 @@ def search_read_model(output: Path, query: str, limit: int = 20) -> list[dict]:
     if not query.strip():
         return []
     pointer = (output / "CURRENT").read_text(encoding="utf-8").strip()
-    if not re.fullmatch(r"world-historian-dashboard\.v1-0\.7\.1-[a-f0-9]{20}", pointer):
+    # Derived from the constants so a GENERATOR bump cannot make publish()
+    # write pointers that this reader rejects (a hardcoded regex drifted once).
+    if not re.fullmatch(re.escape(f"{SCHEMA}-{GENERATOR}") + r"-[a-f0-9]{20}", pointer):
         raise ValueError("invalid dashboard generation pointer")
     index = output / "generations" / pointer / "search.sqlite"
     pattern = "%" + query.strip()[:120].replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"

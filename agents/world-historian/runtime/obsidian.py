@@ -447,11 +447,25 @@ def _git_committed_manual_notes(path: Path, marker: str) -> str | None:
     recent) version whose manual-notes section has real content. Used as a
     recovery fallback when the working-tree copy has lost its annotations.
     """
-    vault_root = path.parents[2]  # vault/<area-dir>/file -> vault root
+    # Resolve the repository root and the file's repo-relative path through
+    # git itself. A fixed parent-index guess breaks for notes nested at other
+    # depths (e.g. closed_threads/), where recovery silently never worked.
+    file_dir = str(path.parent)
     try:
-        relative_path = path.relative_to(vault_root)
-    except ValueError:
+        toplevel = subprocess.run(
+            ["git", "-C", file_dir, "rev-parse", "--show-toplevel"],
+            capture_output=True, text=True, timeout=10,
+        )
+        prefix = subprocess.run(
+            ["git", "-C", file_dir, "rev-parse", "--show-prefix"],
+            capture_output=True, text=True, timeout=10,
+        )
+    except (OSError, subprocess.SubprocessError):
         return None
+    if toplevel.returncode != 0 or prefix.returncode != 0:
+        return None
+    vault_root = Path(toplevel.stdout.strip())
+    relative_path = Path(prefix.stdout.strip()) / path.name
     try:
         log = subprocess.run(
             ["git", "-C", str(vault_root), "log", "--all",
@@ -611,7 +625,11 @@ def sync_threads(
             names.add(name)
             if prev_name and prev_dir != dir_key:
                 taken.get(prev_dir, set()).discard(prev_name)
-            elif prev_name:
+            elif prev_name and prev_name != name:
+                # Free the old name only on an actual rename. Discarding it when
+                # name == prev_name removed the thread's own name from the taken
+                # set, letting a later same-batch thread with a colliding
+                # sanitized title grab the identical filename and overwrite it.
                 names.discard(prev_name)
             rel = _thread_relpath(snapshot, name)
             target = vault / rel
@@ -620,12 +638,20 @@ def sync_threads(
             source_path = target if target.exists() else (
                 previous_path
                 if previous_path is not None and previous_path.exists() else target)
-            existing = (source_path.read_text(encoding="utf-8")
-                        if source_path.exists() else None)
+            existing = None
+            file_present = source_path.exists()
+            if file_present:
+                try:
+                    existing = source_path.read_text(encoding="utf-8")
+                except UnicodeDecodeError:
+                    # A corrupt (non-UTF-8) note counts as lost annotations:
+                    # fall through to git recovery instead of aborting the
+                    # whole sync after the DB commit ("never raises" contract).
+                    existing = None
             notes = None
             if existing is not None and marker in existing:
                 notes = extract_manual_notes(existing)
-            if (notes is None or notes == "（无）") and existing is not None:
+            if (notes is None or notes == "（无）") and file_present:
                 # The on-disk file lost its annotations (typical cause: a
                 # remotely-save conflict resolution pulled an older remote
                 # version over the local one). Fall back to the last git
@@ -647,7 +673,10 @@ def sync_threads(
             if previous and previous != rel:
                 old_path = vault / previous
                 if old_path.exists():
-                    old_text = old_path.read_text(encoding="utf-8")
+                    try:
+                        old_text = old_path.read_text(encoding="utf-8")
+                    except UnicodeDecodeError:
+                        old_text = ""  # unverifiable: never delete a file we cannot read
                     if marker in old_text:  # never delete a foreign file
                         old_path.unlink()
                         outcome["removed"].append(str(old_path))

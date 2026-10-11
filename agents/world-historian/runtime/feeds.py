@@ -27,7 +27,7 @@ from typing import Any, Callable
 from xml.etree import ElementTree
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from db import _now, repo_root, stable_id
+from db import ChronicleError, _now, repo_root, stable_id
 
 try:
     from paplog import observe as paplog
@@ -168,33 +168,44 @@ def ingest_feed(
 
     now = _now()
     added = 0
-    with (paplog.database("world-historian.sources", effect="write",
-                          attributes={"feed.name": feed_name, "candidate_count": min(len(entries), max_entries)})
-          if _observed() else nullcontext()):
-        for entry in entries[:max_entries]:
-            url = entry["link"]
-            title = entry["title"]
-            published = entry["published"]
-            content_hash = _content_hash(title, url, published)
-            identifier = stable_id("src", url, published, content_hash)
-            row = conn.execute(
-                "SELECT 1 FROM sources WHERE id = ?", (identifier,)
-            ).fetchone()
-            if row is not None:
-                continue
-            conn.execute(
-                """INSERT INTO sources
-                   (id, canonical_url, title, publisher, source_kind, published_at,
-                    updated_at, fetched_at, content_hash, metadata_json, created_at)
-                   VALUES (?, ?, ?, ?, 'rss', ?, ?, ?, ?, ?, ?)""",
-                (identifier, url, title, feed_name, published, published, now,
-                 content_hash, json.dumps({
-                     "feed": feed_name, "feed_url": feed_url,
-                     "summary": entry["summary"][:2000],
-                 }, ensure_ascii=False), now),
-            )
-            added += 1
-        conn.commit()
+    try:
+        with (paplog.database("world-historian.sources", effect="write",
+                              attributes={"feed.name": feed_name, "candidate_count": min(len(entries), max_entries)})
+              if _observed() else nullcontext()):
+            for entry in entries[:max_entries]:
+                url = entry["link"]
+                title = entry["title"]
+                published = entry["published"]
+                content_hash = _content_hash(title, url, published)
+                identifier = stable_id("src", url, published, content_hash)
+                row = conn.execute(
+                    "SELECT 1 FROM sources WHERE id = ?", (identifier,)
+                ).fetchone()
+                if row is not None:
+                    continue
+                conn.execute(
+                    """INSERT INTO sources
+                       (id, canonical_url, title, publisher, source_kind, published_at,
+                        updated_at, fetched_at, content_hash, metadata_json, created_at)
+                       VALUES (?, ?, ?, ?, 'rss', ?, ?, ?, ?, ?, ?)""",
+                    (identifier, url, title, feed_name, published, published, now,
+                     content_hash, json.dumps({
+                         "feed": feed_name, "feed_url": feed_url,
+                         "summary": entry["summary"][:2000],
+                     }, ensure_ascii=False), now),
+                )
+                added += 1
+            conn.commit()
+    except sqlite3.Error as exc:
+        # A database-side failure for one feed (e.g. "database is locked" from
+        # a concurrent store-bundle writer) is this feed's error; it must not
+        # abort the other feeds or the whole run. Nothing was committed.
+        try:
+            conn.rollback()
+        except sqlite3.Error:
+            pass
+        return {"source": feed_name, "fetched": len(entries), "added": 0,
+                "error": f"{type(exc).__name__}: {exc}"}
     return {"source": feed_name, "fetched": len(entries), "added": added,
             "error": None}
 
@@ -203,10 +214,20 @@ def configured_rss_sources(config_path: Path | None = None) -> list[dict[str, st
     """Read ``kind: rss`` sources from ``profile/config.yaml``."""
     try:
         import yaml
-    except ImportError:
-        return []
+    except ImportError as exc:
+        # Returning [] here made the hourly feeds job "succeed" forever while
+        # ingesting nothing on interpreters without PyYAML. Fail loudly instead.
+        raise ChronicleError(
+            "PyYAML is required for feeds ingestion; run this command with the "
+            "repository .venv interpreter (make setup)"
+        ) from exc
     path = Path(config_path or repo_root() / "agents/world-historian/profile/config.yaml")
-    loaded = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    try:
+        loaded = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    except OSError as exc:
+        raise ChronicleError(f"feed config is unreadable: {path}: {exc}") from exc
+    except yaml.YAMLError as exc:
+        raise ChronicleError(f"feed config is not valid YAML: {path}: {exc}") from exc
     sources = loaded.get("sources", []) or []
     return [s for s in sources if isinstance(s, dict) and s.get("kind") == "rss"
             and s.get("url")]
