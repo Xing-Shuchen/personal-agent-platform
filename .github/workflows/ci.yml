@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      # Deterministic, network-free run: cognition embedding falls back to the
+      # local hash embedding instead of downloading a transformer model.
+      HF_HUB_OFFLINE: "1"
+      TRANSFORMERS_OFFLINE: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          # CPU-only torch keeps the runner download small; sentence-transformers
+          # is satisfied by it and the tests never call a real model (see env).
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install -e '.[test]'
+
+      - name: Validate platform specs
+        run: python -m pap.cli validate
+
+      - name: Test suite
+        run: python -m pytest -q
+
+      - name: Librarian runtime tests (outside default testpaths)
+        run: python -m pytest -q agents/librarian/runtime/tests
+
+      - name: Release hygiene gate
+        run: python scripts/check_release.py
