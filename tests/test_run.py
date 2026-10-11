@@ -28,7 +28,7 @@ spec:
   profile:
     name: sample
     source: profile
-  model: deepseek/deepseek-flash
+  model: test-provider/test-model
 """,
         encoding="utf-8",
     )
@@ -73,7 +73,7 @@ def test_invoke_records_start_and_completion(tmp_path):
     )
     assert not captured["message_file"].exists()
     assert captured["command"][captured["command"].index("--model") + 1] == \
-        "deepseek/deepseek-flash"
+        "test-provider/test-model"
     assert captured["input"] is None
     lifecycle = [json.loads(line)["event"] for line in log.read_text().splitlines()]
     assert lifecycle == ["run.started", "run.completed"]
@@ -100,13 +100,13 @@ def test_invoke_job_model_overrides_agent_model(tmp_path):
 
     log = tmp_path / "runs.jsonl"
     invoke(root=tmp_path, spec=spec, skill="sample-skill", run_log=log,
-           command_runner=fake_runner, model="deepseek/deepseek-v4-pro")
+           command_runner=fake_runner, model="test-provider/test-large")
     assert captured["command"][captured["command"].index("--model") + 1] == \
-        "deepseek/deepseek-v4-pro"
-    assert captured["env"]["PAP_AGENT_MODEL"] == "deepseek/deepseek-v4-pro"
+        "test-provider/test-large"
+    assert captured["env"]["PAP_AGENT_MODEL"] == "test-provider/test-large"
     record = runs(log)[0]
-    assert record["model"] == "deepseek/deepseek-v4-pro"
-    assert record["provider"] == "deepseek"
+    assert record["model"] == "test-provider/test-large"
+    assert record["provider"] == "test-provider"
 
 
 def test_opencode_invocation_uses_stdin_json_and_runner_usage(tmp_path, monkeypatch):
@@ -337,7 +337,7 @@ spec:
   profile:
     name: sample
     source: profile
-  model: deepseek/deepseek-flash
+  model: test-provider/test-model
 """,
         encoding="utf-8",
     )
@@ -563,7 +563,7 @@ def test_an_agent_on_the_configured_route_omits_the_model_override(tmp_path):
     assert "--model" not in captured["command"]
     record = runs(tmp_path / "runs.jsonl")[0]
     # The run still records the model the spec asked for.
-    assert record["model"] == "deepseek/deepseek-flash"
+    assert record["model"] == "test-provider/test-model"
 
 
 def test_a_job_model_pins_an_agent_with_a_fallback_route(tmp_path):
@@ -597,7 +597,7 @@ def test_a_pinned_agent_still_receives_its_model(tmp_path):
 
     invoke(root=tmp_path, spec=spec, skill="sample-skill", run_log=tmp_path / "runs.jsonl",
            command_runner=fake_runner)
-    assert captured["command"][-2:] == ["--model", "deepseek/deepseek-flash"]
+    assert captured["command"][-2:] == ["--model", "test-provider/test-model"]
 
 
 def test_a_provider_refusal_is_recorded_as_non_retryable(tmp_path):
@@ -638,9 +638,9 @@ def test_provider_rejection_uses_declared_fallback_once_and_records_provenance(t
     manifest = make_agent(tmp_path)
     manifest.write_text(
         manifest.read_text(encoding="utf-8").replace(
-            "deepseek/deepseek-flash", "qwen/deepseek-v4.1-flash"
+            "test-provider/test-model", "test-provider/from-model"
         )
-        + "  provider_rejection_fallback: deepseek/deepseek-flash\n",
+        + "  provider_rejection_fallback: test-provider/test-model\n",
         encoding="utf-8",
     )
     spec = load_spec(manifest)
@@ -661,15 +661,15 @@ def test_provider_rejection_uses_declared_fallback_once_and_records_provenance(t
     assert result.status == "success"
     assert result.response == "fallback reply"
     assert len(commands) == 2
-    assert commands[1][-2:] == ["--model", "deepseek/deepseek-flash"]
+    assert commands[1][-2:] == ["--model", "test-provider/test-model"]
     events = [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()]
     assert [event["event"] for event in events] == ["run.started", "run.fallback", "run.completed"]
-    assert events[1]["from"] == "qwen/deepseek-v4.1-flash"
-    assert events[1]["to"] == "deepseek/deepseek-flash"
+    assert events[1]["from"] == "test-provider/from-model"
+    assert events[1]["to"] == "test-provider/test-model"
     record = runs(log)[0]
-    assert record["model"] == "deepseek/deepseek-flash"
-    assert record["provider"] == "deepseek"
-    assert record["fallback_from"] == "qwen/deepseek-v4.1-flash"
+    assert record["model"] == "test-provider/test-model"
+    assert record["provider"] == "test-provider"
+    assert record["fallback_from"] == "test-provider/from-model"
 
 
 def test_provider_rejection_without_declared_fallback_is_single_attempt(tmp_path):
@@ -693,9 +693,9 @@ def test_declared_fallback_does_not_run_for_ordinary_runner_failure(tmp_path):
     manifest = make_agent(tmp_path)
     manifest.write_text(
         manifest.read_text(encoding="utf-8").replace(
-            "deepseek/deepseek-flash", "qwen/deepseek-v4.1-flash"
+            "test-provider/test-model", "test-provider/from-model"
         )
-        + "  provider_rejection_fallback: deepseek/deepseek-flash\n",
+        + "  provider_rejection_fallback: test-provider/test-model\n",
         encoding="utf-8",
     )
     calls = []
@@ -712,9 +712,9 @@ def test_failed_provider_rejection_fallback_records_final_failure(tmp_path):
     manifest = make_agent(tmp_path)
     manifest.write_text(
         manifest.read_text(encoding="utf-8").replace(
-            "deepseek/deepseek-flash", "qwen/deepseek-v4.1-flash"
+            "test-provider/test-model", "test-provider/from-model"
         )
-        + "  provider_rejection_fallback: deepseek/deepseek-flash\n",
+        + "  provider_rejection_fallback: test-provider/test-model\n",
         encoding="utf-8",
     )
     calls = []
@@ -732,8 +732,8 @@ def test_failed_provider_rejection_fallback_records_final_failure(tmp_path):
     assert result.failure_kind == "runner"
     assert len(calls) == 2
     record = runs(tmp_path / "runs.jsonl")[0]
-    assert record["model"] == "deepseek/deepseek-flash"
-    assert record["fallback_from"] == "qwen/deepseek-v4.1-flash"
+    assert record["model"] == "test-provider/test-model"
+    assert record["fallback_from"] == "test-provider/from-model"
     assert record["retryable"] is True
 
 

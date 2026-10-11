@@ -124,7 +124,7 @@ Important fields:
   `summary`. Without `slug`, the quote text is inlined in the
   thread file. Refs are bundle-local: cross-bundle references must use
   actual IDs (e.g. `src_...`, `evt_...`, `qte_...`), not earlier refs.
-  For X posts (e.g. @justinsuntron) verbatim full text often has no
+  For X posts (e.g. `@someaccount`) verbatim full text often has no
   publicly indexed reprint — use the user's pasted original when provided,
   or clearly label multi-source-verified excerpts as 节选, never as 全文.
 - Reports require `mode`, `window_end`, `body`, and `significance`.

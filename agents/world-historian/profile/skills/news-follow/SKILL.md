@@ -46,9 +46,9 @@ engine variance.
 ## Preferred outlets and search order
 
 First read `config.yaml` from this profile directory and note the `sources`
-list. These are the user's preferred outlets (远川研究所矩阵、腾讯科技、新潮
-沉思录、36氪、量子位、机器之心、智能涌现、凤凰网) plus vetted RSS feeds.
-Check them before generic web search, in this order:
+list. These are the outlets configured for this deployment (personal watchlists
+belong in local agent state, not in tracked files). Check them before generic
+web search, in this order:
 
 1. `kind: rss` — entries are already ingested locally (see above); fetch the
    feed directly only if fresher data is needed.
@@ -120,7 +120,7 @@ in a follow update.
 
 ```bash
 "$PAP_ROOT/.venv/bin/python" \
-  agents/world-historian/runtime/cli.py roster
+  "$PAP_ROOT/agents/world-historian/runtime/cli.py" roster
 ```
 
 ## Priority lifecycle (tiered stepdown, then close)
@@ -205,14 +205,12 @@ single marker `NO_REPLY`. This includes runs whose only changes touch
 returns exactly `NO_REPLY`. A consumed lifecycle notice is the one exception
 that makes such a run user-facing (see「Lifecycle notices」). No work
 summary, no rejection notes, no Chinese「无变化」prose, nothing before or after.
-Any surrounding text makes it a normal delivery and spams the user (observed
-2026-09-01: a work-summary +
-`[SILENT]` response leaked to Feishu; OpenClaw only suppresses the exact token
-`NO_REPLY` — any other marker, including the legacy Hermes `[SILENT]`, is
-delivered as literal text, observed 2026-09-08 13:05).
+Any surrounding text makes it a normal delivery and spams the user: the
+runner suppresses only the exact token `NO_REPLY` — any other silence marker
+is delivered as literal text.
 - At least one `high`/`normal` thread gained a material event or claim
 correction, or a lifecycle notice was consumed — return one Chinese update,
-written as Feishu Markdown (the Feishu channel renders it), with exactly this
+written as Markdown for the configured delivery channel, with exactly this
 shape and nothing else:
 
 ```markdown
@@ -232,6 +230,6 @@ Formatting rules:
 1. 进展 — 每个有新进展的 `high`/`normal` thread 一条：加粗线程标题、一句话说明新增或修正的事件、有来源就附行内链接。不写检索过程、不写被排除的候选；`low`/`background` 绝不出现。标题里的 `<N> 条进展` 只数这些进展条，不含降级；没有进展时省略 `**进展**` 一节、计数写 `0 条进展`。
 2. 降级 — 每个被消费的 lifecycle 通知一条：加粗线程标题、`<旧档位> → <新档位|closed>`、括号里写原因（如 `3 天无新事件`）。降级只写在这里，绝不写进 `进展`，也不要有单独的降级前言。
 3. 追踪中 — 将上面 `roster` command 的 stdout 原样粘贴：不得由模型选择 emoji、不得重新加粗、不得重排、不得添加或删除行。三档 emoji 映射为 `🟥` high / `🟦` normal / `⬜` low。
-4. 保持紧凑：每个 thread 一行。Feishu 卡片渲染加粗、列表、链接、表情和空行——不要用表格，分节标签用加粗（`**进展**`）而不是 `#` 标题。
+4. 保持紧凑：每个 thread 一行。投递渠道的卡片渲染支持加粗、列表、链接、表情和空行——不要用表格，分节标签用加粗（`**进展**`）而不是 `#` 标题。
 5. 来源档位只写 `Level: <优先级>`：优先级取 invocation 结构化参数 `priority`，首字母大写（`Level: High` / `Level: Normal`；`low`/`background` 不会投递，若出现写 `Level: Low` / `Level: Background`）。不写 job 名、不译成中文、不加其他词。
 6. 绝不在消息前后加状态行或工作摘要：不要报告可选本地投影、lifecycle 检查及其结果，也不要写「无待处理通知」这类否定报告。消息只能是上面的结构，或在无可投递内容时恰好 `NO_REPLY`。

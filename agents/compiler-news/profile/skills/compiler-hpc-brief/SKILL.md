@@ -69,9 +69,11 @@ AI 编译器与高性能计算软件栈简报｜YYYY-MM-DD
 
 简报生成后，必须把与推送内容完全一致的正文归档到 Obsidian vault，并按 vault 同步 SOP 提交推送。只做归档，不改动简报内容本身，也不改动运行模型。
 
+本节命令依赖部署方在运行环境中导出的变量：`PAP_VAULT`（vault 根目录，必需）；`OBSIDIAN_BIN`（Obsidian CLI，缺省用 PATH 中的 `obsidian`）；`PAP_VAULT_SYNC_PYTHON` 与 `PAP_VAULT_SYNC_VERIFY_SCRIPT`（同步校验脚本及其解释器，可选）。`PAP_VAULT` 未配置时按「失败处理」报告，不要猜测其他路径。
+
 ### 归档文件
 
-- 路径：`/home/xingzeng/文档/Obsidian/Second_Brain/2Area/41 新闻及事件/AI Compiler/AI编译器简报-YYYY-MM-DD.md`（`YYYY-MM-DD` 为简报日期，Asia/Shanghai）。
+- 路径：`${PAP_VAULT:?未配置}/2Area/41 新闻及事件/AI Compiler/AI编译器简报-YYYY-MM-DD.md`（`PAP_VAULT` 为部署方设置的 Obsidian vault 根目录；`YYYY-MM-DD` 为简报日期，Asia/Shanghai；vault 内子路径按部署自己的目录结构调整）。
 - 同日已存在则覆盖更新（幂等），不得新建 `-2`、` (1)` 之类副本。
 - frontmatter 固定为下式；`model` 填本次实际运行模型（取自运行时上下文或 `agent.yaml` 的 `spec.model`），不得改写模型：
 
@@ -90,12 +92,12 @@ archived: YYYY-MM-DD
 
 ### 同步 SOP（以 vault 根 AGENTS.md 为准，按顺序执行）
 
-以下命令都在 vault 根目录 `/home/xingzeng/文档/Obsidian/Second_Brain` 下执行。
+以下命令都在 vault 根目录 `${PAP_VAULT:?未配置}` 下执行。
 
-1. 先同步拉取远端最新，等待约 20–25 秒：
+1. 先同步拉取远端最新，等待约 20–25 秒（`OBSIDIAN_BIN` 未设置时用 PATH 中的 `obsidian`；从 cron/服务运行时确认 `HOME` 指向桌面用户的主目录，否则 Obsidian CLI 找不到配置）：
 
    ```bash
-   HOME=/home/xingzeng /home/xingzeng/.local/bin/obsidian command id=remotely-save:start-sync
+   "${OBSIDIAN_BIN:-obsidian}" command id=remotely-save:start-sync
    ```
 
 2. 显式暂存本期归档文件，禁止 `git add .`：
@@ -112,20 +114,20 @@ archived: YYYY-MM-DD
    ```
 
 5. 推送：`git push origin main`。
-6. 再同步一次，把提交产物推到 COS：
+6. 再同步一次，把提交产物推到已配置的远端对象存储：
 
    ```bash
-   HOME=/home/xingzeng /home/xingzeng/.local/bin/obsidian command id=remotely-save:start-sync
+   "${OBSIDIAN_BIN:-obsidian}" command id=remotely-save:start-sync
    ```
 
-7. 校验同步（用装有 boto3 的本机解释器；这不是 Hermes 网关）：
+7. 校验同步（用装有对象存储 SDK 的解释器；这不是模型网关）。部署方需提供校验脚本路径与其解释器，未提供时跳过本步：
 
    ```bash
-   /home/xingzeng/.hermes/hermes-agent/venv/bin/python \
-     /home/xingzeng/.openclaw/workspace-feishu4/skills/obsidian-remotely-save-sync/scripts/verify_sync_diff.py
+   "${PAP_VAULT_SYNC_PYTHON:-python3}" \
+     "${PAP_VAULT_SYNC_VERIFY_SCRIPT:?未配置}/verify_sync_diff.py"
    ```
 
-   本期文件出现在「本地有但 COS 缺失」即未同步成功；按 `obsidian-remotely-save-sync` skill 处理（feishu3 可直传兜底，其他 profile 报告用户）。
+   本期文件出现在「本地有但远端缺失」即未同步成功；按部署方的对象存储同步 skill 处理（有直传兜底则直传，否则报告用户）。
 
 ### 失败处理
 

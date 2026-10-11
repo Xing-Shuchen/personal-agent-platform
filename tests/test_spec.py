@@ -61,12 +61,12 @@ def test_valid_spec(tmp_path: Path):
 def test_provider_rejection_fallback_requires_a_provider_model(tmp_path: Path):
     valid = VALID.replace(
         "      capabilities:",
-        "      provider_rejection_fallback: deepseek/deepseek-flash\n      capabilities:",
+        "      provider_rejection_fallback: test-provider/test-model\n      capabilities:",
     )
     path = write_agent(tmp_path / "valid", "test-agent", valid)
-    assert load_spec(path).provider_rejection_fallback == "deepseek/deepseek-flash"
+    assert load_spec(path).provider_rejection_fallback == "test-provider/test-model"
 
-    invalid = valid.replace("deepseek/deepseek-flash", "deepseek")
+    invalid = valid.replace("test-provider/test-model", "deepseek")
     path = write_agent(tmp_path / "invalid", "test-agent", invalid)
     with pytest.raises(SpecError, match="provider_rejection_fallback"):
         load_spec(path)
@@ -75,11 +75,11 @@ def test_provider_rejection_fallback_requires_a_provider_model(tmp_path: Path):
 def test_job_model_override(tmp_path: Path):
     body = VALID.replace(
         "            skill: test-skill",
-        "            skill: test-skill\n            model: deepseek/deepseek-v4-pro",
+        "            skill: test-skill\n            model: test-provider/test-large",
     )
     write_agent(tmp_path, "test-agent", body)
     spec = load_spec(tmp_path / "agents" / "test-agent" / "agent.yaml")
-    assert spec.jobs[0].model == "deepseek/deepseek-v4-pro"
+    assert spec.jobs[0].model == "test-provider/test-large"
 
 
 def test_job_notify_validation_and_loading(tmp_path: Path):

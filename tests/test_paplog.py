@@ -308,7 +308,7 @@ def test_rebuildable_run_and_model_projections(tmp_path: Path) -> None:
     ledger = Ledger(tmp_path)
     shared = {"execution": {"run_id": "run-1"}, "job": {"id": "compiler-news/daily"}, "agent": {"id": "compiler-news"}, "skill": {"id": "compiler-hpc-brief"}}
     ledger.emit({"event_name": "pap.run.started", **shared})
-    ledger.emit({"event_name": "pap.model.call", **shared, "attributes": {"provider": "deepseek", "requested_model": "v4", "input_tokens": 12, "output_tokens": 3, "cost.amount": 0.1, "cost.currency": "CNY", "cost.source": "provider-reported"}})
+    ledger.emit({"event_name": "pap.model.call", **shared, "attributes": {"provider": "test-provider", "requested_model": "test-model", "input_tokens": 12, "output_tokens": 3, "cost.amount": 0.1, "cost.currency": "CNY", "cost.source": "provider-reported"}})
     ledger.emit({"event_name": "pap.run.completed", **shared, "outcome": {"status": "ok"}})
     assert ledger.rebuild_index() == 3
     with ledger._connect() as con:
@@ -484,11 +484,11 @@ def test_artifacts_cli_includes_pap_and_historian_durable_artifacts(tmp_path: Pa
 
 def test_models_cli_aggregates_usage_and_cost(tmp_path: Path, capsys) -> None:
     ledger = Ledger(tmp_path)
-    shared = {"event_name": "pap.model.call", "attributes": {"provider": "deepseek", "requested_model": "deepseek/v4", "input_tokens": 10, "output_tokens": 4, "cost.amount": 0.2, "fallback_count": 1}}
+    shared = {"event_name": "pap.model.call", "attributes": {"provider": "test-provider", "requested_model": "test-provider/test-model", "input_tokens": 10, "output_tokens": 4, "cost.amount": 0.2, "fallback_count": 1}}
     ledger.emit(shared)
     ledger.emit({**shared, "attributes": {**shared["attributes"], "input_tokens": 3, "cost.amount": None}})
     assert paplog_main(["--directory", str(tmp_path), "models", "--json"]) == 0
-    assert json.loads(capsys.readouterr().out) == [{"provider": "deepseek", "model": "deepseek/v4", "calls": 2, "input_tokens": 13, "output_tokens": 8, "cost": 0.2, "unknown_cost": 1, "fallback_calls": 2}]
+    assert json.loads(capsys.readouterr().out) == [{"provider": "test-provider", "model": "test-provider/test-model", "calls": 2, "input_tokens": 13, "output_tokens": 8, "cost": 0.2, "unknown_cost": 1, "fallback_calls": 2}]
 
 
 def test_failures_cli_supports_run_filter(tmp_path: Path, capsys) -> None:

@@ -33,8 +33,8 @@ def session_payload(**overrides):
         "sessionId": "cb77ac79-47c6-4817-9ced-61eaac8354d1",
         "inputTokens": 106795,
         "outputTokens": 28800,
-        "model": "deepseek-flash",
-        "modelProvider": "deepseek",
+        "model": "test-model",
+        "modelProvider": "test-provider",
     }
     record.update(overrides)
     return json.dumps({"count": 1, "sessions": [record]})
@@ -117,8 +117,8 @@ def test_the_matching_session_is_read():
         "session_id": "cb77ac79-47c6-4817-9ced-61eaac8354d1",
         "input_tokens": 106795,
         "output_tokens": 28800,
-        "model": "deepseek-flash",
-        "provider": "deepseek",
+        "model": "test-model",
+        "provider": "test-provider",
     }
 
 
@@ -262,7 +262,7 @@ def test_both_surfaces_are_merged_into_one_record(tmp_path):
     assert probe["input_tokens"] == 106795
     assert probe["output_tokens"] == 28800
     assert probe["cost"] == 0.085265796
-    assert probe["provider"] == "deepseek"
+    assert probe["provider"] == "test-provider"
     assert probe["session_key"] == SESSION
     assert probe["source"] == "openclaw.sessions+openclaw.trajectory"
 

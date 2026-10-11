@@ -105,10 +105,10 @@ def test_group_clause_fallback_omits_comma(tmp_path: Path):
 
 
 def test_weak_but_unique_epub_match_keeps_review_and_uses_grounded_text(tmp_path: Path):
-    sentence = "帕森斯让大家注意到，在早期基督教时代就蕴含先驱思想。"
+    sentence = "测试学者让大家注意到，在早期工业时代就蕴含先驱思想。"
     index = EpubIndex(make_epub(tmp_path / "book.epub", [
         ("one.xhtml", sentence)], ["one.xhtml"]))
-    result = align_group("帕森斯让家注意到，在早期基督含先数思想。", index, {})
+    result = align_group("测试学者让家注意到，在早期工业含先数思想。", index, {})
     assert result["match_status"] == "needs_review"
     assert result["review_reasons"] == ["weak_similarity"]
     assert result["text_effective"] == sentence
@@ -116,18 +116,18 @@ def test_weak_but_unique_epub_match_keeps_review_and_uses_grounded_text(tmp_path
 
 
 def test_group_expansion_starts_at_marked_ocr_span(tmp_path: Path):
-    sentence = ("帕森斯区分了规范秩序和实际秩序。我们先来看实际秩序。"
-                "帕森斯所谓的实际秩序，意指最终不是刻意地形成的秩序。"
-                "在度假旺季时交通堵塞，是实际秩序的例子。")
+    sentence = ("测试学者区分了规范结构和实际结构。我们先来看实际结构。"
+                "测试学者所谓的实际结构，意指最终不是刻意地形成的结构。"
+                "在长假旺季时交通堵塞，是实际结构的例子。")
     index = EpubIndex(make_epub(tmp_path / "book.epub", [
         ("one.xhtml", sentence)], ["one.xhtml"]))
     ocr = sentence.replace("最终", "最61 终")
-    start = ocr.index("帕森斯所谓")
-    end = ocr.index("秩序。在度假") + len("秩序")
+    start = ocr.index("测试学者所谓")
+    end = ocr.index("结构。在长假") + len("秩序")
     result = align_group(ocr, index, {}, [start, end])
     assert result["epub_candidate"]["exact"] == sentence[
-        sentence.index("帕森斯所谓"):sentence.index("秩序。在度假") + len("秩序")]
-    assert result["epub_expanded_text"] == "帕森斯所谓的实际秩序，意指最终不是刻意地形成的秩序。"
+        sentence.index("测试学者所谓"):sentence.index("结构。在长假") + len("秩序")]
+    assert result["epub_expanded_text"] == "测试学者所谓的实际结构，意指最终不是刻意地形成的结构。"
 
 
 def test_auto_page_roi_excludes_facing_page_and_tabletop():
@@ -346,14 +346,14 @@ def test_review_contains_full_page_adjudication_and_export(tmp_path: Path):
     from bookscan.review import build_review
     run = tmp_path / "run"
     run.mkdir()
-    epub = tmp_path / "9787208171411.epub"
+    epub = tmp_path / "9780000000002.epub"
     epub.touch()
     epub.with_suffix(".metadata.json").write_text(json.dumps({
-        "isbn13": "9787208171411", "title": "社会理论二十讲",
-        "authors": ["汉斯·约阿斯"], "translator": "郑作彧",
-        "publisher": "上海人民出版社", "publication_date": "2021-09-01",
+        "isbn13": "9780000000002", "title": "合成测试书目",
+        "authors": ["合成作者甲"], "translator": "合成译者",
+        "publisher": "合成出版社", "publication_date": "2021-09-01",
         "original_title": "Sozialtheorie", "source_name": "豆瓣读书 ISBN 书目",
-        "source_url": "https://book.douban.com/subject/35596074/",
+        "source_url": "https://example.test/synthetic-book",
     }, ensure_ascii=False), encoding="utf-8")
     for folder in ("pages", "overlays"):
         (run / folder).mkdir()
@@ -381,18 +381,18 @@ def test_review_contains_full_page_adjudication_and_export(tmp_path: Path):
     assert "导入核验草稿" in html
     assert "下载完成审核包" in html
     assert "missingAnnotation" in html
-    assert "社会理论二十讲" in html
-    assert "ISBN：9787208171411" in html
-    assert "出版社：上海人民出版社" in html
+    assert "合成测试书目" in html
+    assert "ISBN：9780000000002" in html
+    assert "出版社：合成出版社" in html
 
 
 def test_review_shows_sourced_isbn_metadata(tmp_path: Path):
     from bookscan.review import _isbn_metadata
-    epub = tmp_path / "9787208171411.epub"
+    epub = tmp_path / "9780000000002.epub"
     epub.touch()
     epub.with_suffix(".metadata.json").write_text(json.dumps({
-        "isbn13": "9787208171411", "authors": ["汉斯·约阿斯"],
-        "source_url": "https://book.douban.com/subject/35596074/",
+        "isbn13": "9780000000002", "authors": ["合成作者甲"],
+        "source_url": "https://example.test/synthetic-book",
     }, ensure_ascii=False), encoding="utf-8")
-    assert _isbn_metadata({"config": {"epub": str(epub)}})["authors"] == ["汉斯·约阿斯"]
+    assert _isbn_metadata({"config": {"epub": str(epub)}})["authors"] == ["合成作者甲"]
     assert _isbn_metadata({"config": {"epub": str(tmp_path / "other.epub")}}) == {}

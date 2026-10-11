@@ -8,9 +8,7 @@ description: Capture a user-named external development or URL into the World His
 Treat the input as a seed for an ongoing thread, not as an article title.
 
 1. Read `config.yaml` from this profile directory for the preferred `sources`
-   list. When the seed maps to one of those outlets (远川研究所矩阵、腾讯科技、
-   新潮沉思录、36氪、量子位、机器之心、智能涌现、凤凰网, or a vetted RSS
-   feed), start from it: `kind: rss` feeds fetch directly, `kind: site` outlets
+   list. When the seed maps to one of those configured outlets, start from it: `kind: rss` feeds fetch directly, `kind: site` outlets
    are browsed, `kind: wechat` outlets are searched via `site:mp.weixin.qq.com`.
 2. Search for the current state of the event and locate at least one primary or
    authoritative source when one exists. Keep secondary reporting only when it

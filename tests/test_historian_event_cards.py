@@ -286,8 +286,8 @@ def test_the_runtime_records_the_model_pap_declares(tmp_path):
     card = harness.seal(harness.card(fixed, revision=1, content_hash=fixed["event_ref"]["content_hash"]))
     assert harness.run("complete", "r1", payload={"skill": "historian-event-card", "args": {}},
                        model_reply=json.dumps(card),
-                       extra_env={"PAP_AGENT_MODEL": "deepseek/deepseek-flash"})["status"] == "success"
+                       extra_env={"PAP_AGENT_MODEL": "test-provider/test-model"})["status"] == "success"
 
     provenance = _stored_records(harness.store)[0]["provenance"]
-    assert provenance["model"] == "deepseek/deepseek-flash"
-    assert provenance["provider"] == "deepseek"
+    assert provenance["model"] == "test-provider/test-model"
+    assert provenance["provider"] == "test-provider"
