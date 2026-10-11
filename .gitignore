@@ -4,7 +4,9 @@ __pycache__/
 *.egg-info/
 .venv/
 .pytest_cache/
-# New local inputs remain ignored; the 23 reviewed sample inputs are tracked explicitly.
+# New local inputs remain ignored. Bookscan sample inputs are machine-local;
+# nothing under local-processing/ except config.yaml and requirements.lock is
+# tracked.
 /local-processing/*.jpg
 /local-processing/*.epub
 /local-processing/models/
@@ -34,8 +36,11 @@ agents/*/profile/var/
 *.sqlite-wal
 *.sqlite-shm
 /obsidian/world-historian-dashboard/node_modules/
-agent-office-floor/node_modules/
+# Any nested dependency cache (apps/web, packages/*, ...), not just the root one.
+node_modules/
 .DS_Store
+# Created by the skill with the user's absolute install path (see its SKILL.md).
+skills/avision-bookscan/local-root.txt
 
 # Generated run artifacts
 agents/*/runtime/reflect-*.json
