@@ -5,7 +5,7 @@ import signal
 import subprocess
 from pathlib import Path
 
-from pap.run import OPENCLAW_EMPTY_FINALIZATION_FALLBACK, _opencode_output, _prompt, invoke, is_retryable, new_run_id, provider_rejection, runs
+from pap.run import OPENCLAW_EMPTY_FINALIZATION_FALLBACK, OPENCLAW_PROMPT_ENV_KEYS, _opencode_output, _prompt, invoke, is_retryable, new_run_id, provider_rejection, runs
 from pap.spec import load_spec
 
 
@@ -33,6 +33,33 @@ spec:
         encoding="utf-8",
     )
     return manifest
+
+
+def test_openclaw_prompt_injects_only_exported_path_values(monkeypatch):
+    for key in OPENCLAW_PROMPT_ENV_KEYS:
+        monkeypatch.delenv(key, raising=False)
+    monkeypatch.setenv("PAP_VAULT", "/synthetic/vault")
+    monkeypatch.setenv("OBSIDIAN_BIN", "/synthetic/bin/obsidian cli")
+    monkeypatch.setenv("WECHAT_KEYS", "private-wechat-value")
+    monkeypatch.setenv("SERVICE_TOKEN", "private-token-value")
+
+    prompt = _prompt("sample-skill", "# Test", "seed", {}, "openclaw")
+    assert prompt.startswith("Runtime environment (deployment-provided):\n")
+    assert "PAP_VAULT=/synthetic/vault\n" in prompt
+    assert "OBSIDIAN_BIN='/synthetic/bin/obsidian cli'" in prompt
+    assert "PAP_ROOT=" not in prompt
+    assert "PAP_PERSONAL_INPUTS=" not in prompt
+    assert "WECHAT_KEYS" not in prompt and "private-wechat-value" not in prompt
+    assert "SERVICE_TOKEN" not in prompt and "private-token-value" not in prompt
+    assert "Runtime environment (deployment-provided)" not in _prompt(
+        "sample-skill", "# Test", "seed", {}, "codex")
+
+
+def test_openclaw_prompt_without_exported_paths_is_unchanged(monkeypatch):
+    for key in OPENCLAW_PROMPT_ENV_KEYS:
+        monkeypatch.delenv(key, raising=False)
+    expected = _prompt("sample-skill", "# Test", "seed", {})
+    assert _prompt("sample-skill", "# Test", "seed", {}, "openclaw") == expected
 
 
 def test_invoke_records_start_and_completion(tmp_path):
@@ -70,6 +97,7 @@ def test_invoke_records_start_and_completion(tmp_path):
         (tmp_path / "agents/sample/profile/skills/sample-skill/SKILL.md").read_text(encoding="utf-8"),
         "seed",
         {"priority": "high"},
+        "openclaw",
     )
     assert not captured["message_file"].exists()
     assert captured["command"][captured["command"].index("--model") + 1] == \
@@ -80,6 +108,21 @@ def test_invoke_records_start_and_completion(tmp_path):
     merged = runs(log)
     assert merged[0]["run_id"] == result.run_id
     assert merged[0]["usage"] == {}
+
+
+def test_invoke_passes_exported_paths_to_openclaw_message(tmp_path, monkeypatch):
+    spec = load_spec(make_agent(tmp_path))
+    monkeypatch.setenv("PAP_VAULT", "/synthetic/vault")
+    captured = {}
+
+    def fake_runner(command, **kwargs):
+        message_file = Path(command[command.index("--message-file") + 1])
+        captured["message"] = message_file.read_text(encoding="utf-8")
+        return subprocess.CompletedProcess(command, 0, stdout="done", stderr="")
+
+    invoke(root=tmp_path, spec=spec, skill="sample-skill", run_log=tmp_path / "runs.jsonl",
+           runner_backend="openclaw", command_runner=fake_runner)
+    assert "PAP_VAULT=/synthetic/vault\n" in captured["message"]
 
 
 def test_new_run_id_is_a_sortable_ulid():

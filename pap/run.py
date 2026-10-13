@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import shlex
 import shutil
 import subprocess
 import tempfile
@@ -22,6 +23,14 @@ from paplog import observe as paplog
 from paplog.core import git_provenance, node_id, span_id, trace_id, ulid
 
 DEFAULT_RUN_LOG = Path("var/state/runs.jsonl")
+OPENCLAW_PROMPT_ENV_KEYS = (
+    "PAP_VAULT",
+    "PAP_PERSONAL_INPUTS",
+    "PAP_ROOT",
+    "OBSIDIAN_BIN",
+    "PAP_VAULT_SYNC_PYTHON",
+    "PAP_VAULT_SYNC_VERIFY_SCRIPT",
+)
 
 # OpenClaw emits this text only after a tool-using turn settles without any
 # assistant-visible answer and its own two tool-free finalization attempts also
@@ -225,7 +234,8 @@ def _model_provider(model: str | None) -> tuple[str | None, str | None]:
     return identifier, (provider.strip() or None)
 
 
-def _prompt(skill: str, skill_text: str, input_text: str, args: dict[str, Any]) -> str:
+def _prompt(skill: str, skill_text: str, input_text: str, args: dict[str, Any],
+            runner_backend: str | None = None) -> str:
     parts = [
         f"Run the '{skill}' skill exactly as written.",
         "Trusted profile skill instructions follow:",
@@ -235,6 +245,14 @@ def _prompt(skill: str, skill_text: str, input_text: str, args: dict[str, Any]) 
     ]
     if input_text:
         parts.extend(("Invocation input:", input_text))
+    if runner_backend == "openclaw":
+        exported = [f"{key}={shlex.quote(os.environ[key])}"
+                    for key in OPENCLAW_PROMPT_ENV_KEYS if key in os.environ]
+        if exported:
+            parts.insert(0, "Runtime environment (deployment-provided):\n"
+                         "These are the actual values exported by the deployment. "
+                         "Use them for skill ${VAR} references and export them in the session shell "
+                         "before running skill commands.\n" + "\n".join(exported))
     return "\n\n".join(parts)
 
 
@@ -533,7 +551,7 @@ def invoke(
     tmp_path: str | None = None
     if runner_backend != "command":
         with tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".md", delete=False) as tmp_file:
-            tmp_file.write(_prompt(skill, skill_text, input_text, args))
+            tmp_file.write(_prompt(skill, skill_text, input_text, args, runner_backend))
             tmp_path = tmp_file.name
     try:
         if error:

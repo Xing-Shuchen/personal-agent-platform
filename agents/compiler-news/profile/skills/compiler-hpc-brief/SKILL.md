@@ -69,7 +69,7 @@ AI 编译器与高性能计算软件栈简报｜YYYY-MM-DD
 
 简报生成后，必须把与推送内容完全一致的正文归档到 Obsidian vault，并按 vault 同步 SOP 提交推送。只做归档，不改动简报内容本身，也不改动运行模型。
 
-本节命令依赖部署方在运行环境中导出的变量：`PAP_VAULT`（vault 根目录，必需）；`OBSIDIAN_BIN`（Obsidian CLI，缺省用 PATH 中的 `obsidian`）；`PAP_VAULT_SYNC_PYTHON` 与 `PAP_VAULT_SYNC_VERIFY_SCRIPT`（同步校验脚本及其解释器，可选）。`PAP_VAULT` 未配置时按「失败处理」报告，不要猜测其他路径。
+本节命令依赖部署方在运行环境中导出、或由 PAP 注入的 `Runtime environment (deployment-provided)` 段提供的变量：`PAP_VAULT`（vault 根目录，必需）；`OBSIDIAN_BIN`（Obsidian CLI，缺省用 PATH 中的 `obsidian`）；`PAP_VAULT_SYNC_PYTHON` 与 `PAP_VAULT_SYNC_VERIFY_SCRIPT`（同步校验脚本及其解释器，可选）。若变量仅由注入段提供，先按该段的值在会话 shell 中导出。两处都没有 `PAP_VAULT` 时按「失败处理」报告，不要猜测其他路径。
 
 ### 归档文件
 
