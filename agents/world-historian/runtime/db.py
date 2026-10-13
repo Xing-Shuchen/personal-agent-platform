@@ -222,6 +222,13 @@ def _ensure_entity(conn: sqlite3.Connection, name: str, kind: str, now: str,
     entity_id = _stable("ent", name)
     row = conn.execute("SELECT id, kind FROM entities WHERE id = ?", (entity_id,)).fetchone()
     if row is None:
+        # Legacy rows may predate the name-only stable-id scheme (ids derived
+        # from name+kind). Resolve by exact name before inserting, or the
+        # insert collides on UNIQUE(entities.name) and rolls back the bundle.
+        row = conn.execute("SELECT id, kind FROM entities WHERE name = ?", (name,)).fetchone()
+        if row is not None:
+            entity_id = str(row["id"])
+    if row is None:
         conn.execute(
             "INSERT INTO entities(id, name, kind, aliases_json, created_at) "
             "VALUES (?, ?, ?, ?, ?)",
