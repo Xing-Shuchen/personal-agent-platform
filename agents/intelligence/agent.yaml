@@ -19,7 +19,7 @@ spec:
     desired_jobs:
       - name: intelligence-pulse
         enabled: true
-        schedule: "10 1,7,13,19,22 * * *"
+        schedule: "10 1,4,7,10,13,16,19,22 * * *"
         skill: intelligence-brief
         runtime: cognition
         attach_to_session: true
