@@ -31,10 +31,14 @@ agents/*/profile/var/
 # Local secrets / editor
 .env
 .env.*
+# Local GitHub CLI state includes a device identifier.
+/.local/state/gh/
 *.sqlite
 *.sqlite3
 *.sqlite-wal
 *.sqlite-shm
+# Migration locks are runtime coordination files.
+*.sqlite.migrate.lock
 /obsidian/world-historian-dashboard/node_modules/
 # Any nested dependency cache (apps/web, packages/*, ...), not just the root one.
 node_modules/
