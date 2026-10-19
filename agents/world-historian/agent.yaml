@@ -122,8 +122,8 @@ spec:
         command:
           - bash
           - scripts/weibo-archive-daily.sh
-      - name: zhihu-collections-weekly
-        schedule: "0 10 * * 0"
+      - name: zhihu-collections-daily
+        schedule: "0 3 * * *"
         timezone: Asia/Shanghai
         skill: zhihu-collections
         args: {}
