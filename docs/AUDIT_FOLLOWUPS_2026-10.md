@@ -10,22 +10,6 @@
 
 ## P1（影响可靠性/合规，建议尽快）
 
-### 1. cognition 首次索引构建可能超出 runtime prepare 超时
-- **影响**：`PAP_RUNTIME_TIMEOUT_SECONDS` 默认 120s；大 vault 首建（逐 unit 调用
-  `embedding()`，transformer 可用时还要加载/下载模型）可能永远无法在适配器内完成，
-  且构建在单事务里，超时即全部回滚、无进度累积 → intelligence/serendipity 两 agent
-  每天 ~10 个 slot 反复失败（`timeout` 可重试但每个 slot 只重试 3 次）。
-- **建议**（任选其一或组合）：
-  1. 部署文档明确：启用 cognition 类 agent 前先用 CLI 预建索引
-     （`pap cognition index`，无超时限制）；
-  2. 适配器 prepare 前检测「索引为空且文档数 > 阈值」→ 直接返回 `not_ready`
-     并提示先运行 CLI 预建；
-  3. `Index.build` 分批提交（每 N 个文档一个事务），超时至少保留部分进度；
-  4. transformer 模型加载移到 `BEGIN IMMEDIATE` 之前（锁不再覆盖模型下载）。
-- **工作量**：方案 1+2 为 S；3+4 为 M。**风险**：低（1/2 不改核心逻辑）。
-- **验收**：5000+ 文档的合成 vault 上，适配器路径要么在超时内完成、要么干净地
-  `not_ready`；有对应测试。
-
 ### 2. librarian `visual_checks` 死代码与契约失实
 - **影响**：`gateway_review.py` 恒返回空 `visual_checks`；`gateway_review_finalize.py`
   的 `visual_negative_no_marks` 分支不可达；`profile/SOUL.md` 却指导模型解释该字段，
@@ -159,6 +143,20 @@
 ---
 
 ## 已完成（2026-10 审计轮）
+
+### P1#1. cognition 索引构建移出 runtime prepare/反馈路径
+
+- **原影响**：`PAP_RUNTIME_TIMEOUT_SECONDS` 默认 120s；大 vault 的同步索引构建
+  可能超时且事务回滚，导致 intelligence/serendipity 的 slot 反复失败。
+- **已实现方案 1+2**：部署文档明确用 `PAP_VAULT` 和 `pap cognition index` 在 runtime
+  之外预建/刷新索引（可用定时 command job）。两适配器的 prepare 与模型后反馈均移除
+  `Index.build`；prepare 对索引缺失、零有效文档或零有效 evidence 返回 `not_ready`
+  并提示 CLI 预建，不再按 vault 文档数设阈值；保留缺失 vault 的就绪提示。反馈直接
+  调用 `complete_retrieval`，索引不可用时跳过反馈，保留模型回复与既有 JSON 契约。
+- **有意不采用方案 3+4**：不改 `Index.build` 的事务分批方式，也不移动 transformer
+  模型加载位置；runtime 不再构建索引，无需为本项修改核心索引逻辑。
+- **回归验证**：`tests/test_cognition_runtime.py` 使用临时 vault/索引覆盖两适配器的
+  缺失/空索引、已有索引、缺失 vault 与反馈失败；禁止 runtime 调用 `Index.build`。
 
 见提交：`45f1c5a`（取消跟踪）、`5a87476`（core）、`c3d073f`（world-historian）、
 `23b012b`（librarian）、`8e736b2`（cognition/paplog/historian）、`45b6704`（模板
