@@ -1,0 +1,73 @@
+--- a/dist/agent-tools.before-tool-call-iy-Keqfw.mjs
++++ b/dist/agent-tools.before-tool-call-iy-Keqfw.mjs
+@@ -1592,7 +1592,7 @@
+ 	schedulePendingConfirmationExpiry(scopeKey, state, now);
+ 	return {
+ 		allowed: false,
+-		reason: `VOICE_CONFIRMATION_REQUIRED:${confirmation.confirmationId} The high-impact voice action "${params.toolName}" was not executed. ` + (observation ? "Ask the user to say \"yes\" to confirm this action or \"no\" to cancel it. A later native delegation carries the confirmation; do not add confirmationId to action tool arguments." : "Ask the user for explicit spoken confirmation, then call openclaw_agent_consult again with this confirmationId.")
++		reason: `VOICE_CONFIRMATION_REQUIRED:${confirmation.confirmationId} The high-impact voice action "${params.toolName}" was not executed. ` + (observation ? "Ask for confirmation in the user's language: English yes/confirm or Chinese 是/确认 confirms this action; English no/cancel or Chinese 否/取消 cancels it. A later native delegation carries the confirmation; do not add confirmationId to action tool arguments." : "Ask the user for explicit spoken confirmation, then call openclaw_agent_consult again with this confirmationId.")
+ 	};
+ }
+ /** Check whether one exact high-impact action is approved without consuming its grant. */
+@@ -1638,7 +1638,7 @@
+ 			if (observation.size === 0) return;
+ 			const pending = confirmationScopes.get(scopeKey)?.pending;
+ 			if (pending && observation.get(pending.fingerprint) === pending.confirmationId && pending.expiresAt >= Date.now()) {
+-				const speech = "One pending action has not run. Say \"yes\" to confirm that action or \"no\" to cancel it.";
++				const speech = "One pending action has not run. Say \"yes\" or \"确认\" to confirm that action, or \"no\" or \"取消\" to cancel it.";
+ 				return options?.includeConfirmationId ? `VOICE_CONFIRMATION_REQUIRED:${pending.confirmationId} ${speech} After spoken confirmation, call openclaw_agent_consult with this confirmationId.` : speech;
+ 			}
+ 			return "An action in that request was not run because its spoken confirmation is no longer current. Make a new request if you still want it.";
+@@ -1652,14 +1652,18 @@
+ 		}
+ 	};
+ }
+-const REFUSAL_PATTERN = /\b(no|don't|do not|cancel|stop|never mind)\b/;
++const REFUSAL_PATTERN = /\b(no|don't|do not|cancel|stop|never mind)\b|取消|停止|停下|算了|不要|先别|先別|别(?:保存|执行|确认|提交|推送|同步)|別(?:保存|執行|確認|提交|推送|同步)|不(?:用)?(?:是|确认|確認|同意|批准|保存|执行|執行|继续|繼續|提交|推送|同步)|^(?:不|否|不行|不了|不用|不用了)(?:\s|$)/;
+ function normalizeUtterance(text) {
+-	return text.trim().toLowerCase().replace(/[‘’ʼ]/g, "'").replace(/[,;:.!?]+/g, "").replace(/\s+/g, " ");
++	return text.normalize("NFKC").trim().toLowerCase().replace(/[‘’ʼ]/g, "'").replace(/[,;:.!，；：。！、]+/g, " ").replace(/\s+/g, " ").trim();
+ }
+ function isExplicitAffirmation(text) {
+ 	const normalized = normalizeUtterance(text);
+ 	if (REFUSAL_PATTERN.test(normalized)) return false;
+-	return /^(yes|yes do it|do it|confirm|confirmed|go ahead|proceed|send it|make the change|restart it)$/.test(normalized);
++	if (/^(yes|yes do it|do it|confirm|confirmed|go ahead|proceed|send it|make the change|restart it)$/.test(normalized)) return true;
++	// Whole-utterance matching: questions, quotations, conditions and new tasks
++	// cannot authorize a pending action. Repeated assent still grants only that
++	// exact action once through the existing fingerprint, run and expiry checks.
++	return /^(?:(?:是的|是|好的|好|可以|确认|確認|保存|执行|執行|继续|繼續|同意|批准|提交|推送|同步|都确认|都確認|全部确认|全部確認|所有都确认|所有都確認)\s*)+(?:(?:不用再问了|不用再問了)\s*(?:(?:确认|確認|保存|都确认|都確認)\s*)*)?$/.test(normalized);
+ }
+ function hasLaterUserUtterance(state) {
+ 	return Boolean(state.pending && state.recentUtterance && state.recentUtterance.timestamp > state.pending.createdAt);
+--- a/dist/realtime-quicksilver-delegation-controller-DIDxDLgz.mjs
++++ b/dist/realtime-quicksilver-delegation-controller-DIDxDLgz.mjs
+@@ -1,7 +1,6 @@
+ import { c as readErrorName, i as extractErrorCode, u as toErrorObject } from "./error-coercion-CvJK4lmH.mjs";
+ import { r as truncateUtf16Safe } from "./utf16-slice-D_ngcYKd.mjs";
+ import { n as rawDataToString } from "./ws-BdD3UP1C.mjs";
+-import { o as buildRealtimeVoiceAgentControlSpeechMessage } from "./agent-run-control-shared-HQwazRP4.mjs";
+ import "./realtime-voice-provider-BV3-O7oZ.mjs";
+ import { r as isOpenAIGptLiveApiModel } from "./realtime-quicksilver-HjMjNxOa.mjs";
+ import { t as OpenAILiveDelegationQueue } from "./realtime-live-delegation-queue-uq4IZI5i.mjs";
+@@ -273,7 +272,7 @@
+ 		let failed = false;
+ 		const runner = this.options.runAgentConsult;
+ 		try {
+-			if (this.options.handleDelegationInput) this.sendSessionContext(buildRealtimeVoiceAgentControlSpeechMessage("I’ll check that request."), "speakable");
++			// Delegation admission is silent; only the result belongs on the speech channel.
+ 			const result = await runner({
+ 				prompt: delegation.prompt,
+ 				signal,
+--- a/dist/realtime-quicksilver-instructions-DcZHzxQd.mjs
++++ b/dist/realtime-quicksilver-instructions-DcZHzxQd.mjs
+@@ -3,7 +3,8 @@
+ const OPENAI_QUICKSILVER_DELEGATION_INSTRUCTIONS = `You are OpenClaw's realtime voice layer. You have no tools of your own.
+ Delegate any request that requires real work, reasoning, current information, or actions to the client through a delegation.
+ Delegate each user request once and wait for its result. New user follow-ups, corrections, and explicit retries are new requests. Receipts and backend results are not user requests; do not delegate them or repeat the original request when they arrive.
+-Keep the conversation natural while delegated work runs.`;
++While delegated work runs, wait silently unless the user speaks again. Do not announce that you are checking, processing, or delegating a request.
++Internal directions are not spoken content. Speak only the user-facing result, preserving which actions completed and which still need confirmation. Do not describe a pending publish or sync as an unsaved local file.`;
+ const OPENAI_QUICKSILVER_CHANNEL_INSTRUCTIONS = `Context on the commentary channel is silent background. You may use it, but never read it aloud.
+ Context on the speakable channel is your answer to deliver naturally in your own words. Never mention the channel or the delegation.`;
+ const OPENAI_QUICKSILVER_HOST_CONTROL_INSTRUCTIONS = `Delegate status, cancellation, redirects, and follow-up requests to the client using the caller's request, even while another delegation is active.

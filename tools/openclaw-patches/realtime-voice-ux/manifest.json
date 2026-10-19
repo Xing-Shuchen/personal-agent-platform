@@ -1,0 +1,17 @@
+{
+  "version": "2026.10.3",
+  "files": {
+    "agent-tools.before-tool-call-iy-Keqfw.mjs": {
+      "original": "b53fdb3a9733314d63f4ab983b073b9ec855beb448e7f580cf763573f0c5877f",
+      "patched": "530f268db318327dd80dd46aac439e0948ef841e5cd13b660cc71e6f0241253d"
+    },
+    "realtime-quicksilver-delegation-controller-DIDxDLgz.mjs": {
+      "original": "e8f7a18e033b6a4cd64f52ef435bd1492d36ba15f741effc5e10f136b3157f9c",
+      "patched": "6fdf43fd781452e04156f4f3aad99c778a463024bbcbcc08e9d678c4e64b849a"
+    },
+    "realtime-quicksilver-instructions-DcZHzxQd.mjs": {
+      "original": "be5dd45e0c6b96f524a8ea4fd7cd83d0de135ea7bd0ea6f4bc98bdd3a35be129",
+      "patched": "b0c225fa2edc00067f3646aac7841c290e245cd58e3c670e2c32ce45a3ef30f5"
+    }
+  }
+}
