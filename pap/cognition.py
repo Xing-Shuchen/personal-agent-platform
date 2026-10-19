@@ -264,7 +264,9 @@ class Index:
     @_observed_read.__func__
     def status(self) -> dict[str, Any]:
         generation = self.complete_generation()
-        return {"index_path": str(self.path), "generation": generation, "documents": self.db.execute("SELECT count(*) FROM documents WHERE deleted=0").fetchone()[0], "evidence_units": self.db.execute("SELECT count(*) FROM evidence_units WHERE active=1").fetchone()[0], "fts": self.db.execute("SELECT count(*) FROM evidence_fts").fetchone()[0], "failed_generations": self.db.execute("SELECT count(*) FROM index_generations WHERE status='FAILED'").fetchone()[0], "versions": {"schema": SCHEMA_VERSION, "scanner": SCANNER_VERSION, "segmenter": SEGMENTER_VERSION, "provenance_rules": PROVENANCE_RULES_VERSION}}
+        row = self.db.execute("SELECT counts_json FROM index_generations WHERE generation_id=?", (generation,)).fetchone()
+        counts = json.loads(row[0]) if row else {}
+        return {"index_path": str(self.path), "generation": generation, "documents": self.db.execute("SELECT count(*) FROM documents WHERE deleted=0").fetchone()[0], "evidence_units": self.db.execute("SELECT count(*) FROM evidence_units WHERE active=1").fetchone()[0], "fts": self.db.execute("SELECT count(*) FROM evidence_fts").fetchone()[0], "pruned_units": counts.get("pruned_units", 0), "pruned_revisions": counts.get("pruned_revisions", 0), "failed_generations": self.db.execute("SELECT count(*) FROM index_generations WHERE status='FAILED'").fetchone()[0], "versions": {"schema": SCHEMA_VERSION, "scanner": SCANNER_VERSION, "segmenter": SEGMENTER_VERSION, "provenance_rules": PROVENANCE_RULES_VERSION}}
 
     def _document_id(self, vault: Path, path: str, intrinsic: str | None, content_hash: str) -> str:
         row = self.db.execute("SELECT document_id FROM documents WHERE current_path=?", (path,)).fetchone()
@@ -333,14 +335,13 @@ class Index:
                 # for every source-material file attached to that Thread.
                 intrinsic = next((f"{k}:{meta[k]}" for k in ("id", "source_id", "yinxiang_guid", "zotero-key", "event_id", "thread_id") if meta.get(k)), None)
                 doc_id = self._document_id(vault, path, intrinsic, content_hash); seen.add(doc_id)
-                old = self.db.execute("SELECT content_hash,current_revision FROM documents WHERE document_id=?", (doc_id,)).fetchone()
-                if old and old["content_hash"] == content_hash:
+                old = self.db.execute("SELECT content_hash,current_revision,deleted FROM documents WHERE document_id=?", (doc_id,)).fetchone()
+                if old and not old["deleted"] and old["content_hash"] == content_hash:
                     self.db.execute("UPDATE documents SET current_path=?,deleted=0,file_mtime=?,generation_id=? WHERE document_id=?", (path, after.st_mtime, generation, doc_id)); skipped += 1; continue
                 rev = (old["current_revision"] + 1) if old else 1; c = classify(path, meta, body); ts = {k: timestamp(meta.get(k), "frontmatter") for k in ("occurred_at","recorded_at","created","published_at","observed_at","updated_at")}; ts["indexed_at"] = timestamp(now(), "system"); ts["file_mtime"] = timestamp(datetime.fromtimestamp(after.st_mtime, timezone.utc).isoformat(), "filesystem")
                 self.db.execute("INSERT INTO documents(document_id,current_path,source_type,intrinsic_id,content_hash,normalized_hash,current_revision,deleted,metadata_json,timestamps_json,file_mtime,generation_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(document_id) DO UPDATE SET current_path=excluded.current_path,source_type=excluded.source_type,intrinsic_id=excluded.intrinsic_id,content_hash=excluded.content_hash,normalized_hash=excluded.normalized_hash,current_revision=excluded.current_revision,deleted=0,metadata_json=excluded.metadata_json,timestamps_json=excluded.timestamps_json,file_mtime=excluded.file_mtime,generation_id=excluded.generation_id", (doc_id,path,c["source_type"],intrinsic,content_hash,normalized_hash,rev,0,json.dumps(meta,default=str,ensure_ascii=False),json.dumps(ts,ensure_ascii=False),after.st_mtime,generation))
                 self.db.execute("INSERT OR REPLACE INTO document_revisions VALUES(?,?,?,?,?,?)", (doc_id,rev,content_hash,normalized_hash,now(),generation))
-                old_ids = [r[0] for r in self.db.execute("SELECT evidence_id FROM evidence_units WHERE document_id=? AND active=1", (doc_id,))]; self.db.execute("UPDATE evidence_units SET active=0 WHERE document_id=?", (doc_id,));
-                if old_ids: self.db.executemany("DELETE FROM evidence_fts WHERE evidence_id=?", [(x,) for x in old_ids])
+                self.db.execute("UPDATE evidence_units SET active=0 WHERE document_id=?", (doc_id,))
                 for unit in segments(body, base):
                     if not normalize(unit.text): continue
                     unit_c = typed_unit(path, meta, unit, c)
@@ -362,10 +363,9 @@ class Index:
                 self.db.execute("UPDATE documents SET deleted=1 WHERE deleted=0 AND document_id NOT IN (SELECT value FROM json_each(?))", (json.dumps(sorted(seen)),))
             else:
                 self.db.execute("UPDATE documents SET deleted=1 WHERE deleted=0")
-            self.db.execute("DELETE FROM evidence_fts WHERE evidence_id IN (SELECT evidence_id FROM evidence_units WHERE document_id IN (SELECT document_id FROM documents WHERE deleted=1))")
-            self.db.execute("UPDATE evidence_units SET active=0 WHERE document_id IN (SELECT document_id FROM documents WHERE deleted=1)")
+            pruned = self._prune_superseded()
             self._ensure_embeddings()
-            counts = {"candidates":len(files),"skipped":skipped,"failed":failed,"documents":len(seen),"evidence":self.db.execute("SELECT count(*) FROM evidence_units WHERE active=1").fetchone()[0]}
+            counts = {"candidates":len(files),"skipped":skipped,"failed":failed,"documents":len(seen),"evidence":self.db.execute("SELECT count(*) FROM evidence_units WHERE active=1").fetchone()[0],**pruned}
             self.db.execute("UPDATE index_generations SET status='COMPLETE',completed_at=?,counts_json=? WHERE generation_id=?", (now(),json.dumps(counts),generation)); self.db.commit(); return {"generation":generation,**counts}
         except Exception as exc:
             try:
@@ -377,6 +377,43 @@ class Index:
             except sqlite3.Error:
                 pass  # under lock contention even the failure record is best effort
             raise
+
+    def _prune_superseded(self) -> dict[str, int]:
+        """Prune text projections within the caller's build transaction.
+
+        Capture IDs once so every dependent delete targets the same evidence.
+        Retrieval/feedback state may refer to old IDs and must remain intact.
+        """
+        self.db.execute("CREATE TEMP TABLE superseded_evidence (evidence_id TEXT PRIMARY KEY)")
+        try:
+            pruned_units = self.db.execute("""
+                INSERT INTO superseded_evidence
+                SELECT u.evidence_id FROM evidence_units u
+                JOIN documents d ON d.document_id=u.document_id
+                WHERE d.deleted=1 OR u.evidence_revision<d.current_revision
+            """).rowcount
+            if pruned_units:
+                for table, column in (("evidence_fts", "evidence_id"),
+                                      ("evidence_embeddings", "evidence_id"),
+                                      ("links", "left_evidence_id")):
+                    self.db.execute(f"DELETE FROM {table} WHERE {column} IN (SELECT evidence_id FROM superseded_evidence)")
+                self.db.execute("""
+                    DELETE FROM derivations
+                    WHERE derived_evidence_id IN (SELECT evidence_id FROM superseded_evidence)
+                       OR source_evidence_id IN (SELECT evidence_id FROM superseded_evidence)
+                """)
+                self.db.execute("DELETE FROM evidence_units WHERE evidence_id IN (SELECT evidence_id FROM superseded_evidence)")
+            pruned_revisions = self.db.execute("""
+                DELETE FROM document_revisions
+                WHERE EXISTS (
+                    SELECT 1 FROM documents d
+                    WHERE d.document_id=document_revisions.document_id
+                      AND document_revisions.revision<d.current_revision
+                )
+            """).rowcount
+        finally:
+            self.db.execute("DROP TABLE superseded_evidence")
+        return {"pruned_units": pruned_units, "pruned_revisions": pruned_revisions}
 
     @_observed_read.__func__
     def get(self, evidence_id: str, excerpt: int = DEFAULT_EXCERPT) -> dict[str, Any] | None:
