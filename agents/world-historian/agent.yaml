@@ -111,6 +111,24 @@ spec:
           mode: weekly
         attach_to_session: true
         delivery: user-home
+      - name: weibo-archive-daily
+        schedule: "0 6 * * *"
+        timezone: Asia/Shanghai
+        skill: weibo-archive
+        args: {}
+        attach_to_session: false
+        delivery: user-home
+        runner: command
+        command:
+          - bash
+          - scripts/weibo-archive-daily.sh
+      - name: zhihu-collections-weekly
+        schedule: "0 10 * * 0"
+        timezone: Asia/Shanghai
+        skill: zhihu-collections
+        args: {}
+        attach_to_session: false
+        delivery: user-home
   state:
     private:
       - chronicle.sqlite
