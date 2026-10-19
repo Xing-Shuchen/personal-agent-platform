@@ -191,11 +191,20 @@ def _event_ref_span(event_id: Any) -> str:
     return f'<span hidden data-chronicle-event="{str(event_id)}"></span>'
 
 
+def _thread_note_link(thread_id: str, thread_notes: dict[str, str]) -> str | None:
+    path = thread_notes.get(thread_id)
+    return f"[[{Path(path).with_suffix('').as_posix()}]]" if path else None
+
+
 def _endpoint_label(endpoint_type: str, endpoint_id: str,
-                    snapshot: dict[str, Any]) -> str:
+                    snapshot: dict[str, Any],
+                    thread_notes: dict[str, str] | None = None) -> str:
     if endpoint_type == "thread":
         if endpoint_id == snapshot["id"]:
             return "本 Thread"
+        link = _thread_note_link(endpoint_id, thread_notes or {})
+        if link:
+            return f"{link}（thread `{endpoint_id}`）"
         return f"thread `{endpoint_id}`"
     for event in snapshot.get("events", []):
         if event["id"] == endpoint_id:
@@ -203,8 +212,36 @@ def _endpoint_label(endpoint_type: str, endpoint_id: str,
     return f"event `{endpoint_id}`"
 
 
+def _relation_description(evidence: list[Any]) -> list[str]:
+    """Expose stored explanations, never infer prose from a relation type."""
+    reasons, boundaries, prose = [], [], []
+    for item in evidence:
+        if not isinstance(item, str):
+            continue
+        text = _one_line(item)
+        match = re.match(r"^(关联理由|理由|对应关系|关系性质|推断边界|限定)\s*[:：]\s*(.+)$", text)
+        if match:
+            target = boundaries if match[1] in ("推断边界", "限定") else reasons
+            target.append(match[2])
+        elif text and not text.startswith("库内回顾分析") and not re.fullmatch(
+            r"(?:(?:evt|clm|src|thr|rel|int)_[\w-]+|https?://\S+)", text
+        ):
+            prose.append(text)
+    lines = []
+    if reasons:
+        lines.append("关联说明：" + " ".join(reasons))
+    elif prose:
+        lines.append("关联依据：" + " ".join(prose))
+    else:
+        lines.append("关联说明：原记录尚未提供文字说明。")
+    if boundaries:
+        lines.append("推断边界：" + " ".join(boundaries))
+    return [_escape_tags(line) for line in lines]
+
+
 def render_snapshot(snapshot: dict[str, Any], synced_at: str,
-                    manual_notes: str | None = None) -> str:
+                    manual_notes: str | None = None, *,
+                    thread_notes: dict[str, str] | None = None) -> str:
     """Render one thread snapshot (from ``db.thread_snapshot``) as Markdown."""
     tid = snapshot["id"]
     lines: list[str] = [_frontmatter(snapshot, synced_at), ""]
@@ -382,9 +419,9 @@ def render_snapshot(snapshot: dict[str, Any], synced_at: str,
         lines.append("_（无）_\n")
     for relation in relations:
         src = _endpoint_label(relation.get("src_type", "event"),
-                              relation["src_id"], snapshot)
+                              relation["src_id"], snapshot, thread_notes)
         dst = _endpoint_label(relation.get("dst_type", "event"),
-                              relation["dst_id"], snapshot)
+                              relation["dst_id"], snapshot, thread_notes)
         evidence = _load_evidence(relation.get("evidence_json"))
         evidence_note = f" · 证据 {len(evidence)} 条" if evidence else ""
         lines.append(
@@ -392,7 +429,22 @@ def render_snapshot(snapshot: dict[str, Any], synced_at: str,
             f"置信度 {float(relation.get('confidence', 0.5)):.2f} · "
             f"{relation.get('status', 'active')}{evidence_note}"
         )
+        for description in _relation_description(evidence):
+            lines.extend(["", "  " + description])
+        lines.append("")
     lines.append("")
+
+    related_threads = snapshot.get("related_threads", [])
+    if related_threads:
+        lines.append("# 关联 Threads\n")
+        for link in related_threads:
+            title = (_thread_note_link(link["thread_id"], thread_notes or {})
+                     or _escape_tags(_one_line(link["title"])))
+            kind = _escape_tags(_one_line(link["relation_type"]))
+            note = _escape_tags(_one_line(link.get("note")))
+            suffix = f" · {note}" if note else ""
+            lines.append(f"- {title}（thread `{link['thread_id']}`）· {kind}{suffix}")
+        lines.append("")
 
     interpretations = snapshot.get("interpretations", [])
     lines.append("# 后见解释（Interpretation）\n")
@@ -548,6 +600,40 @@ def _thread_id_marker(thread_id: str) -> str:
     return f"thread_id: {_yaml_str(thread_id)}"
 
 
+def _plan_thread_paths(snapshots: list[dict[str, Any]],
+                       threads: dict[str, str]) -> dict[str, str]:
+    """Allocate the whole batch before rendering links to later snapshots."""
+    planned = dict(threads)
+    taken: dict[str, set[str]] = {}
+    for rel in planned.values():
+        rel_dir, rel_name = _split_rel(rel)
+        taken.setdefault(rel_dir, set()).add(rel_name)
+    for snapshot in snapshots:
+        tid = str(snapshot["id"])
+        previous = str(planned.get(tid) or "")
+        prev_dir, prev_name = _split_rel(previous) if previous else ("", "")
+        dir_key = CLOSED_DIR if str(snapshot.get("status") or "active") == "closed" else ""
+        names = taken.setdefault(dir_key, set())
+        others = names - ({prev_name} if prev_name and prev_dir == dir_key else set())
+        name = thread_filename(str(snapshot.get("title") or "untitled"), tid, others)
+        names.add(name)
+        if prev_name and prev_dir != dir_key:
+            taken.get(prev_dir, set()).discard(prev_name)
+        elif prev_name and prev_name != name:
+            names.discard(prev_name)
+        planned[tid] = _thread_relpath(snapshot, name)
+    return planned
+
+
+def _vault_thread_notes(vault: Path, paths: dict[str, str]) -> dict[str, str]:
+    """Use vault-root paths when available, otherwise local note paths."""
+    for root in (vault, *vault.parents):
+        if (root / ".obsidian").is_dir():
+            prefix = vault.relative_to(root)
+            return {tid: (prefix / rel).as_posix() for tid, rel in paths.items()}
+    return paths
+
+
 def sync_threads(
     snapshots: list[dict[str, Any]],
     vault: Path,
@@ -563,12 +649,8 @@ def sync_threads(
         return outcome
     index = _load_index(index_path)
     threads = index["threads"]
-    # Index values are vault-relative paths ("name.md" or
-    # "closed_threads/name.md"); track used names per directory.
-    taken: dict[str, set[str]] = {}
-    for rel in threads.values():
-        rel_dir, rel_name = _split_rel(rel)
-        taken.setdefault(rel_dir, set()).add(rel_name)
+    planned = _plan_thread_paths(snapshots, threads)
+    thread_notes = _vault_thread_notes(vault, planned)
 
     try:
         vault.mkdir(parents=True, exist_ok=True)
@@ -613,25 +695,7 @@ def sync_threads(
                 if not _write_if_changed(mat_path, "\n".join(mat_lines)):
                     outcome["unchanged"].append(str(mat_path))
             previous = str(threads.get(tid) or "")
-            prev_dir, prev_name = _split_rel(previous) if previous else ("", "")
-            dir_key = (CLOSED_DIR
-                       if str(snapshot.get("status") or "active") == "closed" else "")
-            names = taken.setdefault(dir_key, set())
-            # A thread's own previous filename is not a collision.
-            others = names - ({prev_name}
-                              if prev_name and prev_dir == dir_key else set())
-            name = thread_filename(str(snapshot.get("title") or "untitled"),
-                                   tid, others)
-            names.add(name)
-            if prev_name and prev_dir != dir_key:
-                taken.get(prev_dir, set()).discard(prev_name)
-            elif prev_name and prev_name != name:
-                # Free the old name only on an actual rename. Discarding it when
-                # name == prev_name removed the thread's own name from the taken
-                # set, letting a later same-batch thread with a colliding
-                # sanitized title grab the identical filename and overwrite it.
-                names.discard(prev_name)
-            rel = _thread_relpath(snapshot, name)
+            rel = planned[tid]
             target = vault / rel
             marker = _thread_id_marker(tid)
             previous_path = (vault / previous) if previous else None
@@ -665,7 +729,9 @@ def sync_threads(
                         f"(possible remotely-save revert) — please verify"
                     )
             target.parent.mkdir(parents=True, exist_ok=True)
-            if _write_if_changed(target, render_snapshot(snapshot, synced_at, notes)):
+            if _write_if_changed(target, render_snapshot(
+                snapshot, synced_at, notes, thread_notes=thread_notes
+            )):
                 outcome["written"].append(str(target))
             else:
                 outcome["unchanged"].append(str(target))

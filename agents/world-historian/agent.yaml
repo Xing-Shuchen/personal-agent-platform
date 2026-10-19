@@ -76,6 +76,14 @@ spec:
           window: 30d
         attach_to_session: false
         delivery: local
+      - name: world-thread-relations-nightly
+        schedule: "50 23 * * *"
+        timezone: Asia/Shanghai
+        skill: news-thread-relations
+        args:
+          scope: updated-today
+        attach_to_session: false
+        delivery: local
       - name: world-crosslink
         schedule: "50 2 * * *"
         skill: personal-crosslink

@@ -374,7 +374,7 @@ def build(conn: sqlite3.Connection, directory: Path, *, note_paths: dict[str, st
                   "event_ids": sorted_eids,
                   "event_summaries": [timeline_by_id[eid] for eid in sorted_eids],
                   "entity_ids": sorted(thread_entity_ids[tid]),
-                  "related_threads": [dict(relation_id=r["id"], thread_id=r["dst_id"] if r["src_id"] == tid else r["src_id"], type=r["relation_type"], confidence=r["confidence"])
+                  "related_threads": [dict(relation_id=r["id"], thread_id=r["dst_id"] if r["src_id"] == tid else r["src_id"], type=r["relation_type"], confidence=r["confidence"], status=r["status"], canonical_ref=_canonical("relations", r["id"]))
                                       for r in relations_by_thread[tid]],
                   }
         writer.write(f"threads/{tid}.json", detail)
@@ -432,7 +432,7 @@ def build(conn: sqlite3.Connection, directory: Path, *, note_paths: dict[str, st
         src, dst = row["src_type"] + ":" + row["src_id"], row["dst_type"] + ":" + row["dst_id"]
         if src in nodes and dst in nodes:
             edges.append({"id": row["id"], "source": src, "target": dst, "type": row["relation_type"],
-                          "confidence": row["confidence"], "evidence_refs": json.loads(row["evidence_json"] or "[]"),
+                          "confidence": row["confidence"], "status": row["status"], "evidence_refs": json.loads(row["evidence_json"] or "[]"),
                           "canonical_ref": _canonical("relations", row["id"])})
     edges.sort(key=lambda edge: edge["id"])
     relation_counts: dict[str, int] = defaultdict(int)

@@ -69,6 +69,91 @@ def only_file(vault: Path) -> Path:
     return files[0]
 
 
+def test_relation_notes_link_actual_paths_and_show_stored_explanations(tmp_path):
+    conn = fresh(tmp_path)
+    db.store_bundle(conn, {
+        "threads": [
+            {"id": "thr_alpha", "title": "Foo/Bar", "related_threads": [
+                {"thread_id": "thr_closed", "note": "Shared archived context"}]},
+            {"id": "thr_beta", "title": "Foo:Bar"},
+            {"id": "thr_closed", "title": "Archived #topic", "status": "closed"},
+        ],
+        "relations": [
+            {"src_type": "thread", "src_ref": "thr_alpha", "dst_type": "thread",
+             "dst_ref": "thr_beta", "relation_type": "competes_with", "confidence": 0.85,
+             "evidence": ["evt_reference", "关联理由：Both products target #routing.",
+                          "推断边界：No market-share conclusion."]},
+            {"src_type": "thread", "src_ref": "thr_beta", "dst_type": "thread",
+             "dst_ref": "thr_closed", "relation_type": "echoes", "status": "candidate",
+             "evidence": ["Both records discuss external validation."]},
+        ],
+    })
+    vault_root = tmp_path / "vault"
+    (vault_root / ".obsidian").mkdir(parents=True)
+    vault, index = vault_root / "News", tmp_path / "index.json"
+    snapshots = [db.thread_snapshot(conn, tid) for tid in db.all_thread_ids(conn)]
+    outcome = obsidian.sync_threads(snapshots, vault, index)
+    assert not outcome["errors"]
+    paths = json.loads(index.read_text())["threads"]
+    assert len(set(paths.values())) == 3
+    assert paths["thr_alpha"] != paths["thr_beta"]  # sanitized filename collision
+    links = {tid: f"[[News/{Path(path).with_suffix('').as_posix()}]]"
+             for tid, path in paths.items()}
+    notes = {tid: (vault / path).read_text() for tid, path in paths.items()}
+    assert f"—**competes_with**→ {links['thr_beta']}（thread `thr_beta`）" in notes["thr_alpha"]
+    assert "置信度 0.85 · active · 证据 3 条" in notes["thr_alpha"]
+    assert "关联说明：Both products target \\#routing." in notes["thr_alpha"]
+    assert "推断边界：No market-share conclusion." in notes["thr_alpha"]
+    assert f"{links['thr_alpha']}（thread `thr_alpha`） —**competes_with**→ 本 Thread" in notes["thr_beta"]
+    assert links["thr_closed"] in notes["thr_beta"] and "candidate" in notes["thr_beta"]
+    assert "关联依据：Both records discuss external validation." in notes["thr_beta"]
+    assert f"{links['thr_closed']}（thread `thr_closed`）· related · Shared archived context" in notes["thr_alpha"]
+    assert paths["thr_closed"].startswith("closed_threads/")
+    repeated = obsidian.sync_threads(snapshots, vault, index, synced_at="later")
+    assert not repeated["written"] and not repeated["errors"]
+
+
+def test_relation_links_follow_peer_rename_and_close_without_losing_annotations(tmp_path):
+    conn = fresh(tmp_path)
+    db.store_bundle(conn, {
+        "threads": [{"id": "thr_a", "title": "Alpha"}, {"id": "thr_b", "title": "Beta"}],
+        "relations": [{"src_type": "thread", "src_ref": "thr_a", "dst_type": "thread",
+                       "dst_ref": "thr_b", "relation_type": "related_to",
+                       "evidence": ["理由：Shared context", "限定：No causal claim"]}],
+    })
+    vault, _ = sync(conn, tmp_path, ["thr_a", "thr_b"])
+    alpha = vault / "Alpha.md"
+    alpha.write_text(alpha.read_text().replace("# 手工批注\n\n（无）", "# 手工批注\n\nKeep my annotation."))
+    renamed = db.store_bundle(conn, {
+        "threads": [{"id": "thr_b", "title": "Renamed: #Beta", "status": "closed"}],
+    })
+    assert renamed["touched_threads"] == ["thr_a", "thr_b"]
+    _, outcome = sync(conn, tmp_path, renamed["touched_threads"])
+    assert not outcome["errors"] and not (vault / "Beta.md").exists()
+    paths = json.loads((tmp_path / "obsidian-index.json").read_text())["threads"]
+    target = paths["thr_b"]
+    assert target.startswith("closed_threads/") and (vault / target).is_file()
+    assert f"[[{Path(target).with_suffix('').as_posix()}]]" in alpha.read_text()
+    assert "[[Beta]]" not in alpha.read_text()
+    assert "关联说明：Shared context" in alpha.read_text()
+    assert "推断边界：No causal claim" in alpha.read_text()
+    assert obsidian.extract_manual_notes(alpha.read_text()).strip() == "Keep my annotation."
+    # A later partial sync must resolve the peer through the saved index too.
+    _, repeated = sync(conn, tmp_path, ["thr_a"])
+    assert repeated["unchanged"] == [str(alpha)] and not repeated["written"]
+
+
+def test_relation_without_description_or_note_mapping_does_not_invent_them():
+    snapshot = {"id": "thr_a", "relations": [
+        {"src_type": "thread", "src_id": "thr_a", "dst_type": "thread",
+         "dst_id": "thr_missing", "relation_type": "related_to",
+         "evidence_json": '["evt_reference", "https://example.test/source"]'},
+    ]}
+    rendered = obsidian.render_snapshot(snapshot, "now")
+    assert "thread `thr_missing`" in rendered and "[[" not in rendered
+    assert "关联说明：原记录尚未提供文字说明。" in rendered
+
+
 def test_capture_creates_one_file_with_projection(tmp_path):
     conn = fresh(tmp_path)
     result = db.store_bundle(conn, capture_bundle())

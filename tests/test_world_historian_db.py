@@ -72,6 +72,7 @@ def test_entity_name_unique_migration_merges_links_and_metadata(tmp_path):
     assert db.migrate(conn) == [
         "0006_entity_name_unique", "0007_quote_summaries",
         "0008_thread_last_event_ingested_at", "0009_thread_current_state",
+        "0010_thread_relations",
     ]
     assert [tuple(row) for row in conn.execute("SELECT id, name, kind, aliases_json, created_at FROM entities")] == [
         ("company", "OpenAI", "company", '["OpenAI Inc","OA"]', "2026-01-01")]

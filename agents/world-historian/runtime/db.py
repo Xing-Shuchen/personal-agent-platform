@@ -395,6 +395,48 @@ def store_bundle(conn: sqlite3.Connection, bundle: dict[str, Any]) -> dict[str, 
                     (identifier, entity_id),
                 )
 
+        # Resolve links only after every thread is stored, allowing forward refs.
+        # These are explicit, undirected annotations, never inferred links.
+        for item in _items(bundle, "threads"):
+            thread_id = str(item.get("id") or _stable("thr", item["title"]))
+            for link in _items(item, "related_threads"):
+                where = "thread.related_threads"
+                keys = [key for key in ("thread_id", "thread_ref") if key in link]
+                if len(keys) != 1:
+                    raise ChronicleError(f"{where} requires exactly one of thread_id or thread_ref")
+                other_id = resolve(link[keys[0]], f"{where}.{keys[0]}")
+                if conn.execute("SELECT 1 FROM threads WHERE id = ?", (other_id,)).fetchone() is None:
+                    raise ChronicleError(f"{where}: thread not found: {other_id!r}")
+                if other_id == thread_id:
+                    raise ChronicleError(f"{where}: a thread cannot relate to itself")
+                kind = link.get("relation_type", "related")
+                if not isinstance(kind, str) or not kind.strip():
+                    raise ChronicleError(f"{where}.relation_type must be a non-empty string")
+                kind = kind.strip()
+                note = link.get("note")
+                if note is not None and not isinstance(note, str):
+                    raise ChronicleError(f"{where}.note must be a string")
+                first, second = sorted((thread_id, other_id))
+                conn.execute(
+                    """INSERT INTO thread_relations
+                       (thread_id_a, thread_id_b, relation_type, note, created_at, updated_at)
+                       VALUES (?, ?, ?, ?, ?, ?)
+                       ON CONFLICT(thread_id_a, thread_id_b, relation_type) DO UPDATE SET
+                         note=COALESCE(excluded.note, thread_relations.note),
+                         updated_at=excluded.updated_at""",
+                    (first, second, kind, note, now, now),
+                )
+                touched.update((thread_id, other_id))
+                counts["thread_relations"] = counts.get("thread_relations", 0) + 1
+            # A title change also changes the endpoint label in existing peers.
+            touched.update(link["thread_id"] for link in related_threads(conn, thread_id))
+            touched.update(row[0] for row in conn.execute(
+                """SELECT CASE WHEN src_id = ? THEN dst_id ELSE src_id END
+                   FROM relations WHERE src_type = 'thread' AND dst_type = 'thread'
+                     AND (src_id = ? OR dst_id = ?)""",
+                (thread_id, thread_id, thread_id),
+            ))
+
         for item in _items(bundle, "events"):
             summary = str(_required(item, "summary", "event"))
             title = _event_title(item)
@@ -730,11 +772,25 @@ def search(conn: sqlite3.Connection, query: str, limit: int = 20) -> list[dict[s
     return [dict(row) for row in rows]
 
 
+def related_threads(conn: sqlite3.Connection, thread_id: str) -> list[dict[str, Any]]:
+    """Return both directions of explicit links in stable endpoint/type order."""
+    return [dict(row) for row in conn.execute(
+        """SELECT t.id AS thread_id, t.title, r.relation_type, r.note
+           FROM thread_relations r JOIN threads t
+             ON t.id = CASE WHEN r.thread_id_a = ? THEN r.thread_id_b
+                            ELSE r.thread_id_a END
+           WHERE r.thread_id_a = ? OR r.thread_id_b = ?
+           ORDER BY t.id, r.relation_type""",
+        (thread_id, thread_id, thread_id),
+    )]
+
+
 def thread_detail(conn: sqlite3.Connection, thread_id: str) -> dict[str, Any] | None:
     row = conn.execute("SELECT * FROM threads WHERE id = ?", (thread_id,)).fetchone()
     if row is None:
         return None
     result = dict(row)
+    result["related_threads"] = related_threads(conn, thread_id)
     result["questions"] = [dict(item) for item in conn.execute(
         "SELECT * FROM open_questions WHERE thread_id = ? ORDER BY created_at", (thread_id,)
     )]
@@ -758,6 +814,7 @@ def thread_snapshot(conn: sqlite3.Connection, thread_id: str) -> dict[str, Any] 
     if row is None:
         return None
     snapshot: dict[str, Any] = dict(row)
+    snapshot["related_threads"] = related_threads(conn, thread_id)
     state = conn.execute("SELECT * FROM thread_current_states WHERE thread_id = ?", (thread_id,)).fetchone()
     snapshot["current_state"] = dict(state) if state else None
     snapshot["thread_entities"] = [dict(item) for item in conn.execute(

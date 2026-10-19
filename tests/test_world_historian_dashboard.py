@@ -33,6 +33,38 @@ def generation(output: Path) -> Path:
     return output / "generations" / (output / "CURRENT").read_text().strip()
 
 
+def test_thread_relation_uncertainty_and_evidence_survive_projection(tmp_path):
+    db_path, output = tmp_path / "chronicle.sqlite", tmp_path / "dashboard"
+    fixture_db(db_path)
+    db, projector = load_runtime_db(), load_runtime_module("dashboard_projector")
+    conn = db.connect(db_path)
+    db.store_bundle(conn, {"relations": [
+        {"id": status, "src_ref": "t1", "dst_ref": "t2", "src_type": "thread",
+         "dst_type": "thread", "relation_type": "echoes", "confidence": 0.6,
+         "status": status, "evidence": ["e1", "Analogy only; no causal claim."]}
+        for status in ("active", "candidate", "rejected")
+    ]})
+    conn.close()
+    projector.publish(db_path, output)
+    root = generation(output)
+    for tid, other in (("t1", "t2"), ("t2", "t1")):
+        related = json.loads((root / "threads" / f"{tid}.json").read_text())["related_threads"]
+        assert {row["relation_id"]: row["status"] for row in related} == {
+            "active": "active", "candidate": "candidate"}
+        assert all(row["thread_id"] == other for row in related)
+        assert all(row["canonical_ref"] == {
+            "kind": "chronicle", "table": "relations", "id": row["relation_id"]}
+            for row in related)
+    edges = {edge["id"]: edge for path in (root / "graph").glob("*.json")
+             for adjacent in json.loads(path.read_text())["adjacency"].values()
+             for edge in adjacent}
+    assert "rejected" not in edges
+    assert edges["candidate"]["status"] == "candidate"
+    assert edges["candidate"]["evidence_refs"] == ["e1", "Analogy only; no causal claim."]
+    canonical = projector.inspect_canonical(db_path, "relations", "candidate")
+    assert canonical["record"]["status"] == "candidate"
+
+
 def test_projection_preserves_semantics_and_canonical_database(tmp_path):
     projector = load_runtime_module("dashboard_projector")
     db_path, output = tmp_path / "chronicle.sqlite", tmp_path / "dashboard"

@@ -90,6 +90,29 @@ archived: YYYY-MM-DD
 
 - 正文：一级标题 `# AI 编译器与高性能计算软件栈简报｜YYYY-MM-DD`，随后逐条列出简报条目，格式与推送完全一致：`- **标题**：描述。来源：[标题｜来源](url)`。不得裁剪、改写或省略任何条目；不写固定结尾行，不加「关联」等额外小节。
 
+### 统一归档与目录更新
+
+归档必须使用本 skill 随附的 `scripts/archive.py`，不要再直接写日期笔记后跳过目录。将完整简报（标题、全部条目、固定结尾）原样存入一个 UTF-8 临时文件，调用：
+
+```bash
+python3 "${PAP_ROOT:?未配置}/agents/compiler-news/profile/skills/compiler-hpc-brief/scripts/archive.py" archive \
+  --vault "${PAP_VAULT:?未配置}" \
+  --date "YYYY-MM-DD" \
+  --body-file "<完整简报正文临时文件>" \
+  --model "<本次实际模型>"
+```
+
+将日期、临时文件路径和模型占位符替换为本次实际值。若从已安装的 OpenClaw skill 执行且没有 `PAP_ROOT`，使用本 `SKILL.md` 同目录下 `scripts/archive.py` 的实际路径；不得猜测 checkout 路径。自定义 vault 子目录时传入 `--archive-dir "<vault 内相对目录>"`，归档和目录命令保持一致。
+
+脚本统一渲染 frontmatter 和一级标题，只移除固定结尾，不改写简报条目。成功归档后，同目录的 `AI编译器简报目录.md` 自动增加本期 `[[AI编译器简报-YYYY-MM-DD|YYYY-MM-DD]]` 入口，并补齐已存在的历史简报。日期升序，同日更新不重复增加；重复执行且内容不变时不写文件。目录自动区块之外的手工内容保留。只有命令成功退出，且输出同时包含本期笔记和目录路径，才算归档完成；失败时按下文「失败处理」报告，不能仅凭日期笔记存在判成功。
+
+补建或修复目录时运行以下命令；它不改写任何简报正文：
+
+```bash
+python3 "${PAP_ROOT:?未配置}/agents/compiler-news/profile/skills/compiler-hpc-brief/scripts/archive.py" index \
+  --vault "${PAP_VAULT:?未配置}"
+```
+
 ### 同步 SOP（以 vault 根 AGENTS.md 为准，按顺序执行）
 
 以下命令都在 vault 根目录 `${PAP_VAULT:?未配置}` 下执行。
@@ -100,14 +123,15 @@ archived: YYYY-MM-DD
    "${OBSIDIAN_BIN:-obsidian}" command id=remotely-save:start-sync
    ```
 
-2. 显式暂存本期归档文件，禁止 `git add .`：
+2. 调用上述统一归档命令，然后显式暂存本期归档文件和目录，禁止 `git add .`：
 
    ```bash
-   git add -- "2Area/41 新闻及事件/AI Compiler/AI编译器简报-YYYY-MM-DD.md"
+   git add -- "2Area/41 新闻及事件/AI Compiler/AI编译器简报-YYYY-MM-DD.md" \
+     "2Area/41 新闻及事件/AI Compiler/AI编译器简报目录.md"
    ```
 
 3. 审阅暂存内容：`git diff --cached --stat` 与 `git diff --cached --check`（`--check` 应无输出）。
-4. 提交，一次提交只含这一期简报，不带入工作区其他无关改动：
+4. 提交，一次提交只含这一期简报及对应目录更新，不带入工作区其他无关改动：
 
    ```bash
    git commit -m "docs(41 新闻及事件): 归档 AI 编译器与高性能计算软件栈简报 YYYY-MM-DD"
@@ -127,7 +151,7 @@ archived: YYYY-MM-DD
      "${PAP_VAULT_SYNC_VERIFY_SCRIPT:?未配置}/verify_sync_diff.py"
    ```
 
-   本期文件出现在「本地有但远端缺失」即未同步成功；按部署方的对象存储同步 skill 处理（有直传兜底则直传，否则报告用户）。
+   本期文件或目录出现在「本地有但远端缺失」即未同步成功；按部署方的对象存储同步 skill 处理（有直传兜底则直传，否则报告用户）。
 
 ### 失败处理
 
