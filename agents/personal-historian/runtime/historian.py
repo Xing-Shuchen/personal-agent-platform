@@ -474,9 +474,6 @@ def _prepare_summary(payload: dict[str, Any]) -> dict[str, Any]:
         if _vault_dir() is None:
             return {"status": "not_ready", "reason": "obsidian vault is not configured"}
         missing_diaries = _missing_week_diaries(period)
-        if missing_diaries:
-            return {"status": "not_ready", "reason": "week diaries missing: " + ", ".join(missing_diaries),
-                    "metadata": {"missing_diaries": missing_diaries}}
     candidates = candidates_for_period(store, period, events=_current_events())
     coverage = _coverage()
     policy_path = os.environ.get("PERSONAL_HISTORIAN_POLICY", str(_historian_root() / "config" / "historical-summary-policy.yaml"))
@@ -501,7 +498,10 @@ def _prepare_summary(payload: dict[str, Any]) -> dict[str, Any]:
         return {"status": "not_ready", "reason": "identical summary input is already committed"}
     prepared = {"kind": "summary", "summary_id": summary_id, "revision": (existing["revision"] + 1) if existing else 1}
     _prepared_path(payload["run_id"]).write_text(json.dumps(prepared, ensure_ascii=False), encoding="utf-8")
-    return {"status": "ready", "input_text": "Create exactly one PeriodSummary JSON object for this sealed ContextPack. Do not add prose or use evidence outside it. summary_id and revision are fixed below.\n\n" + json.dumps({"context_pack": context, **prepared}, ensure_ascii=False), "metadata": {"context_pack_id": context["context_pack_id"], "period": period.label, "policy_id": context["policy"]["name"], "policy_version": context["policy"]["version"], "idempotency_key": f"{kind}:{period.label}:{context['provenance']['input_manifest_hash']}"}}
+    metadata = {"context_pack_id": context["context_pack_id"], "period": period.label, "policy_id": context["policy"]["name"], "policy_version": context["policy"]["version"], "idempotency_key": f"{kind}:{period.label}:{context['provenance']['input_manifest_hash']}"}
+    if kind == "week":
+        metadata["missing_diaries"] = missing_diaries
+    return {"status": "ready", "input_text": "Create exactly one PeriodSummary JSON object for this sealed ContextPack. Do not add prose or use evidence outside it. summary_id and revision are fixed below.\n\n" + json.dumps({"context_pack": context, **prepared}, ensure_ascii=False), "metadata": metadata}
 
 
 def _prepare_literary(payload: dict[str, Any]) -> dict[str, Any]:
