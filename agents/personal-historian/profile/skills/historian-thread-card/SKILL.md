@@ -31,6 +31,10 @@ accelerating|stable|declining|dormant|completed|abandoned|superseded|unknown),
 `digest`, `trajectory`, `current_state`, `milestones`, `evidence_refs` (at least
 one artifact ref to a supplied EventCard), `provenance`, `content_hash`.
 
+`milestones` must be an array of non-empty strings (or `[]`). Include a date
+in the string when relevant, for example `"2026-09-14: First note archived."`;
+do not emit milestone objects.
+
 When asked to propose a **new** thread, supply `canonical_name`; the Historian
 derives `thread_id` and `thread_card_id` from it and overwrites whatever you
 send, so the same process cannot acquire two identities. Cite at least two

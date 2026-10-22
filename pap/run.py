@@ -150,6 +150,7 @@ PROVIDER_REJECTION_MARKERS = (
     "malformed diagnostic json",
     "provider rejected the request schema or tool payload",
     "request format rejected, http 400",
+    "the ai service couldn't accept this request",
 )
 
 # OpenCode Zen failures which selecting the same model and prompt cannot fix.
@@ -385,7 +386,8 @@ def invoke(
     if process_start_ticks is not None:
         started_record.update({"process_id": os.getpid(), "process_start_ticks": process_start_ticks})
     if runner_backend != "command":
-        started_record.update({"model": model_name, "provider": provider_name})
+        started_record.update({"model": model_name, "provider": provider_name,
+                               "provider_rejection_fallback": spec.provider_rejection_fallback})
     append_jsonl(run_log, started_record)
     skill_version = "sha256:" + hashlib.sha256(skill_file.read_bytes()).hexdigest()
     agent_metadata = {"id": spec.name}
@@ -431,6 +433,7 @@ def invoke(
 
     usage: dict[str, Any] = {}
     fallback_from: str | None = None
+    fallback_attempted = False
     refusal_error = ""
     failure_kind = ""
     response = ""
@@ -627,13 +630,20 @@ def invoke(
             # refused the text is not transport trouble, so the run's own record
             # is read before settling for the retryable default.
             failure_kind = f"signal:{-returncode}" if returncode < 0 else ("command" if runner_backend == "command" else "runner")
-            if runner_backend == "openclaw" and read_failure is not None:
-                recorded_failure = read_failure(spec.name, run_id)
+            if runner_backend == "openclaw":
+                recorded_failure = read_failure(spec.name, run_id) if read_failure is not None else None
                 if not error and recorded_failure:
                     error = recorded_failure
                 if provider_rejection(response, error, recorded_failure):
                     failure_kind = PROVIDER_REJECTION
-                    refusal_error = recorded_failure or error or response
+                    # Keep the transcript's underlying refusal even when the
+                    # CLI supplied a generic stderr message.  Classify CLI
+                    # text too when no transcript probe is available.
+                    refusal_error = " | ".join(dict.fromkeys(
+                        text for text in (recorded_failure, error,
+                                          response if provider_rejection(response) else "") if text
+                    ))
+                    error = refusal_error
             elif runner_backend == "opencode" and opencode_provider_failure(
                 response, error, completed.stdout
             ):
@@ -644,6 +654,7 @@ def invoke(
             and failure_kind == PROVIDER_REJECTION
             and spec.provider_rejection_fallback
         ):
+            fallback_attempted = True
             fallback_from = model_name
             effective_model = spec.provider_rejection_fallback
             append_jsonl(run_log, {
@@ -694,6 +705,10 @@ def invoke(
                     error = recorded_failure
                 if provider_rejection(response, error, recorded_failure):
                     failure_kind = PROVIDER_REJECTION
+                    error = " | ".join(dict.fromkeys(
+                        text for text in (recorded_failure, error,
+                                          response if provider_rejection(response) else "") if text
+                    ))
         if returncode == 0 and adapter is not None:
             completed_runtime = _runtime_call(adapter, "complete", {"run_id": run_id, "skill": skill, "args": args, "model_reply": response}, env)
             runtime_status = completed_runtime.get("status")
@@ -758,8 +773,8 @@ def invoke(
                                  "cache_read_tokens": measured.get("cache_read_tokens"), "cache_write_tokens": measured.get("cache_write_tokens"),
                                  "reasoning_tokens": measured.get("reasoning_tokens"), "pricing_version": measured.get("pricing_version"),
                                  "latency_ms": measured.get("latency_ms"),
-                                 "retry_count": 1 if fallback_from else 0,
-                                 "fallback_count": 1 if fallback_from else 0, "cost.amount": measured.get("cost"),
+                                 "retry_count": int(fallback_attempted),
+                                 "fallback_count": int(fallback_attempted), "cost.amount": measured.get("cost"),
                                  "cost.currency": measured.get("currency", "CNY"), "cost.source": measured.get("source", "unknown"),
                                  **model_route},
                      outcome={"status": "ok" if returncode == 0 else "error"},
@@ -823,8 +838,9 @@ def invoke(
         "cost": model_usage.get("cost") if model_usage else None,
     }
     if runner_backend != "command":
-        completed_record.update({"model": model_name, "provider": provider_name})
-    if fallback_from is not None:
+        completed_record.update({"model": model_name, "provider": provider_name,
+                                 "fallback_attempted": fallback_attempted})
+    if fallback_attempted:
         completed_record["fallback_from"] = fallback_from
     append_jsonl(run_log, completed_record)
     close_invocation_scopes(completed_at, status, failure_kind)

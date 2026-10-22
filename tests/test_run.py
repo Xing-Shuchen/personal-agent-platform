@@ -5,6 +5,8 @@ import signal
 import subprocess
 from pathlib import Path
 
+import pytest
+
 from pap.run import OPENCLAW_EMPTY_FINALIZATION_FALLBACK, OPENCLAW_PROMPT_ENV_KEYS, _opencode_output, _prompt, invoke, is_retryable, new_run_id, provider_rejection, runs
 from pap.spec import load_spec
 
@@ -672,9 +674,86 @@ def test_provider_rejection_recognizes_payload_rejections_and_existing_markers()
         "data_inspection_failed",
         "content_filter",
         "malformed diagnostic json",
+        "The AI service couldn't accept this request. Try a new conversation with /new, "
+        "or choose another model in the Control UI. | 400",
     ):
         assert provider_rejection(text)
     assert provider_rejection("LLM request timed out.") is False
+    assert provider_rejection("HTTP 400") is False
+
+
+@pytest.mark.parametrize("source", ["stderr", "stdout", "transcript"])
+def test_generic_refusal_falls_back_without_a_primary_model(tmp_path, monkeypatch, source):
+    from paplog import observe
+    observe.configure(tmp_path / "ledger")
+    monkeypatch.setattr("pap.run.trajectory_tools", lambda *_: [])
+    spec = load_spec(make_agent(tmp_path))
+    spec.model = None
+    spec.provider_rejection_fallback = "test-provider/fallback-model"
+    refusal = ("The AI service couldn't accept this request. Try a new conversation with /new, "
+               "or choose another model in the Control UI. | 400")
+    calls = []
+
+    def runner(command, **kwargs):
+        calls.append(command)
+        if len(calls) == 1:
+            return subprocess.CompletedProcess(
+                command, 1, refusal if source == "stdout" else "",
+                refusal if source == "stderr" else "",
+            )
+        return subprocess.CompletedProcess(command, 0, "valid fallback reply", "")
+
+    result = invoke(
+        root=tmp_path, spec=spec, skill="sample-skill", run_log=tmp_path / "runs.jsonl",
+        command_runner=runner,
+        failure_probe=(lambda *_: refusal) if source == "transcript" else None,
+        usage_probe=lambda *_: dict(REPORTED),
+    )
+    assert result.status == "success"
+    assert result.failure_kind == ""
+    assert len(calls) == 2
+    assert "--model" not in calls[0]
+    assert calls[1][-2:] == ["--model", spec.provider_rejection_fallback]
+    events = [json.loads(line) for line in (tmp_path / "runs.jsonl").read_text().splitlines()]
+    assert [event["event"] for event in events] == ["run.started", "run.fallback", "run.completed"]
+    assert events[0]["provider_rejection_fallback"] == spec.provider_rejection_fallback
+    assert events[1]["error"] == refusal
+    assert events[1]["from"] is None
+    assert events[-1]["fallback_from"] is None
+    assert events[-1]["fallback_attempted"] is True
+    attributes = observe.get_ledger().query(event="pap.model.call")[0]["attributes"]
+    assert attributes["retry_count"] == attributes["fallback_count"] == 1
+
+
+def test_refusal_preserves_transcript_detail_alongside_generic_stderr(tmp_path):
+    spec = load_spec(make_agent(tmp_path))
+    result = invoke(
+        root=tmp_path, spec=spec, skill="sample-skill", run_log=tmp_path / "runs.jsonl",
+        command_runner=lambda command, **_: subprocess.CompletedProcess(command, 1, "", "call failed"),
+        failure_probe=lambda *_: "400: [Malformed diagnostic JSON redacted]",
+    )
+    assert result.failure_kind == "provider_rejection"
+    assert "Malformed diagnostic JSON redacted" in result.error
+    assert "call failed" in result.error
+
+
+def test_generic_refusal_fallback_stops_after_second_refusal(tmp_path):
+    spec = load_spec(make_agent(tmp_path))
+    spec.provider_rejection_fallback = "test-provider/fallback-model"
+    refusal = "The AI service couldn't accept this request. | 400"
+    calls = []
+    result = invoke(
+        root=tmp_path, spec=spec, skill="sample-skill", run_log=tmp_path / "runs.jsonl",
+        command_runner=lambda command, **_: calls.append(command) or subprocess.CompletedProcess(
+            command, 1, "", refusal),
+    )
+    assert result.status == "failed"
+    assert result.failure_kind == "provider_rejection"
+    assert result.error == refusal
+    assert len(calls) == 2
+    record = runs(tmp_path / "runs.jsonl")[0]
+    assert record["fallback_attempted"] is True
+    assert record["retryable"] is False
 
 
 def test_provider_rejection_uses_declared_fallback_once_and_records_provenance(tmp_path):

@@ -261,3 +261,123 @@ def test_a_registered_thread_with_new_evidence_is_updated_not_recreated(tmp_path
     assert fixed["kind"] == "thread"
     assert fixed["thread_id"] == "thread:compiler-learning"
     assert fixed["revision"] == 2
+
+
+def _draft_for(harness, kind):
+    harness.run("prepare")
+    draft = _proposal(harness)
+    if kind == "update":
+        assert harness.run("complete", reply=json.dumps(draft))["status"] == "success"
+        third = event_card("three", title="Third")
+        third["thread_ids"] = ["thread:compiler-learning"]
+        third["content_hash"] = _content_hash(third)
+        harness.cards.append(third)
+        assert harness.run("prepare", run_id="update")["status"] == "ready"
+        fixed = harness.prepared("update")
+        draft.update({key: fixed[key] for key in ("thread_id", "thread_card_id", "revision")})
+    return draft, "update" if kind == "update" else "run1"
+
+
+@pytest.mark.parametrize("kind", ["creation", "update"])
+def test_thread_milestone_objects_are_normalized_losslessly_and_reported(tmp_path, kind):
+    harness = Harness(tmp_path, [event_card("one", title="First"), event_card("two", title="Second")])
+    draft, run_id = _draft_for(harness, kind)
+    draft["milestones"] = ["An existing milestone.",
+                           {"date": "2026-09-14", "summary": "First note.\nArchived."},
+                           {"summary": "Later note."}]
+    draft["provenance"].pop("input_manifest_hash")
+    result = harness.run("complete", run_id=run_id, reply=json.dumps(draft))
+    assert result["status"] == "success", result.get("error")
+    card = harness.thread_cards()[-1]
+    assert card["milestones"] == ["An existing milestone.", "2026-09-14: First note.\nArchived.",
+                                  "Later note."]
+    assert card["provenance"]["input_manifest_hash"]
+    assert card["content_hash"] == _content_hash(card)
+    assert result["metadata"]["output_normalizations"] == [
+        {"field": "milestones/1", "operation": "date-summary-to-string"},
+        {"field": "milestones/2", "operation": "summary-to-string"},
+    ]
+
+
+@pytest.mark.parametrize("milestone, field", [
+    ({"date": "2026-09-14", "summary": 7}, "milestones/0/summary"),
+    ({"date": ["2026-09-14"], "summary": "Note."}, "milestones/0/date"),
+    ({"date": "2026-09-14", "summary": "Note.", "evidence": ["extra"]}, "milestones/0"),
+])
+def test_unrecoverable_milestone_objects_name_the_field_and_commit_nothing(tmp_path, milestone, field):
+    harness = Harness(tmp_path, [event_card("one", title="First"), event_card("two", title="Second")])
+    harness.run("prepare")
+    draft = _proposal(harness)
+    draft["milestones"] = [milestone]
+    result = harness.run("complete", reply=json.dumps(draft))
+    assert result["status"] == "error"
+    assert result["failure_kind"] == "validation"
+    assert field in result["error"]
+    assert "expected" in result["error"]
+    assert harness.thread_cards() == []
+    assert harness.registry_ids() == set()
+
+
+@pytest.mark.parametrize("recorded_failure", [
+    None, "400: 400: [Malformed diagnostic JSON redacted]",
+])
+def test_weekly_job_refusal_is_rescued_by_fallback_and_real_runtime(tmp_path, monkeypatch, recorded_failure):
+    """Exercise local config -> PAP -> runtime -> strict store, with no model service."""
+    from pap.run import invoke
+    from pap.spec import load_platform
+    from paplog import observe
+
+    harness = Harness(tmp_path, [event_card("one", title="First"), event_card("two", title="Second")])
+    harness.run("prepare")  # Seed only the synthetic EventCards.
+    root = tmp_path / "platform"
+    shutil.copytree(REPO / "agents/personal-historian", root / "agents/personal-historian",
+                    ignore=shutil.ignore_patterns("__pycache__"))
+    config = root / "var/config/agents.yaml"
+    config.parent.mkdir(parents=True)
+    config.write_text("agents:\n  personal-historian:\n    enabled: true\n"
+                      "    provider_rejection_fallback: test-provider/fallback-model\n", encoding="utf-8")
+    spec = load_platform(root)[0]
+    job = next(job for job in spec.jobs if job.name == "historian-thread-weekly-update")
+    assert spec.model is None and job.model is None
+    monkeypatch.setenv("PERSONAL_HISTORIAN_ROOT", str(HISTORIAN_ROOT))
+    monkeypatch.setenv("PERSONAL_HISTORIAN_STORE", str(harness.store))
+    monkeypatch.setenv("PAP_RUNTIME_PYTHON", INTERPRETER)
+    observe.configure(tmp_path / "ledger")
+    draft = _proposal(harness)
+    draft["milestones"] = [{"date": "2026-09-14", "summary": "First note archived."}]
+    draft["provenance"].pop("input_manifest_hash")
+    calls = []
+
+    def runner(command, **kwargs):
+        calls.append(command)
+        if len(calls) == 1:
+            return subprocess.CompletedProcess(command, 1, "", "The AI service couldn't accept this request. "
+                                               "Try a new conversation with /new, or choose another model "
+                                               "in the Control UI. | 400")
+        return subprocess.CompletedProcess(command, 0, json.dumps(draft), "")
+
+    log = root / "var/state/runs.jsonl"
+    result = invoke(
+        root=root, spec=spec, skill=job.skill, args=job.args, runtime=job.runtime,
+        trigger={"type": "schedule", "job_id": f"{spec.name}/{job.name}", "job_name": job.name},
+        run_log=log, command_runner=runner,
+        failure_probe=lambda *_: recorded_failure,
+    )
+    assert result.status == "success", result.error
+    assert result.error == "" and result.failure_kind == ""
+    assert len(calls) == 2
+    assert "--model" not in calls[0]
+    assert calls[1][-2:] == ["--model", spec.provider_rejection_fallback]
+    events = [json.loads(line) for line in log.read_text().splitlines()]
+    assert [event["event"] for event in events] == ["run.started", "run.fallback", "run.completed"]
+    assert (recorded_failure or "The AI service couldn't accept this request") in events[1]["error"]
+    assert events[-1]["status"] == "success"
+    assert events[-1]["model"] == spec.provider_rejection_fallback
+    assert events[-1]["usage"]["runtime"]["output_normalizations"] == [
+        {"field": "milestones/0", "operation": "date-summary-to-string"},
+    ]
+    card = harness.thread_cards()[-1]
+    assert card["milestones"] == ["2026-09-14: First note archived."]
+    assert card["provenance"]["input_manifest_hash"]
+    assert card["provenance"]["model"] == spec.provider_rejection_fallback
+    assert card["content_hash"] == _content_hash(card)

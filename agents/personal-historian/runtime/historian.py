@@ -821,6 +821,45 @@ def _complete_event_card(payload: dict[str, Any]) -> dict[str, Any]:
     return {"status": "success", "response": "NO_REPLY", "metadata": metadata}
 
 
+def _normalize_thread_milestones(card: dict[str, Any]) -> list[dict[str, str]]:
+    """Flatten only known, losslessly representable milestone object shapes.
+
+    The schema stays strict.  A date is retained alongside its summary; extra
+    fields or non-string values need a corrected model reply, not coercion.
+    Normalizations become run metadata so this repair remains observable.
+    """
+    milestones = card.get("milestones")
+    if not isinstance(milestones, list):
+        return []  # Schema validation names the missing or mistyped list.
+    normalized: list[Any] = []
+    changes: list[dict[str, str]] = []
+    for index, milestone in enumerate(milestones):
+        field = f"milestones/{index}"
+        if not isinstance(milestone, dict):
+            normalized.append(milestone)  # Leave string/type checks to the schema.
+            continue
+        if set(milestone) - {"date", "summary"}:
+            raise ValueError(
+                f"{field}: expected only 'summary' and optional 'date'; "
+                "extra fields cannot be normalized losslessly; return a milestone string"
+            )
+        summary = milestone.get("summary")
+        if not isinstance(summary, str) or not summary.strip():
+            raise ValueError(f"{field}/summary: expected a non-empty string; return a milestone string")
+        if "date" in milestone:
+            date = milestone["date"]
+            if not isinstance(date, str) or not date.strip():
+                raise ValueError(f"{field}/date: expected a non-empty string; return a milestone string")
+            normalized.append(f"{date}: {summary}")
+            operation = "date-summary-to-string"
+        else:
+            normalized.append(summary)
+            operation = "summary-to-string"
+        changes.append({"field": field, "operation": operation})
+    card["milestones"] = normalized
+    return changes
+
+
 def _complete_thread_card(payload: dict[str, Any]) -> dict[str, Any]:
     try:
         store = _store()
@@ -830,11 +869,13 @@ def _complete_thread_card(payload: dict[str, Any]) -> dict[str, Any]:
         card = parse_model_json(str(payload.get("model_reply", "")))
         if (card.get("thread_id") != prepared["thread_id"] or card.get("thread_card_id") != prepared["thread_card_id"] or card.get("revision") != prepared["revision"]):
             raise ValueError("model changed the fixed ThreadCard identity or revision")
+        normalizations = _normalize_thread_milestones(card)
         card = seal_with_provenance(card, _runtime_provenance(list(prepared["input_refs"])))
         CardLifecycle(store, ThreadRegistry(store.root)).commit_thread_card(card)
     except Exception as exc:
         return _failure("validation", exc)
-    return {"status": "success", "response": "NO_REPLY"}
+    return {"status": "success", "response": "NO_REPLY",
+            "metadata": {"output_normalizations": normalizations}}
 
 
 #: The model's escape hatch when the offered events do not evidence a thread.
@@ -854,6 +895,7 @@ def _complete_thread_creation(payload: dict[str, Any], prepared: dict[str, Any],
     card = parse_model_json(reply)
     if card.get("revision") != prepared["revision"]:
         raise ValueError("model changed the fixed ThreadCard revision")
+    normalizations = _normalize_thread_milestones(card)
     registry = ThreadRegistry(store.root)
     provenance = _runtime_provenance(list(prepared["input_refs"]))
     # The runtime owns provenance (§21); the model only drafts it.  Seal the
@@ -869,7 +911,8 @@ def _complete_thread_creation(payload: dict[str, Any], prepared: dict[str, Any],
     CardLifecycle(store, registry).commit_thread_card(created)
     return {"status": "success", "response": "NO_REPLY",
             "metadata": {"thread_created": created["thread_id"],
-                         "thread_card_id": created["thread_card_id"]}}
+                         "thread_card_id": created["thread_card_id"],
+                         "output_normalizations": normalizations}}
 
 
 def main() -> int:
