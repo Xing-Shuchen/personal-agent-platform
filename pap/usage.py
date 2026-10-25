@@ -290,7 +290,9 @@ def session_failure(agent_id: str, run_id: str, *, state_dir: Path | None = None
     §34 only retries *transient* trouble, so a provider that refused the
     generated text has to be named before the scheduler can tell it apart from
     transport trouble.  The refusal is the runner's own record of the turn,
-    read read-only and only for this run's session.
+    read read-only and only for this run's session. Try uncompressed transcript
+    JSON first, then compressed transcript frames via the system zstd CLI,
+    then trajectory events. Unavailable or invalid compressed rows are skipped.
     """
 
     path = (state_dir or _state_dir()) / "agents" / agent_id / "agent" / "openclaw-agent.sqlite"
@@ -312,25 +314,86 @@ def session_failure(agent_id: str, run_id: str, *, state_dir: Path | None = None
             "select event_json from transcript_events where session_id = ? order by seq desc limit ?",
             (row[0], TRANSCRIPT_SCAN_LIMIT),
         ).fetchall()
+        for (raw,) in events:
+            try:
+                event = json.loads(raw)
+            except (TypeError, ValueError):
+                continue
+            message = event.get("message") if isinstance(event, Mapping) else None
+            if not isinstance(message, Mapping) or message.get("stopReason") != "error":
+                continue
+            detail = message.get("errorMessage")
+            if isinstance(detail, str) and detail.strip():
+                code = message.get("errorCode")
+                if isinstance(code, str) and code.strip():
+                    return f"{code.strip()}: {detail.strip()}"
+                return detail.strip()
+        try:
+            compressed_events = connection.execute(
+                "select event_zstd from transcript_events where session_id = ? order by seq desc limit ?",
+                (row[0], TRANSCRIPT_SCAN_LIMIT),
+            ).fetchall()
+        except sqlite3.OperationalError:
+            # Older stores do not have a compressed transcript column.
+            compressed_events = []
+        for (frame,) in compressed_events:
+            if not isinstance(frame, bytes) or not frame:
+                continue
+            try:
+                decoded = subprocess.run(
+                    ["zstd", "-d", "--stdout"], input=frame,
+                    capture_output=True, timeout=5,
+                )
+                if decoded.returncode:
+                    continue
+                event = json.loads(decoded.stdout)
+            except (OSError, subprocess.SubprocessError, TypeError, ValueError):
+                continue
+            message = event.get("message") if isinstance(event, Mapping) else None
+            if not isinstance(message, Mapping) or message.get("stopReason") != "error":
+                continue
+            detail = message.get("errorMessage")
+            if isinstance(detail, str) and detail.strip():
+                code = message.get("errorCode")
+                if isinstance(code, str) and code.strip():
+                    return f"{code.strip()}: {detail.strip()}"
+                return detail.strip()
+        events = connection.execute(
+            "select event_json from trajectory_runtime_events where session_id = ? order by seq desc",
+            (row[0],),
+        ).fetchall()
+        for (raw,) in events:
+            try:
+                event = json.loads(raw)
+            except (TypeError, ValueError):
+                continue
+            if not isinstance(event, Mapping) or event.get("type") != "model.completed":
+                continue
+            data = event.get("data")
+            if not isinstance(data, Mapping):
+                continue
+            messages = data.get("messagesSnapshot")
+            candidates = [data]
+            if isinstance(messages, list):
+                candidates.extend(reversed(messages))
+            for message in candidates:
+                if not isinstance(message, Mapping):
+                    continue
+                message = message.get("message", message)
+                if not isinstance(message, Mapping):
+                    continue
+                detail = message.get("errorMessage") or message.get("error")
+                if isinstance(detail, Mapping):
+                    detail = detail.get("message")
+                if isinstance(detail, str) and detail.strip():
+                    code = message.get("errorCode")
+                    if isinstance(code, str) and code.strip():
+                        return f"{code.strip()}: {detail.strip()}"
+                    return detail.strip()
     except sqlite3.Error:
         return None
     finally:
         connection.close()
-
-    for (raw,) in events:
-        try:
-            event = json.loads(raw)
-        except (TypeError, ValueError):
-            continue
-        message = event.get("message") if isinstance(event, Mapping) else None
-        if not isinstance(message, Mapping) or message.get("stopReason") != "error":
-            continue
-        detail = message.get("errorMessage")
-        if isinstance(detail, str) and detail.strip():
-            code = message.get("errorCode")
-            if isinstance(code, str) and code.strip():
-                return f"{code.strip()}: {detail.strip()}"
-            return detail.strip()
     return None
 
 

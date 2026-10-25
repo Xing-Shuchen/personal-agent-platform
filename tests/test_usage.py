@@ -6,9 +6,11 @@ schema.  No test reads the developer's real OpenClaw state.
 """
 
 import json
+import shutil
 import sqlite3
 import subprocess
 from pathlib import Path
+import pytest
 
 from pap.usage import (
     probe_model_usage,
@@ -415,3 +417,111 @@ def test_a_ulid_run_reads_its_provider_refusal(tmp_path):
     assert session_failure("world-historian", ULID_RUN, state_dir=tmp_path) == (
         "data_inspection_failed: Output data may contain inappropriate content."
     )
+
+
+@pytest.mark.parametrize("empty_transcript", [False, True])
+def test_session_failure_falls_back_to_latest_trajectory_error(tmp_path, empty_transcript):
+    path = write_transcript(tmp_path, [{"message": {"stopReason": "stop"}}])
+    with sqlite3.connect(path) as connection:
+        if empty_transcript:
+            connection.execute("ALTER TABLE transcript_events ADD COLUMN event_zstd BLOB")
+            connection.execute("UPDATE transcript_events SET event_json = '', event_zstd = ?", (b"compressed",))
+        connection.execute("CREATE TABLE trajectory_runtime_events (session_id TEXT, seq INTEGER, event_json TEXT)")
+        events = [
+            ("d6294eb2", {"type": "model.completed", "data": {"errorMessage": "older error"}}),
+            ("d6294eb2", {"type": "model.completed", "data": {"stopReason": "error", "messagesSnapshot": [
+                {"role": "assistant", "stopReason": "error", "errorMessage": "Output data may contain inappropriate content.",
+                 "errorCode": "data_inspection_failed"},
+            ]}}),
+            ("d6294eb2", {"type": "model.completed", "data": {"stopReason": "stop"}}),
+            ("d6294eb2", {"type": "tool.result", "data": {"errorMessage": "tool error"}}),
+            ("another-session", {"type": "model.completed", "data": {"errorMessage": "unrelated"}}),
+        ]
+        for seq, (session, event) in enumerate(events):
+            connection.execute("INSERT INTO trajectory_runtime_events VALUES (?, ?, ?)", (session, seq, json.dumps(event)))
+    expected = "data_inspection_failed: Output data may contain inappropriate content."
+    assert session_failure("world-historian", WH_RUN, state_dir=tmp_path) == expected
+    # A transcript failure remains authoritative even when trajectory data exists.
+    with sqlite3.connect(path) as connection:
+        connection.execute("UPDATE transcript_events SET event_json = ?", (json.dumps({
+            "message": {"stopReason": "error", "errorMessage": "transcript error"},
+        }),))
+    assert session_failure("world-historian", WH_RUN, state_dir=tmp_path) == "transcript error"
+
+
+def test_session_failure_tolerates_unknown_trajectory_columns(tmp_path):
+    path = write_transcript(tmp_path, [])
+    with sqlite3.connect(path) as connection:
+        connection.execute("CREATE TABLE trajectory_runtime_events (unknown TEXT)")
+    assert session_failure("world-historian", WH_RUN, state_dir=tmp_path) is None
+
+
+@pytest.mark.parametrize("data", [
+    {"stopReason": "error", "errorMessage": "provider refusal"},
+    {"error": "provider refusal"},
+    {"error": {"message": "provider refusal"}},
+])
+def test_session_failure_reads_trajectory_error_fields(tmp_path, data):
+    path = write_transcript(tmp_path, [])
+    with sqlite3.connect(path) as connection:
+        connection.execute("CREATE TABLE trajectory_runtime_events (session_id TEXT, seq INTEGER, event_json TEXT)")
+        connection.execute("INSERT INTO trajectory_runtime_events VALUES (?, ?, ?)", (
+            "d6294eb2", 1, json.dumps({"type": "model.completed", "data": data}),
+        ))
+    assert session_failure("world-historian", WH_RUN, state_dir=tmp_path) == "provider refusal"
+
+
+@pytest.mark.skipif(shutil.which("zstd") is None, reason="system zstd unavailable")
+def test_session_failure_reads_compressed_transcript(tmp_path):
+    path = write_transcript(tmp_path, [])
+    def compress(raw):
+        return subprocess.run(["zstd", "--stdout"], input=raw,
+                              capture_output=True, check=True).stdout
+
+    refusal = {"type": "message", "message": {
+        "role": "assistant", "stopReason": "error",
+        "errorMessage": "Output data may contain inappropriate content.",
+        "errorCode": "data_inspection_failed",
+    }}
+    with sqlite3.connect(path) as connection:
+        connection.execute("ALTER TABLE transcript_events ADD COLUMN event_zstd BLOB")
+        frames = [compress(json.dumps(refusal).encode()), compress(b"not JSON"), b"invalid frame"]
+        for seq, frame in enumerate(frames):
+            connection.execute("INSERT INTO transcript_events VALUES (?, ?, ?, ?)",
+                               ("d6294eb2", seq, "", frame))
+        connection.execute("INSERT INTO transcript_events VALUES (?, ?, ?, ?)", (
+            "another-session", 10, "", compress(json.dumps({"message": {
+                "stopReason": "error", "errorMessage": "unrelated refusal",
+            }}).encode()),
+        ))
+        connection.execute("CREATE TABLE trajectory_runtime_events (session_id TEXT, seq INTEGER, event_json TEXT)")
+        connection.execute("INSERT INTO trajectory_runtime_events VALUES (?, ?, ?)", (
+            "d6294eb2", 1, json.dumps({"type": "model.completed", "data": {"errorMessage": "trajectory error"}}),
+        ))
+    assert session_failure("world-historian", WH_RUN, state_dir=tmp_path) == (
+        "data_inspection_failed: Output data may contain inappropriate content."
+    )
+    with sqlite3.connect(path) as connection:
+        connection.execute("UPDATE transcript_events SET event_json = ? WHERE session_id = ? AND seq = 0", (
+            json.dumps({"message": {"stopReason": "error", "errorMessage": "uncompressed error"}}), "d6294eb2",
+        ))
+    assert session_failure("world-historian", WH_RUN, state_dir=tmp_path) == "uncompressed error"
+
+
+@pytest.mark.parametrize("failure", [FileNotFoundError(), subprocess.TimeoutExpired("zstd", 5),
+                                     subprocess.CalledProcessError(1, "zstd")])
+def test_session_failure_skips_unavailable_decoder(tmp_path, monkeypatch, failure):
+    path = write_transcript(tmp_path, [])
+    with sqlite3.connect(path) as connection:
+        connection.execute("ALTER TABLE transcript_events ADD COLUMN event_zstd BLOB")
+        connection.execute("INSERT INTO transcript_events VALUES (?, ?, ?, ?)", ("d6294eb2", 0, "", b"frame"))
+        connection.execute("CREATE TABLE trajectory_runtime_events (session_id TEXT, seq INTEGER, event_json TEXT)")
+        connection.execute("INSERT INTO trajectory_runtime_events VALUES (?, ?, ?)", (
+            "d6294eb2", 1, json.dumps({"type": "model.completed", "data": {"errorMessage": "trajectory error"}}),
+        ))
+    def unavailable(*args, **kwargs):
+        assert args[0] == ["zstd", "-d", "--stdout"]
+        assert kwargs == {"input": b"frame", "capture_output": True, "timeout": 5}
+        raise failure
+    monkeypatch.setattr("pap.usage.subprocess.run", unavailable)
+    assert session_failure("world-historian", WH_RUN, state_dir=tmp_path) == "trajectory error"

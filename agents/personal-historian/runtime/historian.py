@@ -528,12 +528,23 @@ def _prepare_literary(payload: dict[str, Any]) -> dict[str, Any]:
         "summary_revision": summary["revision"], "summary_hash": summary["content_hash"],
         "period": period.to_dict(),
     }
+    period_data = summary["period"]
+    required_properties = {
+        "schema_version": 1,
+        "week": period_data["label"],
+        "type": "ethnography-weekly",
+        "status": summary["status"],
+        "period_start": period_data["start"][:10],
+        "period_end": (datetime.fromisoformat(period_data["end_exclusive"]) - timedelta(days=1)).date().isoformat(),
+    }
     _prepared_path(payload["run_id"]).write_text(json.dumps(prepared, ensure_ascii=False), encoding="utf-8")
     return {
         "status": "ready",
         "input_text": (
             "Render this canonical PeriodSummary as one human-facing weekly narrative. "
-            "The summary is the factual boundary; return Markdown only.\n\n" +
+            "The summary is the factual boundary; return Markdown only.\n\n"
+            "Copy these required values verbatim into the YAML Properties:\n\n```yaml\n" +
+            yaml.safe_dump(required_properties, sort_keys=False) + "```\n\n" +
             json.dumps({"period_summary": summary}, ensure_ascii=False)
         ),
         "metadata": {
