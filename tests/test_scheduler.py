@@ -510,3 +510,19 @@ def test_the_historian_jobs_are_all_scheduled():
         "historian-weekly-literary-render",
     }
     assert states["historian-weekly-literary-render"] is True
+
+
+def test_missing_required_environment_settles_slot_without_retry(tmp_path, monkeypatch):
+    make_platform(tmp_path, schedule="15 3 * * *")
+    manifest = tmp_path / "agents/sample/agent.yaml"
+    manifest.write_text(manifest.read_text().replace('        delivery: local', '        requires_env: [WECHAT_DBROOT, WECHAT_KEYS]\n        delivery: local'))
+    monkeypatch.setattr("pap.scheduler.JITTER_MAX_MINUTES", 0)
+    for key in ("WECHAT_DBROOT", "WECHAT_KEYS"):
+        monkeypatch.delenv(key, raising=False)
+    def forbidden(*args, **kwargs):
+        pytest.fail("skip must not invoke or deliver")
+    now = datetime(2026, 10, 26, 3, 15, tzinfo=CST)
+    first = tick(tmp_path, now=now, command_runner=forbidden)
+    assert len(first) == 1
+    assert first[0].run.status == "skipped"
+    assert tick(tmp_path, now=now + timedelta(minutes=6), command_runner=forbidden) == []

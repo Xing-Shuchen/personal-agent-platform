@@ -41,6 +41,7 @@ class ProactiveJob:
     #: while not yet scheduled. Disabling is not deleting — the declaration and
     #: its schedule stay in the spec so enabling is a one-line change.
     enabled: bool = True
+    requires_env: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -192,6 +193,12 @@ def load_spec(path: Path) -> AgentSpec:
                 enabled = raw.get("enabled", True)
                 if not isinstance(enabled, bool):
                     raise _err(path, f"{where}.enabled: must be a boolean")
+                requires_env = raw.get("requires_env", [])
+                if not isinstance(requires_env, list) or not all(
+                    isinstance(key, str) and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", key)
+                    for key in requires_env
+                ):
+                    raise _err(path, f"{where}.requires_env: must be a list of environment variable names")
                 delivery = raw.get("delivery", "user-home")
                 if delivery not in ("user-home", "origin", "local"):
                     raise _err(path, f"{where}.delivery: unknown delivery {delivery!r}")
@@ -271,6 +278,7 @@ def load_spec(path: Path) -> AgentSpec:
                         command=list(command) if command is not None else None,
                         notify=dict(notify) if notify is not None else None,
                         enabled=enabled,
+                        requires_env=list(requires_env),
                     )
                 )
         elif proactive.get("desired_jobs"):

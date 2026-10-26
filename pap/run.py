@@ -5,12 +5,14 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import sqlite3
 import shlex
 import shutil
 import subprocess
 import tempfile
 import sys
 import time
+from contextlib import closing
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -51,6 +53,36 @@ def normalize_terminal_response(response: str) -> tuple[str, str | None]:
     if response.strip() == OPENCLAW_EMPTY_FINALIZATION_FALLBACK:
         return "NO_REPLY", "openclaw-empty-finalization"
     return response, None
+
+
+def _terminal_assistant(agent_id: str, run_id: str) -> str | None:
+    """Positive completion evidence from the latest transcript assistant only."""
+    state = Path(os.environ.get("PAP_OPENCLAW_STATE_DIR") or os.environ.get("OPENCLAW_STATE_DIR") or "~/.openclaw").expanduser()
+    path = state / "agents" / agent_id / "agent" / "openclaw-agent.sqlite"
+    try:
+        with closing(sqlite3.connect(f"file:{path}?mode=ro", uri=True)) as connection:
+            row = connection.execute("select current_session_id from session_nodes where lower(session_key) = ?", (session_key(agent_id, run_id),)).fetchone()
+            if not row:
+                return None
+            rows = connection.execute("select event_json, event_zstd from transcript_events where session_id = ? order by seq desc limit 20", row).fetchall()
+        for raw, frame in rows:
+            if not raw and frame:
+                decoded = subprocess.run(["zstd", "-d", "--stdout"], input=frame, capture_output=True, timeout=5)
+                if decoded.returncode:
+                    return None
+                raw = decoded.stdout
+            event = json.loads(raw)
+            message = event.get("message", {}) if isinstance(event, dict) else {}
+            if not isinstance(message, dict):
+                return None
+            if message.get("role") != "assistant":
+                continue
+            if message.get("stopReason") != "stop" or message.get("errorMessage"):
+                return None
+            return "".join(part.get("text", "") for part in message.get("content", []) if part.get("type") == "text").strip() or None
+    except (sqlite3.Error, OSError, ValueError, TypeError, subprocess.SubprocessError):
+        return None
+    return None
 
 
 def _now() -> datetime:
@@ -344,6 +376,7 @@ def invoke(
     command: list[str] | None = None,
     usage_probe: Callable[[str, str], dict[str, Any] | None] | None = None,
     failure_probe: Callable[[str, str], str | None] | None = None,
+    terminal_probe: Callable[[str, str], str | None] | None = None,
 ) -> RunResult:
     """Invoke one installed-in-repo profile skill through its declared runner."""
     root = Path(root).resolve()
@@ -389,6 +422,18 @@ def invoke(
         started_record.update({"model": model_name, "provider": provider_name,
                                "provider_rejection_fallback": spec.provider_rejection_fallback})
     append_jsonl(run_log, started_record)
+    job = next((job for job in spec.jobs if job.name == job_name), None)
+    missing = [key for key in job.requires_env if not os.environ.get(key, "").strip()] if job else []
+    if missing:
+        completed_at = _now().isoformat(timespec="seconds")
+        error = "Missing required environment variables: " + ", ".join(missing)
+        append_jsonl(run_log, {"event": "run.completed", "run_id": run_id,
+                     "agent_id": spec.name, "job_id": job_id, "skill": skill,
+                     "status": "skipped", "failure_kind": "config", "retryable": False,
+                     "returncode": 0, "error": error, "completed_at": completed_at,
+                     "usage": {}})
+        return RunResult(run_id, spec.name, skill, "skipped", 0, "", error,
+                         started.isoformat(timespec="seconds"), completed_at, {}, "config")
     skill_version = "sha256:" + hashlib.sha256(skill_file.read_bytes()).hexdigest()
     agent_metadata = {"id": spec.name}
     if spec.source_path and spec.source_path.is_file():
@@ -709,6 +754,14 @@ def invoke(
                         text for text in (recorded_failure, error,
                                           response if provider_rejection(response) else "") if text
                     ))
+            # Gateway status can remain failed after the continuation completed.
+            # Require positive terminal transcript evidence; stdout alone is not proof.
+            terminal = terminal_probe or (_terminal_assistant if command_runner is None else None)
+            if returncode == 1 and not error and not recorded_failure and not provider_rejection(response) and terminal:
+                final_text = terminal(spec.name, run_id)
+                if final_text:
+                    usage["runner_exit_reconciliation"] = {"returncode": returncode, "source": "terminal-assistant"}
+                    response, returncode, failure_kind = final_text, 0, ""
         if returncode == 0 and adapter is not None:
             completed_runtime = _runtime_call(adapter, "complete", {"run_id": run_id, "skill": skill, "args": args, "model_reply": response}, env)
             runtime_status = completed_runtime.get("status")
@@ -824,6 +877,7 @@ def invoke(
         # fingerprint of the runtime placeholder for diagnosis.
         "raw_response": _input_fingerprint(raw_response) if response_normalization else None,
         "response_normalization": response_normalization,
+        "degraded": response_normalization,
         "error": error[:1000],
         "failure_kind": failure_kind,
         "retryable": is_retryable(failure_kind) if status == "failed" else None,

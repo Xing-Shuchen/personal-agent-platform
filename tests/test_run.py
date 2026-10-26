@@ -283,6 +283,7 @@ def test_invoke_normalizes_openclaw_empty_finalization_to_no_reply(tmp_path):
     assert result.status == "success"
     assert result.response == "NO_REPLY"
     record = runs(log)[0]
+    assert record["degraded"] == "openclaw-empty-finalization"
     assert record["response_normalization"] == "openclaw-empty-finalization"
     assert record["response"]["chars"] == len("NO_REPLY")
     assert record["raw_response"]["chars"] == len(OPENCLAW_EMPTY_FINALIZATION_FALLBACK)
@@ -903,3 +904,72 @@ def test_opencode_permanent_provider_failure_is_not_retryable(tmp_path):
     assert result.status == "failed"
     assert result.failure_kind == "provider_rejection"
     assert runs(log)[0]["retryable"] is False
+
+@pytest.mark.parametrize("terminal,stderr,expected", [("NO_REPLY", "", "success"), (None, "", "failed"), ("NO_REPLY", "Connection error (timeout)", "failed")])
+def test_fallback_exit_one_requires_terminal_completion(tmp_path, terminal, stderr, expected):
+    spec = load_spec(make_agent(tmp_path))
+    spec.provider_rejection_fallback = "test-provider/fallback"
+    calls = []
+    def runner(command, **kwargs):
+        calls.append(command)
+        return subprocess.CompletedProcess(command, 1,
+            "data_inspection_failed" if len(calls) == 1 else OPENCLAW_EMPTY_FINALIZATION_FALLBACK,
+            "" if len(calls) == 1 else stderr)
+    result = invoke(root=tmp_path, spec=spec, skill="sample-skill", run_log=tmp_path / "runs.jsonl",
+                    command_runner=runner, terminal_probe=lambda *_: terminal)
+    assert result.status == expected
+    if expected == "success":
+        assert result.response == "NO_REPLY"
+        assert result.failure_kind == ""
+        assert runs(tmp_path / "runs.jsonl")[0]["usage"]["runner_exit_reconciliation"]["returncode"] == 1
+    else:
+        assert result.failure_kind == "runner"
+        assert is_retryable(result.failure_kind)
+
+
+def test_missing_job_environment_skips_without_invocation(tmp_path, monkeypatch):
+    from pap.spec import ProactiveJob
+    spec = load_spec(make_agent(tmp_path))
+    spec.jobs = [ProactiveJob("sample-job", "* * * * *", "sample-skill", requires_env=["WECHAT_DBROOT", "WECHAT_KEYS"])]
+    for key in spec.jobs[0].requires_env:
+        monkeypatch.delenv(key, raising=False)
+    def forbidden(*args, **kwargs):
+        pytest.fail("configuration skip spent an agent turn")
+    result = invoke(root=tmp_path, spec=spec, skill="sample-skill", trigger={"job_name": "sample-job"},
+                    run_log=tmp_path / "runs.jsonl", command_runner=forbidden)
+    assert result.status == "skipped"
+    assert result.failure_kind == "config"
+    assert all(key in result.error for key in spec.jobs[0].requires_env)
+    assert runs(tmp_path / "runs.jsonl")[0]["retryable"] is False
+
+
+def test_terminal_assistant_reads_completed_transcript(tmp_path, monkeypatch):
+    import sqlite3
+    from pap.run import _terminal_assistant
+    monkeypatch.setenv("PAP_OPENCLAW_STATE_DIR", str(tmp_path))
+    path = tmp_path / "agents/sample/agent/openclaw-agent.sqlite"
+    path.parent.mkdir(parents=True)
+    with sqlite3.connect(path) as connection:
+        connection.execute("create table session_nodes(session_key text, current_session_id text)")
+        connection.execute("create table transcript_events(session_id text, seq integer, event_json text, event_zstd blob)")
+        connection.execute("insert into session_nodes values (?, ?)", ("agent:sample:pap-test", "session"))
+        for seq, stop in enumerate(["error", "stop"]):
+            connection.execute("insert into transcript_events values (?, ?, ?, null)",
+                ("session", seq, json.dumps({"message": {"role": "assistant", "stopReason": stop,
+                 "content": [{"type": "text", "text": "NO_REPLY"}]}})))
+    assert _terminal_assistant("sample", "test") == "NO_REPLY"
+
+
+def test_configured_job_environment_does_not_skip(tmp_path, monkeypatch):
+    from pap.spec import ProactiveJob
+    spec = load_spec(make_agent(tmp_path))
+    spec.jobs = [ProactiveJob("sample-job", "* * * * *", "sample-skill", requires_env=["PAP_TEST_REQUIRED"])]
+    monkeypatch.setenv("PAP_TEST_REQUIRED", "configured")
+    calls = []
+    def runner(command, **kwargs):
+        calls.append(command)
+        return subprocess.CompletedProcess(command, 0, "NO_REPLY", "")
+    result = invoke(root=tmp_path, spec=spec, skill="sample-skill", trigger={"job_name": "sample-job"},
+                    run_log=tmp_path / "runs.jsonl", command_runner=runner)
+    assert result.status == "success"
+    assert len(calls) == 1

@@ -17,6 +17,7 @@ spec:
       - name: wechat-daily-incremental
         schedule: "15 3 * * *"
         skill: wechat-daily-incremental
+        requires_env: [WECHAT_DBROOT, WECHAT_KEYS]
         args: {}
         attach_to_session: false
         delivery: local

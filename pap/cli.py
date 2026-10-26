@@ -240,7 +240,8 @@ def _cmd_runs(args: argparse.Namespace) -> int:
         for record in records:
             print(f"{record.get('run_id')}\t{record.get('agent_id')}\t"
                   f"{record.get('skill')}\t{record.get('status', 'running')}\t"
-                  f"{record.get('started_at')}\t{_usage_column(record)}")
+                  f"{record.get('started_at')}\t{_usage_column(record)}"
+                  + (f"\tdegraded={record['degraded']}" if record.get("degraded") else ""))
     return 0
 
 

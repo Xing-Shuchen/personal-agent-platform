@@ -134,3 +134,20 @@ def test_install_agents_rejects_bad_openclaw_home():
         capture_output=True, text=True, cwd=REPO)
     assert r.returncode == 1
     assert "not found" in r.stderr
+
+
+def test_runs_exposes_additive_degraded_marker(tmp_path):
+    log = tmp_path / "runs.jsonl"
+    record = {"event": "run.completed", "run_id": "example", "agent_id": "sample",
+              "skill": "sample-skill", "status": "success", "started_at": "example-time",
+              "degraded": "openclaw-empty-finalization"}
+    log.write_text(json.dumps(record) + "\n")
+    args = ["runs", "--root", str(tmp_path), "--runs", str(log)]
+    result = run(args + ["--json"])
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout)[0]["degraded"] == record["degraded"]
+    result = run(args)
+    assert result.returncode == 0, result.stderr
+    fields = result.stdout.strip().split("\t")
+    assert fields[:6] == ["example", "sample", "sample-skill", "success", "example-time", "tokens=? cost=?"]
+    assert fields[6] == "degraded=openclaw-empty-finalization"
