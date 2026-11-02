@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import argparse
+import json
+import os
 from datetime import datetime
 from html import escape
 from pathlib import Path
@@ -13,7 +15,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from pap.schedule import _expand_field
-from pap.spec import load_platform
+from pap.spec import SpecError, load_platform, load_spec, yaml
 
 
 WEEKDAYS = ("Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday")
@@ -63,8 +65,62 @@ def describe_schedule(schedule: str) -> tuple[str, str]:
     return recurrence, times
 
 
+def delivery_defaults(root: Path) -> tuple[str, str]:
+    """Read optional local defaults using PAP's existing YAML parser."""
+    delivery = {}
+    try:
+        config = yaml.safe_load((root / "var/config/agents.yaml").read_text(encoding="utf-8"))
+        if isinstance(config, dict) and isinstance(config.get("delivery"), dict):
+            delivery = config["delivery"]
+    except (OSError, ValueError, yaml.YAMLError):
+        pass
+
+    def value(key: str, fallback: str) -> str:
+        local = delivery.get(key)
+        return local.strip() if isinstance(local, str) and local.strip() else fallback
+
+    return (value("channel", os.environ.get("PAP_OPENCLAW_CHANNEL") or "feishu"),
+            value("account", os.environ.get("PAP_OPENCLAW_ACCOUNT") or ""))
+
+
+def feishu_app_names() -> dict[str, str]:
+    """Return route account names; unavailable or malformed config is optional."""
+    try:
+        path = Path(os.environ.get("OPENCLAW_CONFIG_PATH") or "~/.openclaw/openclaw.json").expanduser()
+        config = json.loads(path.read_text(encoding="utf-8"))
+        entries = config.get("agents", {}).get("entries", {})
+        # OpenClaw also represents entries as a list of objects with an id.
+        if isinstance(entries, list):
+            entries = {entry["id"]: entry for entry in entries
+                       if isinstance(entry, dict) and isinstance(entry.get("id"), str)}
+        names = {}
+        for binding in config.get("bindings", []):
+            if not isinstance(binding, dict) or binding.get("type") != "route":
+                continue
+            match = binding.get("match")
+            if not isinstance(match, dict) or match.get("channel") != "feishu":
+                continue
+            account = match.get("accountId")
+            agent = entries.get(binding.get("agentId"), {})
+            identity = agent.get("identity", {}) if isinstance(agent, dict) else {}
+            name = identity.get("name") if isinstance(identity, dict) else None
+            if isinstance(account, str) and isinstance(name, str) and name:
+                names.setdefault(account, name)
+        return names
+    except (OSError, ValueError, AttributeError, TypeError):
+        return {}
+
+
 def build_html(root: Path) -> str:
-    specs = load_platform(root)
+    try:
+        specs = load_platform(root)
+    except (OSError, UnicodeError, SpecError) as exc:
+        # Optional local configuration must not prevent a manifest-only view.
+        if str(root / "var/config/agents.yaml") not in str(exc):
+            raise
+        specs = [load_spec(path) for path in sorted((root / "agents").glob("*/agent.yaml"))]
+    default_channel, default_account = delivery_defaults(root)
+    app_names = feishu_app_names()
     rows = []
     agent_names = []
     for spec in specs:
@@ -76,9 +132,16 @@ def build_html(root: Path) -> str:
             active = spec.enabled and job.enabled
             status = "Enabled" if active else "Disabled"
             destination = "Message" if job.delivery == "user-home" else "Local"
+            channel = job.delivery_channel or default_channel
+            account = job.delivery_account or default_account
+            app_name = app_names.get(account, account) if channel == "feishu" else account
+            channel_name = "飞书" if channel == "feishu" else channel
+            delivery_text = "本地（不投送）" if job.delivery == "local" else f"{channel_name} · {app_name}"
+            delivery_cell = (escape(delivery_text) if job.delivery == "local" else
+                             f'{escape(channel_name)} · <small>{escape(app_name)}</small>')
             zone = job.timezone or ("Asia/Shanghai" if "tz Asia/Shanghai" in job.schedule else "Host local time")
             delivery_note = f"deliver {job.deliver_at}" if job.deliver_at else ""
-            search = " ".join((spec.name, job.name, job.skill, recurrence, times, status, destination, delivery_note)).lower()
+            search = " ".join((spec.name, job.name, job.skill, recurrence, times, status, destination, delivery_note, delivery_text)).lower()
             rows.append(
                 f'<tr data-agent="{escape(spec.name)}" data-status="{status.lower()}" data-search="{escape(search, quote=True)}">'
                 f'<td><span class="agent-dot"></span><span class="agent-name">{escape(spec.name)}</span></td>'
@@ -86,6 +149,7 @@ def build_html(root: Path) -> str:
                 f'<td><span class="recurrence">{escape(recurrence)}</span><small class="timezone">{escape(zone)}</small></td>'
                 f'<td class="time-cell">{escape(times)}</td>'
                 f'<td><span class="badge {"enabled" if active else "disabled"}">{status}</span></td>'
+                f'<td class="delivery">{delivery_cell}</td>'
                 f'<td><span class="delivery">{destination}</span><small>{escape(delivery_note)}</small></td>'
                 f'<td><code>{escape(job.schedule)}</code></td></tr>'
             )
@@ -106,7 +170,7 @@ def build_html(root: Path) -> str:
     :root {{ color-scheme: light; --ink:#1c2929; --muted:#647171; --line:#dce4df; --paper:#fbfcf8; --green:#16614e; --accent:#e0f0e4; }}
     * {{ box-sizing:border-box; }}
     body {{ margin:0; background:linear-gradient(160deg,#e9f2e9 0,#f6f8f1 28%,#f7f6f0 100%); color:var(--ink); font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif; }}
-    main {{ max-width:1440px; margin:0 auto; padding:44px 28px 72px; }}
+    main {{ max-width:1680px; margin:0 auto; padding:44px 28px 72px; }}
     .eyebrow {{ color:var(--green); font-size:12px; font-weight:800; letter-spacing:.16em; text-transform:uppercase; }}
     h1 {{ margin:8px 0 8px; font-size:clamp(32px,4vw,52px); letter-spacing:-.04em; line-height:1.06; }}
     .intro {{ max-width:760px; margin:0; color:var(--muted); font-size:16px; }}
@@ -121,7 +185,7 @@ def build_html(root: Path) -> str:
     .filter {{ border:1px solid var(--line); background:white; color:#3a5550; border-radius:999px; padding:7px 11px; cursor:pointer; font:600 12px system-ui,sans-serif; }}
     .filter:hover,.filter:focus-visible {{ border-color:var(--green); }} .filter.active {{ background:var(--green); border-color:var(--green); color:white; }}
     .count {{ margin-left:auto; color:var(--muted); white-space:nowrap; font-size:13px; }}
-    .table-wrap {{ overflow-x:auto; }} table {{ width:100%; min-width:1030px; border-collapse:collapse; text-align:left; }}
+    .table-wrap {{ overflow-x:auto; }} table {{ width:100%; min-width:1200px; border-collapse:collapse; text-align:left; }}
     th {{ padding:13px 16px; background:#f1f5ee; color:#577068; font-size:11px; letter-spacing:.1em; text-transform:uppercase; }}
     td {{ padding:17px 16px; border-top:1px solid var(--line); vertical-align:top; }} tbody tr:hover {{ background:#f4f8f2; }}
     .agent-name {{ font-weight:650; white-space:nowrap; }} .agent-dot {{ display:inline-block; width:8px; height:8px; margin-right:8px; border-radius:50%; background:#4b9b75; }}
@@ -151,7 +215,7 @@ def build_html(root: Path) -> str:
       <span id="count" class="count">Showing {total} of {total}</span>
     </div>
     <div class="table-wrap"><table>
-      <thead><tr><th>Agent</th><th>Task / skill</th><th>Repeats</th><th>Scheduled time</th><th>Status</th><th>Output</th><th>Raw schedule</th></tr></thead>
+      <thead><tr><th>Agent</th><th>Task / skill</th><th>Repeats</th><th>Scheduled time</th><th>Status</th><th>投送渠道</th><th>Output</th><th>Raw schedule</th></tr></thead>
       <tbody id="rows">{''.join(rows)}</tbody>
     </table></div>
     <div id="empty" class="empty" hidden>No tasks match this search.</div>
