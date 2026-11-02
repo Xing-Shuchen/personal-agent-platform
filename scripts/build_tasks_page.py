@@ -167,40 +167,45 @@ def build_html(root: Path) -> str:
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>PAP task schedule</title>
   <style>
-    :root {{ color-scheme: light; --ink:#1c2929; --muted:#647171; --line:#dce4df; --paper:#fbfcf8; --green:#16614e; --accent:#e0f0e4; }}
+    :root {{ color-scheme:light; --ground:#f3f6fa; --surface:#ffffff; --text:#151515; --text-soft:#505a68; --rule:#c8d8ee; --rule-strong:#b3c6df; --brand:#5294ff; --brand-deep:#78acff; --brand-soft:#e9f0fc; --link:#2c528c; --orange:#fb923c; --yellow:#f4d77c; --peach:#ffc79a; --pale-blue:#9ec5ff; --red:#e8464e; --lift:4px 4px 0 #151515; --lift-sm:2px 2px 0 #151515; --display:"Baloo 2",ui-rounded,system-ui,sans-serif; }}
     * {{ box-sizing:border-box; }}
-    body {{ margin:0; background:linear-gradient(160deg,#e9f2e9 0,#f6f8f1 28%,#f7f6f0 100%); color:var(--ink); font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif; }}
-    main {{ max-width:1680px; margin:0 auto; padding:44px 28px 72px; }}
-    .eyebrow {{ color:var(--green); font-size:12px; font-weight:800; letter-spacing:.16em; text-transform:uppercase; }}
-    h1 {{ margin:8px 0 8px; font-size:clamp(32px,4vw,52px); letter-spacing:-.04em; line-height:1.06; }}
-    .intro {{ max-width:760px; margin:0; color:var(--muted); font-size:16px; }}
-    .summary {{ display:flex; flex-wrap:wrap; gap:12px; margin:28px 0 30px; }}
-    .stat {{ min-width:150px; padding:13px 18px; background:#fff; border:1px solid var(--line); border-radius:16px; box-shadow:0 8px 22px #2b59400a; }}
-    .stat b {{ display:block; font-size:26px; line-height:1.15; letter-spacing:-.04em; }} .stat span {{ color:var(--muted); font-size:12px; }}
-    .panel {{ overflow:hidden; background:var(--paper); border:1px solid var(--line); border-radius:20px; box-shadow:0 16px 48px #355c4712; }}
-    .toolbar {{ display:flex; align-items:center; flex-wrap:wrap; gap:14px; padding:20px; border-bottom:1px solid var(--line); }}
-    .search {{ flex:1 1 280px; max-width:420px; padding:11px 14px; border:1px solid #bfcfc5; border-radius:10px; background:white; color:var(--ink); font:inherit; }}
-    .search:focus {{ outline:3px solid #a5d7b7; outline-offset:1px; }}
-    .filters {{ display:flex; flex-wrap:wrap; gap:7px; }}
-    .filter {{ border:1px solid var(--line); background:white; color:#3a5550; border-radius:999px; padding:7px 11px; cursor:pointer; font:600 12px system-ui,sans-serif; }}
-    .filter:hover,.filter:focus-visible {{ border-color:var(--green); }} .filter.active {{ background:var(--green); border-color:var(--green); color:white; }}
-    .count {{ margin-left:auto; color:var(--muted); white-space:nowrap; font-size:13px; }}
+    body {{ margin:0; background:var(--ground); color:var(--text); font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,"Noto Sans","PingFang SC",sans-serif; }}
+    .masthead {{ background:var(--surface); border-bottom:2px solid #151515; }}
+    .eyebrow {{ max-width:1680px; margin:0 auto; padding:18px 28px; color:var(--link); font-size:12px; font-weight:800; letter-spacing:.12em; text-transform:uppercase; overflow-wrap:anywhere; }}
+    main {{ max-width:1680px; min-width:0; margin:0 auto; padding:36px 28px 72px; }}
+    h1 {{ margin:0 0 12px; font:800 clamp(32px,4vw,52px)/1.06 var(--display); letter-spacing:-.04em; }}
+    .intro {{ max-width:760px; margin:0; color:var(--text-soft); font-size:16px; }}
+    .summary {{ display:flex; flex-wrap:wrap; gap:16px; margin:28px 0 32px; }}
+    .stat {{ min-width:150px; padding:13px 18px; background:var(--surface); border:2px solid #151515; border-radius:8px; box-shadow:var(--lift,4px 4px 0 #151515); }}
+    .stat b {{ display:block; font:800 32px/1.1 var(--display); letter-spacing:-.04em; }} .stat span {{ color:var(--text-soft); font-size:12px; }}
+    .stat:nth-child(1) b {{ color:var(--link); }} .stat:nth-child(2) {{ background:var(--brand-soft); }} .stat:nth-child(3) {{ background:var(--peach); }}
+    .panel {{ min-width:0; overflow:hidden; background:var(--surface); border:2px solid #151515; border-radius:8px; box-shadow:var(--lift,4px 4px 0 #151515); }}
+    .toolbar {{ display:flex; align-items:center; flex-wrap:wrap; gap:14px; padding:20px; border-bottom:2px solid #151515; }}
+    .search {{ flex:1 1 280px; min-width:0; max-width:420px; padding:11px 14px; border:2px solid #151515; border-radius:6px; box-shadow:var(--lift-sm,2px 2px 0 #151515); background:var(--surface); color:var(--text); font:inherit; }}
+    .search::placeholder {{ color:var(--text-soft); opacity:1; }}
+    .search:hover {{ background:#f7faff; }}
+    .search:focus-visible,.filter:focus-visible {{ outline:3px solid #2c528c; outline-offset:4px; }}
+    .filters {{ display:flex; flex-wrap:wrap; gap:10px; min-width:0; }}
+    .filter {{ max-width:100%; overflow-wrap:anywhere; border:2px solid #151515; background:var(--surface); color:var(--text); border-radius:999px; padding:7px 11px; box-shadow:var(--lift-sm,2px 2px 0 #151515); cursor:pointer; font:inherit; font-size:12px; font-weight:750; }}
+    .filter:hover {{ background:var(--brand-soft); }} .filter.active {{ background:var(--brand); color:var(--text); }}
+    .filter:active {{ transform:translate(2px,2px); box-shadow:none; }}
+    .count {{ margin-left:auto; color:var(--text-soft); white-space:nowrap; font-size:13px; }}
     .table-wrap {{ overflow-x:auto; }} table {{ width:100%; min-width:1200px; border-collapse:collapse; text-align:left; }}
-    th {{ padding:13px 16px; background:#f1f5ee; color:#577068; font-size:11px; letter-spacing:.1em; text-transform:uppercase; }}
-    td {{ padding:17px 16px; border-top:1px solid var(--line); vertical-align:top; }} tbody tr:hover {{ background:#f4f8f2; }}
-    .agent-name {{ font-weight:650; white-space:nowrap; }} .agent-dot {{ display:inline-block; width:8px; height:8px; margin-right:8px; border-radius:50%; background:#4b9b75; }}
-    td strong {{ display:block; font-weight:650; white-space:nowrap; }} td small {{ display:block; margin-top:3px; color:var(--muted); font-size:12px; }}
-    .recurrence {{ font-weight:600; white-space:nowrap; }} .time-cell {{ min-width:180px; max-width:315px; font-variant-numeric:tabular-nums; font-weight:650; color:#225c48; }}
-    .badge {{ display:inline-block; border-radius:999px; padding:3px 9px; font-size:12px; font-weight:700; }} .badge.enabled {{ color:#126345; background:#e1f3e6; }} .badge.disabled {{ color:#795e27; background:#f8ecd0; }}
-    .delivery {{ color:#47655c; }} code {{ color:#6a7472; font-size:12px; white-space:nowrap; }}
-    .empty {{ padding:28px; text-align:center; color:var(--muted); }}
-    footer {{ margin-top:18px; color:var(--muted); font-size:12px; }} footer p {{ margin:5px 0; }}
-    @media (max-width:700px) {{ main {{ padding:27px 14px 50px; }} .toolbar {{ padding:15px; }} .search {{ max-width:none; }} .count {{ margin-left:0; }} }}
+    th {{ padding:13px 16px; background:var(--brand-soft); color:var(--text-soft); font-size:11px; font-weight:800; letter-spacing:.1em; text-transform:uppercase; }}
+    td {{ padding:17px 16px; border-top:1px solid var(--rule); vertical-align:top; }} tbody tr:hover {{ background:#f7faff; }}
+    .agent-name {{ font-weight:700; white-space:nowrap; }} .agent-dot {{ display:inline-block; width:10px; height:10px; margin-right:8px; border:2px solid #151515; border-radius:50%; background:var(--brand); }}
+    td strong {{ display:block; font-weight:700; white-space:nowrap; }} td small {{ display:block; margin-top:3px; color:var(--text-soft); font-size:12px; }}
+    .recurrence {{ font-weight:600; white-space:nowrap; }} .time-cell {{ min-width:180px; max-width:315px; font-variant-numeric:tabular-nums; font-weight:700; color:var(--link); }}
+    .badge {{ display:inline-block; border:2px solid #151515; border-radius:999px; padding:3px 9px; font-size:12px; font-weight:800; }} .badge.enabled {{ color:var(--link); background:var(--brand-soft); }} .badge.disabled {{ color:var(--text); background:var(--yellow); }}
+    .delivery {{ color:var(--link); }} code {{ color:var(--text-soft); font:12px ui-monospace,"SFMono-Regular",Menlo,monospace; white-space:nowrap; }}
+    .empty {{ padding:28px; text-align:center; color:var(--text-soft); }}
+    footer {{ margin-top:22px; color:var(--text-soft); font-size:12px; overflow-wrap:anywhere; }} footer p {{ margin:5px 0; }} footer code {{ white-space:normal; }}
+    @media (max-width:700px) {{ main {{ padding:27px 14px 50px; }} .eyebrow {{ padding:16px 14px; }} .toolbar {{ padding:15px; }} .search {{ max-width:none; }} .count {{ margin-left:0; }} }}
   </style>
 </head>
 <body>
+<header class="masthead"><div class="eyebrow">Personal Agent Platform / schedule</div></header>
 <main>
-  <div class="eyebrow">Personal Agent Platform / schedule</div>
   <h1>All PAP tasks</h1>
   <p class="intro">A readable view of every scheduled job declared in the PAP agent manifests. Times below are planned schedule slots, shown in each job’s stated time zone or the scheduler host’s local time.</p>
   <div class="summary" aria-label="Schedule summary">
