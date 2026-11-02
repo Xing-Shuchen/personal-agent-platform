@@ -51,6 +51,8 @@ The installer only copies skills for enabled agents. It does not create OpenClaw
 
 All runtime state and local activation settings belong under ignored `var/`. `.env` files are ignored too. `var/config/agents.yaml` accepts per-agent `enabled`, `provider_rejection_fallback`, and per-job `jobs.<job-name>.model` overrides — this is where a deployment pins job-specific model routes, since tracked manifests ship without them. Set `PAP_ROOT` to the absolute checkout path when skills or services run outside the repository. Set `PAP_VAULT` only if you opt into Obsidian context. The personal history lookup reads only files named in the path-separated `PAP_PERSONAL_INPUTS`. The WeChat archivist requires `WECHAT_DBROOT` and `WECHAT_KEYS`. Outbound delivery requires `PAP_OPENCLAW_CHANNEL`, `PAP_OPENCLAW_ACCOUNT`, and `PAP_OPENCLAW_DELIVERY_TARGET` in the local environment. Never commit these values.
 
+Set per-job `delivery_target`, `delivery_channel`, and `delivery_account` in ignored `var/config/agents.yaml` under `agents.<agent>.jobs.<job-name>` for deployment-local routing. Each is an optional non-empty string overriding its global delivery default for immediate and deferred delivery. Tracked manifests must not carry account IDs.
+
 The World Historian database defaults to `var/world-historian/chronicle.sqlite`. The disabled snapshot job creates a local SQLite backup; it does not push to a remote destination. The Obsidian dashboard in `obsidian/world-historian-dashboard/` is optional.
 
 ## Sharing this project

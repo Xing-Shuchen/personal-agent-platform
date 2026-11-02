@@ -28,6 +28,9 @@ class ProactiveJob:
     args: dict[str, Any] = field(default_factory=dict)
     attach_to_session: bool = True
     delivery: str = "user-home"
+    delivery_target: str | None = None
+    delivery_channel: str | None = None
+    delivery_account: str | None = None
     runtime: str | None = None
     timezone: str | None = None
     deliver_at: str | None = None
@@ -202,6 +205,9 @@ def load_spec(path: Path) -> AgentSpec:
                 delivery = raw.get("delivery", "user-home")
                 if delivery not in ("user-home", "origin", "local"):
                     raise _err(path, f"{where}.delivery: unknown delivery {delivery!r}")
+                for key in ("delivery_target", "delivery_channel", "delivery_account"):
+                    if key in raw and (not isinstance(raw[key], str) or not raw[key].strip()):
+                        raise _err(path, f"{where}.{key}: must be a non-empty string")
                 notify = raw.get("notify")
                 if notify is not None:
                     if not isinstance(notify, dict):
@@ -270,6 +276,9 @@ def load_spec(path: Path) -> AgentSpec:
                         args=dict(job_args),
                         attach_to_session=bool(raw.get("attach_to_session", True)),
                         delivery=delivery,
+                        delivery_target=raw.get("delivery_target"),
+                        delivery_channel=raw.get("delivery_channel"),
+                        delivery_account=raw.get("delivery_account"),
                         runtime=runtime,
                         timezone=timezone,
                         deliver_at=deliver_at,
@@ -320,11 +329,7 @@ def load_spec(path: Path) -> AgentSpec:
 def _apply_job_overrides(
     local_config: Path, agent_name: str, spec: AgentSpec, jobs_override: Any
 ) -> None:
-    """Apply ignored local per-job overrides (currently: model route).
-
-    Tracked manifests must stay free of provider-specific model routes, so a
-    deployment that wants to pin one job to a model declares it here instead.
-    """
+    """Apply ignored local per-job model and delivery routing overrides."""
     if jobs_override is None:
         return
     if not isinstance(jobs_override, dict):
@@ -334,11 +339,18 @@ def _apply_job_overrides(
         job = jobs_by_name.get(job_name)
         if job is None or not isinstance(job_config, dict):
             raise SpecError(f"{local_config}: {agent_name}: unknown job or invalid job config: {job_name!r}")
-        unknown = set(job_config) - {"model"}
+        delivery_keys = {"delivery_target", "delivery_channel", "delivery_account"}
+        unknown = set(job_config) - {"model"} - delivery_keys
         if unknown:
             raise SpecError(
                 f"{local_config}: {agent_name}: {job_name}: unknown job override keys: {sorted(unknown)}"
             )
+        for key in sorted(delivery_keys):
+            if key in job_config:
+                value = job_config[key]
+                if not isinstance(value, str) or not value.strip():
+                    raise SpecError(f"{local_config}: {agent_name}: {job_name}: {key} must be a non-empty string")
+                setattr(job, key, value)
         model = job_config.get("model")
         if model is None:
             continue

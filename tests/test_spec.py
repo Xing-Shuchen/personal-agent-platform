@@ -318,3 +318,57 @@ def test_load_platform_rejects_missing_job_skill(tmp_path: Path):
     (manifest.parent / "profile/skills/test-skill/SKILL.md").unlink()
     with pytest.raises(SpecError, match="skill file not found"):
         load_platform(tmp_path)
+
+
+@pytest.mark.parametrize("keys", [
+    ("delivery_target",), ("delivery_channel",), ("delivery_account",),
+    ("delivery_target", "delivery_channel", "delivery_account"),
+])
+def test_job_delivery_overrides(tmp_path, keys):
+    body = VALID.replace("            skill: test-skill", "            skill: test-skill\n" +
+                         "\n".join(f"            {key}: test-value" for key in keys))
+    job = load_spec(write_agent(tmp_path, "test-agent", body)).jobs[0]
+    for key in ("delivery_target", "delivery_channel", "delivery_account"):
+        assert getattr(job, key) == ("test-value" if key in keys else None)
+
+
+@pytest.mark.parametrize("key", ["delivery_target", "delivery_channel", "delivery_account"])
+@pytest.mark.parametrize("value", ["''", "'   '", "null", "123", "false", "[]", "{}"])
+def test_job_delivery_overrides_reject_invalid_values(tmp_path, key, value):
+    body = VALID.replace("            skill: test-skill",
+                         f"            skill: test-skill\n            {key}: {value}")
+    path = write_agent(tmp_path, "test-agent", body)
+    with pytest.raises(SpecError, match=rf"spec\.proactive\.desired_jobs\[0\]\.{key}: must be a non-empty string"):
+        load_spec(path)
+
+
+@pytest.mark.parametrize("runner", ["openclaw", "command"])
+@pytest.mark.parametrize("keys", [
+    ("delivery_target",), ("delivery_channel",), ("delivery_account",),
+    ("delivery_target", "delivery_channel", "delivery_account"),
+])
+def test_local_job_delivery_overrides(tmp_path, runner, keys):
+    body = VALID
+    if runner == "command":
+        body = body.replace("            skill: test-skill",
+                            "            skill: test-skill\n            runner: command\n            command: [tool]")
+    write_agent(tmp_path, "test-agent", body)
+    config = tmp_path / "var/config/agents.yaml"
+    config.parent.mkdir(parents=True)
+    config.write_text("agents:\n  test-agent:\n    enabled: true\n    jobs:\n      test-pulse:\n" +
+                      "".join(f"        {key}: local-value\n" for key in keys))
+    job = load_platform(tmp_path)[0].jobs[0]
+    for key in ("delivery_target", "delivery_channel", "delivery_account"):
+        assert getattr(job, key) == ("local-value" if key in keys else None)
+
+
+@pytest.mark.parametrize("key", ["delivery_target", "delivery_channel", "delivery_account"])
+@pytest.mark.parametrize("value", ["''", "'   '", "null", "123", "false", "[]", "{}"])
+def test_local_job_delivery_overrides_reject_invalid_values(tmp_path, key, value):
+    write_agent(tmp_path, "test-agent", VALID)
+    config = tmp_path / "var/config/agents.yaml"
+    config.parent.mkdir(parents=True)
+    config.write_text("agents:\n  test-agent:\n    enabled: true\n    jobs:\n      test-pulse:\n" +
+                      f"        {key}: {value}\n")
+    with pytest.raises(SpecError, match=rf"test-agent: test-pulse: {key} must be a non-empty string"):
+        load_platform(tmp_path)

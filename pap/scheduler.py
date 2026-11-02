@@ -370,6 +370,8 @@ def _deliver(
     job: ProactiveJob,
     *,
     target: str | None,
+    channel: str | None = None,
+    account: str | None = None,
     sender: Callable[..., subprocess.CompletedProcess[str]] | None = None,
 ) -> str:
     """Deliver user-facing run output through the OpenClaw Gateway CLI."""
@@ -385,7 +387,8 @@ def _deliver(
         return "leaked-suppressed"
     if job.delivery == "local":
         return "local"
-    return _send_message(response, run_id=result.run_id, target=target, sender=sender)
+    return _send_message(response, run_id=result.run_id, target=target,
+                         channel=channel, account=account, sender=sender)
 
 
 def _delivery_deadline(job: ProactiveJob, completed_at: datetime) -> datetime:
@@ -399,10 +402,12 @@ def _delivery_deadline(job: ProactiveJob, completed_at: datetime) -> datetime:
 
 def _queue_deferred_delivery(
     path: Path, *, run_id: str, job_key: str, response: str, deliver_at: datetime,
+    target: str | None = None, channel: str | None = None, account: str | None = None,
 ) -> None:
     with _locked_delivery_queue(path) as entries:
         entries.append({"run_id": run_id, "job_key": job_key, "response": response,
                         "deliver_at": deliver_at.isoformat(),
+                        "target": target, "channel": channel, "account": account,
                         "created_at": _now().isoformat(timespec="seconds")})
 
 
@@ -430,7 +435,10 @@ def _drain_deferred_deliveries(
             if deliver_at > now or (retry_after is not None and retry_after > now):
                 remaining.append(entry)
                 continue
-            sent = _send_message(response, run_id=run_id, target=target, sender=sender)
+            entry_target = entry.get("target") or target
+            sent = _send_message(response, run_id=run_id, target=entry_target,
+                                 channel=entry.get("channel") or None,
+                                 account=entry.get("account") or None, sender=sender)
             if sent == "sent":
                 delivery = "deferred-sent"
             else:
@@ -448,7 +456,7 @@ def _drain_deferred_deliveries(
                     remaining.append(entry)
             append_jsonl(run_log, {"event": "run.delivery", "run_id": run_id,
                                    "delivery": delivery,
-                                   "delivery_target_configured": bool(target)})
+                                   "delivery_target_configured": bool(entry_target)})
         entries[:] = remaining
 
 
@@ -489,6 +497,9 @@ def _dispatch_due_job(
         runner_backend=due.job.runner,
         command=due.job.command,
     )
+    target = due.job.delivery_target or target
+    channel = due.job.delivery_channel or None
+    account = due.job.delivery_account or None
     response, _ = normalize_terminal_response(result.response)
     completed_at = _parse_time(result.completed_at) or _now()
     deadline = _delivery_deadline(due.job, completed_at) if due.job.deliver_at else None
@@ -497,7 +508,8 @@ def _dispatch_due_job(
             and not _requests_silence(response) and not _looks_like_leaked_output(response)
             and due.job.delivery != "local"):
         _queue_deferred_delivery(delivery_queue_path, run_id=result.run_id, job_key=due.key,
-                                 response=response, deliver_at=deadline)
+                                 response=response, deliver_at=deadline,
+                                 target=target, channel=channel, account=account)
         delivery = "deferred"
     elif result.status == "not_ready" and due.job.notify:
         reason = result.error.strip() or "未说明原因"
@@ -518,7 +530,8 @@ def _dispatch_due_job(
             with _locked_state(state_path) as state:
                 state.setdefault("jobs", {}).setdefault(due.key, {})["notify_signature"] = signature
     else:
-        delivery = _deliver(result, due.job, target=target, sender=sender)
+        delivery = _deliver(result, due.job, target=target, channel=channel,
+                            account=account, sender=sender)
     append_jsonl(run_log, {
         "event": "run.delivery",
         "run_id": result.run_id,

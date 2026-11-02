@@ -526,3 +526,69 @@ def test_missing_required_environment_settles_slot_without_retry(tmp_path, monke
     assert len(first) == 1
     assert first[0].run.status == "skipped"
     assert tick(tmp_path, now=now + timedelta(minutes=6), command_runner=forbidden) == []
+
+
+@pytest.mark.parametrize("deferred", [False, True])
+@pytest.mark.parametrize("override", [False, True])
+def test_job_delivery_route(tmp_path, monkeypatch, deferred, override):
+    make_platform(tmp_path, "0 7 * * *", delivery="user-home",
+                  deliver_at="08:00" if deferred else None,
+                  timezone_name="Asia/Shanghai")
+    if override:
+        manifest = tmp_path / "agents/sample/agent.yaml"
+        manifest.write_text(manifest.read_text().replace(
+            "        delivery: user-home",
+            "        delivery: user-home\n        delivery_target: job-target\n"
+            "        delivery_channel: job-channel\n        delivery_account: job-account"))
+    monkeypatch.setenv("PAP_OPENCLAW_DELIVERY_TARGET", "global-target")
+    monkeypatch.setattr("pap.scheduler.JITTER_MAX_MINUTES", 0)
+    before = datetime(2026, 8, 31, 7, 0, tzinfo=CST)
+    monkeypatch.setattr("pap.run._now", lambda: before)
+    sent = []
+
+    def sender(command, **kwargs):
+        sent.append(command)
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    result = tick(tmp_path, now=before, sender=sender,
+                  command_runner=lambda command, **kwargs: subprocess.CompletedProcess(
+                      command, 0, "morning brief", ""))
+    if deferred:
+        assert result[0].delivery == "deferred"
+        assert sent == []
+        entry = json.loads((tmp_path / "var/state/delivery-queue.json").read_text())["entries"][0]
+        assert entry["target"] == ("job-target" if override else "global-target")
+        assert entry["channel"] == ("job-channel" if override else None)
+        assert entry["account"] == ("job-account" if override else None)
+        tick(tmp_path, now=before.replace(hour=8), sender=sender)
+    else:
+        assert result[0].delivery == "sent"
+    assert len(sent) == 1
+    for flag, expected in [("--target", "job-target" if override else "global-target"),
+                           ("--channel", "job-channel" if override else "test-channel"),
+                           ("--account", "job-account" if override else "test-account")]:
+        assert sent[0][sent[0].index(flag) + 1] == expected
+
+
+def test_legacy_deferred_delivery_uses_global_route(tmp_path):
+    from pap.scheduler import _drain_deferred_deliveries
+
+    queue = tmp_path / "queue.json"
+    now = datetime(2026, 8, 31, 8, 0, tzinfo=CST)
+    queue.write_text(json.dumps({"entries": [{
+        "run_id": "legacy-run", "job_key": "sample/sample-job",
+        "response": "legacy brief", "deliver_at": now.isoformat(),
+    }]}))
+    sent = []
+
+    def sender(command, **kwargs):
+        sent.append(command)
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    _drain_deferred_deliveries(queue, now=now, run_log=tmp_path / "runs.jsonl",
+                               target="global-target", sender=sender)
+    assert len(sent) == 1
+    for flag, expected in [("--target", "global-target"),
+                           ("--channel", "test-channel"), ("--account", "test-account")]:
+        assert sent[0][sent[0].index(flag) + 1] == expected
+    assert json.loads(queue.read_text())["entries"] == []
