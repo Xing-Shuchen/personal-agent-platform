@@ -113,14 +113,15 @@ Local projection is optional and should not appear in the user-facing message. A
 
 ## Thread roster (read-only, delivery set)
 
-To list the threads a follow update delivers, run this read-only command
-(do not probe any other Chronicle path). The delivered set is `high`, `normal`,
-and `low`; `background` threads stay tracked in the Chronicle but never appear
-in a follow update.
+To list the threads a follow update delivers, run this read-only command with
+the run's structured invocation argument `priority` substituted for `<priority>`
+(do not probe any other Chronicle path). Only active threads whose priority
+equals the run's own tier appear. `background` always produces empty stdout;
+any tier with no active threads also produces empty stdout.
 
 ```bash
 "$PAP_ROOT/.venv/bin/python" \
-  "$PAP_ROOT/agents/world-historian/runtime/cli.py" roster
+  "$PAP_ROOT/agents/world-historian/runtime/cli.py" roster --priority "<priority>"
 ```
 
 ## Priority lifecycle (tiered stepdown, then close)
@@ -223,13 +224,13 @@ shape and nothing else:
 - **<线程标题>** — <旧档位> → <新档位|closed>（<原因>）
 
 **追踪中**
-<`roster` command stdout, pasted verbatim>
+<`roster --priority "<priority>"` command stdout, pasted verbatim; blank if empty>
 ```
 
 Formatting rules:
 1. 进展 — 每个有新进展的 `high`/`normal` thread 一条：加粗线程标题、一句话说明新增或修正的事件、有来源就附行内链接。不写检索过程、不写被排除的候选；`low`/`background` 绝不出现。标题里的 `<N> 条进展` 只数这些进展条，不含降级；没有进展时省略 `**进展**` 一节、计数写 `0 条进展`。
 2. 降级 — 每个被消费的 lifecycle 通知一条：加粗线程标题、`<旧档位> → <新档位|closed>`、括号里写原因（如 `3 天无新事件`）。降级只写在这里，绝不写进 `进展`，也不要有单独的降级前言。
-3. 追踪中 — 将上面 `roster` command 的 stdout 原样粘贴：不得由模型选择 emoji、不得重新加粗、不得重排、不得添加或删除行。三档 emoji 映射为 `🟥` high / `🟦` normal / `⬜` low。
+3. 追踪中 — 将上面使用本次 invocation 结构化参数 `priority` 的 `roster --priority "<priority>"` command 的 stdout 原样粘贴：不得由模型选择 emoji、不得重新加粗、不得重排、不得添加或删除行。stdout 为空时，保留 `**追踪中**` 标签，其下留空；不得替换成其他档位，不得添加「暂无」或任何解释文字。三档 emoji 映射为 `🟥` high / `🟦` normal / `⬜` low。
 4. 保持紧凑：每个 thread 一行。投递渠道的卡片渲染支持加粗、列表、链接、表情和空行——不要用表格，分节标签用加粗（`**进展**`）而不是 `#` 标题。
 5. 来源档位只写 `Level: <优先级>`：优先级取 invocation 结构化参数 `priority`，首字母大写（`Level: High` / `Level: Normal`；`low`/`background` 不会投递，若出现写 `Level: Low` / `Level: Background`）。不写 job 名、不译成中文、不加其他词。
 6. 绝不在消息前后加状态行或工作摘要：不要报告可选本地投影、lifecycle 检查及其结果，也不要写「无待处理通知」这类否定报告。消息只能是上面的结构，或在无可投递内容时恰好 `NO_REPLY`。

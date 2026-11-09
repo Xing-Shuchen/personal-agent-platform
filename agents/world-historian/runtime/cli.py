@@ -82,7 +82,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("init", help="create runtime directories and apply migrations")
     sub.add_parser("stats", help="show table counts")
-    sub.add_parser("roster", help="print the deterministic follow-update thread roster")
+    p_roster = sub.add_parser("roster", help="print the deterministic follow-update thread roster")
+    p_roster.add_argument("--priority", choices=("high", "normal", "low", "background"),
+                          help="limit the roster to this priority (background is always empty)")
     sub.add_parser("active-thread-titles",
                    help="print active thread titles, newest updated first")
 
@@ -357,6 +359,8 @@ def main(argv: list[str] | None = None) -> int:
                     "ORDER BY CASE priority WHEN 'high' THEN 0 WHEN 'normal' THEN 1 ELSE 2 END, title"
                 )
                 for title, priority in rows:
+                    if args.priority is not None and priority != args.priority:
+                        continue
                     emoji = {"high": "🟥", "normal": "🟦", "low": "⬜"}[priority]
                     print(f"- {emoji} **{title}**（{priority}）")
             return 0

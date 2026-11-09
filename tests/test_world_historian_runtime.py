@@ -203,6 +203,16 @@ def test_roster_formats_orders_and_filters_delivery_threads(tmp_path):
     assert first.stdout == expected
     assert second.stdout == expected
 
+    for priority, tier_expected in (
+        ("high", "- 🟥 **Bravo high**（high）\n- 🟥 **Zulu high**（high）\n"),
+        ("normal", "- 🟦 **Alpha normal**（normal）\n- 🟦 **Zulu normal**（normal）\n"),
+        ("low", "- ⬜ **Alpha low**（low）\n"),
+        ("background", ""),
+    ):
+        filtered = run_runtime(db, "roster", "--priority", priority)
+        assert filtered.returncode == 0, filtered.stderr
+        assert filtered.stdout == tier_expected
+
 
 def test_active_thread_titles_orders_newest_first_and_handles_empty_db(tmp_path):
     db = tmp_path / "chronicle.sqlite"
