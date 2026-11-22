@@ -99,12 +99,13 @@ It must have a top-level `personal_links` list with
 `world_event_ref`, `personal_event_id`, an allowed relation type,
 `explanation`, `confidence`, and record-ID evidence only.
 
-6. Persist only a nonempty bundle with exactly:
+6. Persist only a nonempty bundle with exactly the command below (no `--db`:
+   it would disable the automatic vault projection; the default database is
+   the same Chronicle file):
 
 ```bash
 "$PAP_ROOT/.venv/bin/python" \
   "$PAP_ROOT/agents/world-historian/runtime/cli.py" \
-  --db "$PAP_ROOT/var/world-historian/chronicle.sqlite" \
   store-bundle --json \
   "$PAP_ROOT/var/world-historian/personal-link-bundle-YYYYMMDD.json"
 ```

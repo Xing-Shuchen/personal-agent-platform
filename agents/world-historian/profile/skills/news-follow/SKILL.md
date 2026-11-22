@@ -21,8 +21,11 @@ Before any web search, check what is already local:
   feeds recent --hours 24 --limit 80
 ```
 
-The `--db` path above is mandatory. Do not inspect or probe other Chronicle
-paths, run database discovery, or read CLI help during a scheduled run. If the
+The `--db` path above is mandatory for read-only queries such as `feeds recent`.
+Never pass `--db` to `store-bundle` or `sync`: it disables the automatic vault
+projection (see `references/vault-completion-sop.md`). Do not inspect or probe
+other Chronicle paths, run database discovery, or read CLI help during a
+scheduled run. If the
 command fails, stop and return exactly `NO_REPLY`. Keep the feed output to
 titles, timestamps, URLs, and short summaries; do not dump full article bodies.
 
