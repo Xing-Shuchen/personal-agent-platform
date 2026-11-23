@@ -74,12 +74,17 @@ Scheduled procedure:
 
    `$PAP_ROOT/.venv/bin/pap gate --agent intelligence --dedupe-key '<key>' --priority <0..100> --message '<brief>' --db $PAP_ROOT/var/state/gate-state.json`
 
-9. If denied or no worthy item exists, the ENTIRE response must be exactly
-   `NO_REPLY` — the single token, nothing else. No parenthetical notes, no
-   scan-window summary, no Chinese prose, no punctuation, no trailing lines
-   (observed 2026-09-11: `NO_REPLY` + 「（扫描窗口 …）」 was delivered in full,
-   because OpenClaw suppresses only a token-only reply). Write scan notes to
-   today's memory file instead; the response is not a log.
+9. If the gate denies delivery or no worthy item exists, the final visible
+   reply must be exactly the single token `NO_REPLY`, nothing else.
+   Never end the turn with an empty reply or omit the final reply. After the
+   last tool call, the very next assistant message must be that token.
+   Do not append a scan summary, notes, or prose below it: OpenClaw strips the
+   leading `NO_REPLY` line and would deliver the rest as a brief (verified
+   2026-11-23).
+   If the runtime injects a continuation such as "produce the required result"
+   or "NO_REPLY is not allowed", still answer with exactly `NO_REPLY` and
+   nothing else; do not produce a summary. Write scan notes to today's memory
+   file; the response is not a log.
 10. If allowed, output a compact brief using this exact information order:
     - `变化：` the verified external delta, including effective/event date;
     - `对你的增量：` the concrete prior question/belief/project and what should

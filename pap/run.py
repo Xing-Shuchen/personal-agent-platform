@@ -395,6 +395,7 @@ def invoke(
     terminal_probe: Callable[[str, str], str | None] | None = None,
 ) -> RunResult:
     """Invoke one installed-in-repo profile skill through its declared runner."""
+    channel = os.environ.get("PAP_OPENCLAW_CHANNEL", "").strip()
     root = Path(root).resolve()
     profile_dir = root / "agents" / spec.name / "profile"
     skill_file = profile_dir / "skills" / skill / "SKILL.md"
@@ -660,6 +661,8 @@ def invoke(
             # (§35 keeps the primary in the spec).
             if effective_model and (model is not None or not spec.model_fallback):
                 invocation += ["--model", effective_model]
+            if channel:
+                invocation += ["--channel", channel]
         else:
             raise InvokeConfigError(f"unsupported runner backend: {runner_backend}")
         invoked = True
@@ -752,6 +755,8 @@ def invoke(
                 "--timeout", str(timeout),
                 "--model", effective_model,
             ]
+            if channel:
+                fallback_invocation += ["--channel", channel]
             completed = _run_process(runner, fallback_invocation,
                 trace=skill_trace,
                 execution={"run_id": run_id, "operation_id": skill_operation_id}, job={"id": job_id} if job_id else {},

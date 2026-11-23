@@ -112,6 +112,40 @@ def test_invoke_records_start_and_completion(tmp_path):
     assert merged[0]["usage"] == {}
 
 
+@pytest.mark.parametrize("channel", [None, "", " \t ", "feishu", " feishu "])
+def test_openclaw_channel_is_shared_by_primary_and_fallback(tmp_path, monkeypatch, channel):
+    spec = load_spec(make_agent(tmp_path))
+    spec.provider_rejection_fallback = "test-provider/fallback-model"
+    if channel is None:
+        monkeypatch.delenv("PAP_OPENCLAW_CHANNEL", raising=False)
+    else:
+        monkeypatch.setenv("PAP_OPENCLAW_CHANNEL", channel)
+    commands = []
+
+    def fake_runner(command, **kwargs):
+        commands.append(command)
+        if len(commands) == 1:
+            return subprocess.CompletedProcess(command, 1, "", "data_inspection_failed")
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    result = invoke(
+        root=tmp_path, spec=spec, skill="sample-skill", run_log=tmp_path / "runs.jsonl",
+        command_runner=fake_runner,
+    )
+
+    assert result.status == "success"
+    assert result.response == ""
+    assert len(commands) == 2
+    for command in commands:
+        if channel and channel.strip():
+            assert command.count("--channel") == 1
+            assert command[command.index("--channel") + 1] == "feishu"
+        else:
+            assert "--channel" not in command
+        assert "--deliver" not in command
+        assert "--reply-channel" not in command
+
+
 def test_invoke_passes_exported_paths_to_openclaw_message(tmp_path, monkeypatch):
     spec = load_spec(make_agent(tmp_path))
     monkeypatch.setenv("PAP_VAULT", "/synthetic/vault")
@@ -714,7 +748,7 @@ def test_provider_quota_uses_declared_fallback_once(tmp_path, source, fallback_r
     assert result.status == ("failed" if fallback_returncode else "success")
     assert result.failure_kind == expected_kind
     assert len(calls) == 2
-    assert calls[1][0][-2:] == ["--model", spec.provider_rejection_fallback]
+    assert calls[1][0][calls[1][0].index("--model") + 1] == spec.provider_rejection_fallback
     assert calls[1][1]["PAP_AGENT_MODEL"] == spec.provider_rejection_fallback
     assert calls[1][1]["PAP_AGENT_PROVIDER"] == "fallback-provider"
     events = [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()]
@@ -794,7 +828,7 @@ def test_generic_refusal_falls_back_without_a_primary_model(tmp_path, monkeypatc
     assert result.failure_kind == ""
     assert len(calls) == 2
     assert "--model" not in calls[0]
-    assert calls[1][-2:] == ["--model", spec.provider_rejection_fallback]
+    assert calls[1][calls[1].index("--model") + 1] == spec.provider_rejection_fallback
     events = [json.loads(line) for line in (tmp_path / "runs.jsonl").read_text().splitlines()]
     assert [event["event"] for event in events] == ["run.started", "run.fallback", "run.completed"]
     assert events[0]["provider_rejection_fallback"] == spec.provider_rejection_fallback
@@ -866,7 +900,7 @@ def test_provider_rejection_uses_declared_fallback_once_and_records_provenance(t
     assert result.status == "success"
     assert result.response == "fallback reply"
     assert len(commands) == 2
-    assert commands[1][-2:] == ["--model", "test-provider/test-model"]
+    assert commands[1][commands[1].index("--model") + 1] == "test-provider/test-model"
     events = [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()]
     assert [event["event"] for event in events] == ["run.started", "run.fallback", "run.completed"]
     assert events[1]["from"] == "test-provider/from-model"
