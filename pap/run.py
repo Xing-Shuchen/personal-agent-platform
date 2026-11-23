@@ -184,6 +184,15 @@ PROVIDER_REJECTION_MARKERS = (
     "request format rejected, http 400",
     "the ai service couldn't accept this request",
 )
+PROVIDER_QUOTA_MARKERS = (
+    "weekly/monthly limit exhausted",
+    "limit will reset",
+    "insufficient_quota",
+    "exceeded your current quota",
+    "quota exceeded",
+    "余额不足",
+    "额度不足",
+)
 
 # OpenCode Zen failures which selecting the same model and prompt cannot fix.
 # The free tier is CLI-only, time-limited, has no SLA, and may use prompt data
@@ -201,6 +210,13 @@ def provider_rejection(*texts: str | None) -> bool:
 
     haystack = " ".join(text for text in texts if text).lower()
     return any(marker in haystack for marker in PROVIDER_REJECTION_MARKERS)
+
+
+def provider_quota(*texts: str | None) -> bool:
+    """True when the runner's own words name provider quota exhaustion."""
+
+    haystack = " ".join(text for text in texts if text).lower()
+    return any(marker in haystack for marker in PROVIDER_QUOTA_MARKERS)
 
 
 def opencode_provider_failure(*texts: str | None) -> bool:
@@ -479,6 +495,7 @@ def invoke(
     usage: dict[str, Any] = {}
     fallback_from: str | None = None
     fallback_attempted = False
+    quota_exhausted = False
     refusal_error = ""
     failure_kind = ""
     response = ""
@@ -677,6 +694,7 @@ def invoke(
             failure_kind = f"signal:{-returncode}" if returncode < 0 else ("command" if runner_backend == "command" else "runner")
             if runner_backend == "openclaw":
                 recorded_failure = read_failure(spec.name, run_id) if read_failure is not None else None
+                quota_exhausted = provider_quota(response, error, recorded_failure)
                 if not error and recorded_failure:
                     error = recorded_failure
                 if provider_rejection(response, error, recorded_failure):
@@ -696,10 +714,11 @@ def invoke(
         if (
             runner_backend == "openclaw"
             and returncode
-            and failure_kind == PROVIDER_REJECTION
             and spec.provider_rejection_fallback
+            and (failure_kind == PROVIDER_REJECTION or quota_exhausted)
         ):
             fallback_attempted = True
+            fallback_reason = "quota_exhausted" if quota_exhausted else PROVIDER_REJECTION
             fallback_from = model_name
             effective_model = spec.provider_rejection_fallback
             append_jsonl(run_log, {
@@ -707,7 +726,8 @@ def invoke(
                 "run_id": run_id,
                 "from": fallback_from,
                 "to": effective_model,
-                "failure_kind": PROVIDER_REJECTION,
+                "failure_kind": failure_kind,
+                "reason": fallback_reason,
                 "error": (refusal_error or error or response)[:1000],
             })
             paplog.event("pap.model.fallback", trace=skill_trace, severity="WARN",
@@ -715,7 +735,7 @@ def invoke(
                          job={"id": job_id} if job_id else {}, agent=agent_metadata,
                          skill={"id": skill, "definition_version": skill_version},
                          attributes={"previous_model": fallback_from, "selected_model": effective_model,
-                                     "fallback_reason": PROVIDER_REJECTION, "retry_count": 1,
+                                     "fallback_reason": fallback_reason, "retry_count": 1,
                                      "error": refusal_error or error or response, **model_route})
             # This retry is an explicit selection and must not enter another
             # OpenClaw route fallback chain.

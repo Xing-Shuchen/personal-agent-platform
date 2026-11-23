@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from pap.run import RunResult
-from pap.scheduler import _deliver, tick
+from pap.scheduler import GATEWAY_RETRY_MAX_ATTEMPTS, _deliver, tick
 from paplog import observe
 
 CST = timezone(timedelta(hours=8))
@@ -263,6 +263,44 @@ def test_failed_slot_is_retried_after_delay(tmp_path, monkeypatch):
     assert len(calls) == 2
 
 
+@pytest.mark.parametrize("message", [
+    "gateway.auth.token is configured as a secret reference but is unavailable",
+    "Lost the connection to OpenClaw",
+    "Gateway agent call connection closed; the Gateway may still be running this turn",
+    "connect ECONNREFUSED 127.0.0.1",
+    "socket hang up",
+])
+def test_gateway_unavailable_markers(message):
+    from pap.scheduler import gateway_unavailable
+
+    assert gateway_unavailable(None, "", message)
+    assert gateway_unavailable(message.upper())
+    assert not gateway_unavailable(None, "", "ordinary runner failure")
+    assert not gateway_unavailable()
+
+
+@pytest.mark.parametrize("returncode,error,expected_class", [
+    (1, "Gateway agent call connection closed", "gateway_unavailable"),
+    (1, "ordinary runner failure", ""),
+    (0, "Gateway agent call connection closed", ""),
+])
+def test_settled_run_updates_gateway_failure_class(tmp_path, monkeypatch, returncode, error, expected_class):
+    make_platform(tmp_path, "17 18 * * *")
+    monkeypatch.setattr("pap.scheduler.JITTER_MAX_MINUTES", 0)
+    now = datetime(2026, 8, 31, 18, 17, tzinfo=CST)
+    state_path = tmp_path / "state.json"
+    state_path.write_text(json.dumps({"jobs": {"sample/sample-job": {
+        "last_failure_class": "gateway_unavailable",
+    }}}), encoding="utf-8")
+
+    result = tick(tmp_path, now=now, state_path=state_path, command_runner=lambda command, **kwargs:
+                  subprocess.CompletedProcess(command, returncode, "NO_REPLY", error))
+
+    assert result[0].run.status == ("failed" if returncode else "success")
+    entry = json.loads(state_path.read_text(encoding="utf-8"))["jobs"]["sample/sample-job"]
+    assert entry["last_failure_class"] == expected_class
+
+
 def test_opencode_provider_rejection_is_not_retried(tmp_path, monkeypatch):
     make_platform(tmp_path, "17 18 * * *")
     manifest = tmp_path / "agents/sample/agent.yaml"
@@ -424,6 +462,38 @@ def test_a_rejected_run_is_not_retried_but_transient_trouble_is(tmp_path):
         # Retrying stays within the same slot period.
         due = due_jobs(tmp_path, now=slot + timedelta(minutes=10), state_path=state_path, reserve=False)
         assert bool(due) is expect_due, f"last_retryable={retryable}"
+
+
+@pytest.mark.parametrize("failure_class,attempts,retryable,minutes_since_finished,expect_due", [
+    ("gateway_unavailable", 5, True, 6, True),
+    ("gateway_unavailable", GATEWAY_RETRY_MAX_ATTEMPTS, True, 6, False),
+    ("", 3, True, 6, False),
+    ("gateway_unavailable", 5, False, 6, False),
+    ("gateway_unavailable", 5, True, 4, False),
+])
+def test_failed_slot_retry_budget(tmp_path, monkeypatch, failure_class, attempts, retryable,
+                                  minutes_since_finished, expect_due):
+    from pap.scheduler import due_jobs
+
+    make_platform(tmp_path, "17 18 * * *")
+    monkeypatch.setattr("pap.scheduler.JITTER_MAX_MINUTES", 0)
+    slot = datetime(2026, 8, 31, 18, 17, tzinfo=CST)
+    now = slot + timedelta(minutes=40)
+    state_path = tmp_path / "state.json"
+    entry = {
+        "last_slot": slot.isoformat(timespec="minutes"),
+        "last_status": "failed",
+        "last_failure_kind": "runner",
+        "last_retryable": retryable,
+        "attempts": attempts,
+        "last_finished_at": (now - timedelta(minutes=minutes_since_finished)).isoformat(timespec="seconds"),
+    }
+    if failure_class:
+        entry["last_failure_class"] = failure_class
+    state_path.write_text(json.dumps({"jobs": {"sample/sample-job": entry}}), encoding="utf-8")
+
+    due = due_jobs(tmp_path, now=now, state_path=state_path, reserve=False)
+    assert [item.slot for item in due] == ([slot] if expect_due else [])
 
 
 def test_a_pre_existing_failed_slot_without_a_classification_is_not_retried(tmp_path):

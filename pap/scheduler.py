@@ -29,6 +29,14 @@ MAX_CATCHUP = timedelta(hours=24)
 RESERVATION_TTL = timedelta(hours=6)  # 必须大于最长单次运行时长（PAP_RUN_TIMEOUT_SECONDS=14400s，2026-09-21 由 3600s 上调），否则超长运行会被后续 tick 重复认领
 RETRY_DELAY = timedelta(minutes=5)
 MAX_ATTEMPTS_PER_SLOT = 3
+GATEWAY_RETRY_MAX_ATTEMPTS = 12
+GATEWAY_UNAVAILABLE_MARKERS = (
+    "gateway.auth.token is configured as a secret reference",
+    "lost the connection to openclaw",
+    "gateway agent call connection closed",
+    "econnrefused",
+    "socket hang up",
+)
 JITTER_MAX_MINUTES = 5
 MAX_DELIVERY_ATTEMPTS = 3
 DELIVERY_RETRY_DELAY = timedelta(minutes=5)
@@ -39,6 +47,13 @@ LEAK_MARKERS = (
     "sqlite3.connect(",
     "The tool run finished, but no final summary was produced.",
 )
+
+
+def gateway_unavailable(*texts: str | None) -> bool:
+    """True when the runner's own words name gateway unavailability."""
+
+    haystack = " ".join(text for text in texts if text).lower()
+    return any(marker in haystack for marker in GATEWAY_UNAVAILABLE_MARKERS)
 
 
 def _now() -> datetime:
@@ -228,15 +243,20 @@ def due_jobs(
                             attempts < MAX_ATTEMPTS_PER_SLOT
                             and now - retry_after >= RESERVATION_TTL
                         )
-                    elif (
-                        previous_status == "failed"
-                        and attempts < MAX_ATTEMPTS_PER_SLOT
-                        # §34: only transient trouble is retried. Output the
-                        # Historian rejected fails the same way every time, so a
-                        # blind retry burns model calls and still fails.
-                        and entry.get("last_retryable") is True
-                    ):
-                        retry_due = now - retry_after >= RETRY_DELAY
+                    elif previous_status == "failed":
+                        retry_cap = (
+                            GATEWAY_RETRY_MAX_ATTEMPTS
+                            if entry.get("last_failure_class") == "gateway_unavailable"
+                            else MAX_ATTEMPTS_PER_SLOT
+                        )
+                        retry_due = (
+                            attempts < retry_cap
+                            # §34: only transient trouble is retried. Output the
+                            # Historian rejected fails the same way every time, so a
+                            # blind retry burns model calls and still fails.
+                            and entry.get("last_retryable") is True
+                            and now - retry_after >= RETRY_DELAY
+                        )
                 if retry_due and (slot is None or slot <= previous_slot):
                     found.append(DueJob(spec=spec, job=job, slot=previous_slot))
                     if reserve:
@@ -542,6 +562,8 @@ def _dispatch_due_job(
         entry = state.setdefault("jobs", {}).setdefault(due.key, {})
         entry.update({"last_run_id": result.run_id, "last_status": result.status,
                       "last_failure_kind": getattr(result, "failure_kind", ""),
+                      "last_failure_class": "gateway_unavailable"
+                      if result.status == "failed" and gateway_unavailable(result.error) else "",
                       "last_retryable": is_retryable(getattr(result, "failure_kind", ""))
                       if result.status == "failed" else None,
                       "last_delivery": delivery,

@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from pap.run import OPENCLAW_EMPTY_FINALIZATION_FALLBACK, OPENCLAW_PROMPT_ENV_KEYS, _opencode_output, _prompt, invoke, is_retryable, new_run_id, provider_rejection, runs
+from pap.run import OPENCLAW_EMPTY_FINALIZATION_FALLBACK, OPENCLAW_PROMPT_ENV_KEYS, _opencode_output, _prompt, invoke, is_retryable, new_run_id, provider_quota, provider_rejection, runs
 from pap.spec import load_spec
 
 
@@ -684,6 +684,86 @@ def test_provider_rejection_recognizes_payload_rejections_and_existing_markers()
 
 
 @pytest.mark.parametrize("source", ["stderr", "stdout", "transcript"])
+@pytest.mark.parametrize("fallback_returncode,fallback_text,expected_kind", [
+    (0, "fallback reply", ""),
+    (1, "quota exceeded", "runner"),
+    (1, "data_inspection_failed", "provider_rejection"),
+])
+def test_provider_quota_uses_declared_fallback_once(tmp_path, source, fallback_returncode,
+                                                   fallback_text, expected_kind):
+    spec = load_spec(make_agent(tmp_path))
+    spec.provider_rejection_fallback = "fallback-provider/fallback-model"
+    log = tmp_path / "runs.jsonl"
+    quota = "1310: 429 Weekly/Monthly Limit Exhausted. Your limit will reset at 2026-11-23 20:01:49"
+    calls = []
+
+    def runner(command, **kwargs):
+        calls.append((command, dict(kwargs["env"])))
+        if len(calls) == 1:
+            return subprocess.CompletedProcess(
+                command, 1, quota if source == "stdout" else "",
+                quota if source == "stderr" else "",
+            )
+        return subprocess.CompletedProcess(command, fallback_returncode, fallback_text, "")
+
+    result = invoke(
+        root=tmp_path, spec=spec, skill="sample-skill", run_log=log,
+        command_runner=runner,
+        failure_probe=lambda *_: quota if source == "transcript" and len(calls) == 1 else None,
+    )
+    assert result.status == ("failed" if fallback_returncode else "success")
+    assert result.failure_kind == expected_kind
+    assert len(calls) == 2
+    assert calls[1][0][-2:] == ["--model", spec.provider_rejection_fallback]
+    assert calls[1][1]["PAP_AGENT_MODEL"] == spec.provider_rejection_fallback
+    assert calls[1][1]["PAP_AGENT_PROVIDER"] == "fallback-provider"
+    events = [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()]
+    assert [event["event"] for event in events] == ["run.started", "run.fallback", "run.completed"]
+    assert events[1]["reason"] == "quota_exhausted"
+    assert events[1]["failure_kind"] == "runner"
+    assert events[1]["error"] == quota
+    assert events[-1]["fallback_attempted"] is True
+    assert events[-1]["failure_kind"] == expected_kind
+
+
+def test_provider_quota_markers():
+    for text in (
+        "1310: 429 Weekly/Monthly Limit Exhausted. Your limit will reset at 2026-11-23 20:01:49",
+        "limit will reset",
+        "insufficient_quota",
+        "exceeded your current quota",
+        "quota exceeded",
+        "余额不足",
+        "额度不足",
+    ):
+        assert provider_quota(None, "", text.upper())
+        assert not provider_rejection(text)
+    assert not provider_quota("ordinary output")
+    assert not provider_quota("429 Too Many Requests")
+    assert not provider_quota(None, "")
+
+
+def test_provider_quota_without_declared_fallback_is_retryable(tmp_path):
+    spec = load_spec(make_agent(tmp_path))
+    log = tmp_path / "runs.jsonl"
+    calls = []
+
+    def runner(command, **kwargs):
+        calls.append(command)
+        return subprocess.CompletedProcess(command, 1, "", "Weekly/Monthly Limit Exhausted")
+
+    result = invoke(root=tmp_path, spec=spec, skill="sample-skill", run_log=log, command_runner=runner)
+    assert result.status == "failed"
+    assert result.failure_kind == "runner"
+    assert is_retryable(result.failure_kind)
+    assert len(calls) == 1
+    events = [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()]
+    assert [event["event"] for event in events] == ["run.started", "run.completed"]
+    assert events[-1]["fallback_attempted"] is False
+    assert events[-1]["retryable"] is True
+
+
+@pytest.mark.parametrize("source", ["stderr", "stdout", "transcript"])
 def test_generic_refusal_falls_back_without_a_primary_model(tmp_path, monkeypatch, source):
     from paplog import observe
     observe.configure(tmp_path / "ledger")
@@ -719,6 +799,8 @@ def test_generic_refusal_falls_back_without_a_primary_model(tmp_path, monkeypatc
     assert [event["event"] for event in events] == ["run.started", "run.fallback", "run.completed"]
     assert events[0]["provider_rejection_fallback"] == spec.provider_rejection_fallback
     assert events[1]["error"] == refusal
+    assert events[1]["reason"] == "provider_rejection"
+    assert events[1]["failure_kind"] == "provider_rejection"
     assert events[1]["from"] is None
     assert events[-1]["fallback_from"] is None
     assert events[-1]["fallback_attempted"] is True
