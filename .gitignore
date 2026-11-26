@@ -49,6 +49,8 @@ skills/avision-bookscan/local-root.txt
 # Generated run artifacts
 agents/*/runtime/reflect-*.json
 agents/*/runtime/follow-*.json
+agents/*/runtime/bundle-*.json
+agents/*/runtime/lifecycle-*.json
 
 # SQLite transient sidecars. The primary database is already covered by
 # *.sqlite above; these files are recreated by SQLite and must not be tracked.
