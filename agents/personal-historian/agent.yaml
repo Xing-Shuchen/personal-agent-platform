@@ -40,7 +40,6 @@ spec:
         schedule: "27 2 * * *"
         skill: historian-literary-renderer
         runner: codex
-        model: gpt-6.1-sol
         runtime: historian
         args: {kind: week, period: previous}
         attach_to_session: false
