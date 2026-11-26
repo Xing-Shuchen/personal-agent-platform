@@ -228,9 +228,30 @@ def configured_rss_sources(config_path: Path | None = None) -> list[dict[str, st
         raise ChronicleError(f"feed config is unreadable: {path}: {exc}") from exc
     except yaml.YAMLError as exc:
         raise ChronicleError(f"feed config is not valid YAML: {path}: {exc}") from exc
-    sources = loaded.get("sources", []) or []
-    return [s for s in sources if isinstance(s, dict) and s.get("kind") == "rss"
-            and s.get("url")]
+    sources = list(loaded.get("sources", []) or [])
+    # Machine-local watchlist (gitignored): personal/regional feeds live outside
+    # the reusable repo config. Merged by URL, profile config wins on conflicts.
+    local_path = repo_root() / "var" / "config" / "world-historian-sources.yaml"
+    if local_path.is_file():
+        try:
+            local = yaml.safe_load(local_path.read_text(encoding="utf-8")) or {}
+        except OSError as exc:
+            raise ChronicleError(f"local feed config is unreadable: {local_path}: {exc}") from exc
+        except yaml.YAMLError as exc:
+            raise ChronicleError(f"local feed config is not valid YAML: {local_path}: {exc}") from exc
+        sources.extend(local.get("sources", []) or [])
+    seen: set[str] = set()
+    merged: list[dict[str, str]] = []
+    for source in sources:
+        if not (isinstance(source, dict) and source.get("kind") == "rss"
+                and source.get("url")):
+            continue
+        url = str(source["url"])
+        if url in seen:
+            continue
+        seen.add(url)
+        merged.append(source)
+    return merged
 
 
 def ingest_all(conn: sqlite3.Connection, *, max_entries: int = 30,

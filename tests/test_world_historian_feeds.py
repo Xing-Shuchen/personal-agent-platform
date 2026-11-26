@@ -91,7 +91,10 @@ def test_recent_sources_window(tmp_path):
     assert feeds.recent_sources(conn, hours=0) == []
 
 
-def test_ingest_all_uses_configured_sources(tmp_path):
+def test_ingest_all_uses_configured_sources(tmp_path, monkeypatch):
+    # Isolate the machine-local watchlist merge: repo_root must not leak the
+    # real var/config/world-historian-sources.yaml into a tmp-config test.
+    monkeypatch.setattr(feeds, "repo_root", lambda: tmp_path)
     conn = fresh(tmp_path)
     config = tmp_path / "config.yaml"
     config.write_text(
@@ -123,6 +126,28 @@ def test_ingest_all_uses_configured_sources(tmp_path):
     publishers = {r["publisher"] for r in conn.execute(
         "SELECT publisher FROM sources")}
     assert publishers == {"A"}
+
+
+def test_configured_rss_sources_merges_local_watchlist(tmp_path, monkeypatch):
+    monkeypatch.setattr(feeds, "repo_root", lambda: tmp_path)
+    config = tmp_path / "config.yaml"
+    config.write_text(
+        "sources:\n"
+        "  - {name: A, kind: rss, url: 'https://a.test/feed'}\n",
+        encoding="utf-8")
+    local = tmp_path / "var" / "config" / "world-historian-sources.yaml"
+    local.parent.mkdir(parents=True)
+    local.write_text(
+        "sources:\n"
+        "  - {name: A-local, kind: rss, url: 'https://a.test/feed'}\n"
+        "  - {name: D, kind: rss, url: 'https://d.test/feed'}\n"
+        "  - {name: E, kind: wechat, note: skipped}\n",
+        encoding="utf-8")
+    # URL dedupe keeps the profile entry; local-only rss sources are added;
+    # non-rss entries are filtered on both sides.
+    assert feeds.configured_rss_sources(config) == [
+        {"name": "A", "kind": "rss", "url": "https://a.test/feed"},
+        {"name": "D", "kind": "rss", "url": "https://d.test/feed"}]
 
 
 def test_ingested_source_ids_match_store_bundle_scheme(tmp_path):
