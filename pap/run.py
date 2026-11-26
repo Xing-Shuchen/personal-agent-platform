@@ -598,7 +598,7 @@ def invoke(
                     status = "not_ready"
                     response = "NOT_READY"
                     error = str(prepared.get("reason", "upstream readiness is unmet"))
-                    append_jsonl(run_log, {"event": "run.completed", "run_id": run_id, "agent_id": spec.name, "job_id": job_id, "skill": skill, "args": args, "runner": runner_backend, "model": model_name, "provider": provider_name, "completed_at": completed_at.isoformat(timespec="seconds"), "status": status, "returncode": 0, "response": _input_fingerprint(response), "error": error[:1000], "usage": usage})
+                    append_jsonl(run_log, {"event": "run.completed", "run_id": run_id, "agent_id": spec.name, "job_id": job_id, "skill": skill, "args": args, "runner": runner_backend, "model": model_name, "provider": provider_name, "completed_at": completed_at.isoformat(timespec="seconds"), "status": status, "returncode": 0, "response": _input_fingerprint(response), "error": error, "usage": usage})
                     close_invocation_scopes(completed_at, status)
                     paplog.event("pap.run.completed", kind="operation", trace=run_trace, phase="completed", subject={"type": "run", "id": run_id},
                                  outcome={"status": "not_ready"}, attributes={"returncode": 0, "not_ready_reason": error},
@@ -731,7 +731,7 @@ def invoke(
                 "to": effective_model,
                 "failure_kind": failure_kind,
                 "reason": fallback_reason,
-                "error": (refusal_error or error or response)[:1000],
+                "error": (refusal_error or error or response),
             })
             paplog.event("pap.model.fallback", trace=skill_trace, severity="WARN",
                          execution={"run_id": run_id, "operation_id": skill_operation_id},
@@ -903,7 +903,7 @@ def invoke(
         "raw_response": _input_fingerprint(raw_response) if response_normalization else None,
         "response_normalization": response_normalization,
         "degraded": response_normalization,
-        "error": error[:1000],
+        "error": error,
         "failure_kind": failure_kind,
         "retryable": is_retryable(failure_kind) if status == "failed" else None,
         "usage": usage,
