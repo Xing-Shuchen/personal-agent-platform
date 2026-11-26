@@ -22,6 +22,12 @@ def model_hash(directory: Path) -> str:
 
 
 class OCR:
+    def __new__(cls, config: dict):
+        if config.get("models", {}).get("remote_command"):
+            from .remote_ocr import RemoteOCR
+            return RemoteOCR(config)
+        return super().__new__(cls)
+
     def __init__(self, config: dict):
         from paddleocr import TextDetection, TextRecognition
 
