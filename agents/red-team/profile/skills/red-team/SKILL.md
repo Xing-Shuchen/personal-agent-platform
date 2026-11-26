@@ -1,3 +1,8 @@
+---
+name: red-team
+description: Normalize proposals into explicit claims, surface hidden assumptions and counterexamples, and classify critique findings.
+---
+
 # Red Team Review
 
 1. Normalize the proposal into explicit claims.

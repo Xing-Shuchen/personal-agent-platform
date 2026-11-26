@@ -1,3 +1,8 @@
+---
+name: intelligence-brief
+description: Evaluate World Historian deltas and bounded personal context to deliver high-value, gate-approved intelligence briefs.
+---
+
 # Intelligence Brief
 
 ## Cognitive retrieval boundary

@@ -33,6 +33,7 @@ def replace(old, new):
 replace('import fs from "node:fs";', 'import fs from "node:fs";\nimport { createAgentLedController } from \'./agent-led.mjs\';')
 replace('  const onServerEvent = (m) => {', '  const agentLed = createAgentLedController(req, sendJson);\n\n  const onServerEvent = (m) => {\n    if (agentLed.event(m)) return;')
 replace('      supportsToolCalls: true,', '      supportsToolCalls: true,\n      handlesAgentConsult: true,')
+replace('    isConfigured: (ctx) => Boolean(readApiKey(pluginConfig, ctx && ctx.providerConfig)),', '    isConfigured: (ctx) => Boolean(readApiKey(pluginConfig, ctx && ctx.providerConfig)),\n    isConfiguredAsync: async (ctx) => Boolean(readApiKey(pluginConfig, ctx && ctx.providerConfig)),')
 replace('      case "session.created":', '      case "session.updated":')
 replace('instructions: (req && req.instructions) || "你是一个简洁的语音助手。",', 'instructions: "你是朗读器。只逐字朗读用户提供的文本，不要回答问题，不得补充、解释、总结、改写或调用工具。",')
 replace('silence_duration_ms: 700', 'silence_duration_ms: 1600')

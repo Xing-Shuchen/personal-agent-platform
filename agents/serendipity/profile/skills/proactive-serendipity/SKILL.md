@@ -1,3 +1,8 @@
+---
+name: proactive-serendipity
+description: Evaluate scheduled or event-triggered serendipity candidates within bounded evidence and gate constraints.
+---
+
 # Proactive Serendipity
 
 Use this skill only for scheduled or event-triggered serendipity evaluation.
