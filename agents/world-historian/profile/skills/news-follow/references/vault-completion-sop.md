@@ -1,12 +1,8 @@
 # Optional local vault projection
 
 The Chronicle database is authoritative. The projection directory is configured
-machine-locally in `var/config/world-historian.yaml` (`vault_dir`). On this
-machine it is:
-
-```
-/home/xingzeng/文档/Obsidian/Second_Brain/2Area/41 新闻及事件
-```
+machine-locally in `var/config/world-historian.yaml` (`vault_dir`, e.g.
+`<vault>/2Area/41 新闻及事件`).
 
 Scheduled pap runs project touched threads automatically because the runtime
 reads this machine-local file; Gateway-hosted exec does not inherit `PAP_*`

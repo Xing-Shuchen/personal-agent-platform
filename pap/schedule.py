@@ -154,7 +154,7 @@ def matches_schedule(schedule: str, moment: datetime, *, timezone_name: str | No
 
     interval = _interval_minutes(value)
     if interval is not None:
-        local = moment.astimezone(zone).replace(second=0, microsecond=0, tzinfo=None) if zone else moment.astimezone().replace(second=0, microsecond=0, tzinfo=None)
+        local = (moment.astimezone(zone) if zone else moment).replace(second=0, microsecond=0, tzinfo=None)
         epoch = datetime(1970, 1, 1)
         elapsed = int((local - epoch).total_seconds() // 60)
         return elapsed % interval == 0
@@ -168,13 +168,13 @@ def matches_schedule(schedule: str, moment: datetime, *, timezone_name: str | No
 
     clock = _CLOCK_RE.fullmatch(value)
     if clock:
-        clock_zone = ZoneInfo(clock.group(3)) if clock.group(3) else (zone or moment.astimezone().tzinfo)
+        clock_zone = ZoneInfo(clock.group(3)) if clock.group(3) else (zone or moment.tzinfo)
         local = moment.astimezone(clock_zone)
         return local.hour == int(clock.group(1)) and local.minute == int(clock.group(2))
 
     fields = _cron_fields(value)
     assert fields is not None
-    local = moment.astimezone(zone) if zone else moment.astimezone()
+    local = moment.astimezone(zone) if zone else moment
     minute, hour, day, month, weekday = (
         local.minute,
         local.hour,

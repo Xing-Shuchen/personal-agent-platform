@@ -1,0 +1,53 @@
+name: Sync Mirror from GitCode
+
+on:
+  schedule:
+    # Run every 3 hours (UTC), staggered off the hour.
+    - cron: '23 */3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sync-gitcode
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    if: ${{ vars.GITCODE_REPO_URL != '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Sync GitCode to GitHub
+        env:
+          GITCODE_REPO_URL: ${{ vars.GITCODE_REPO_URL }}
+          GITCODE_TOKEN: ${{ secrets.GITCODE_TOKEN }}
+          GH_MIRROR_TOKEN: ${{ secrets.GH_MIRROR_TOKEN }}
+          GIT_TERMINAL_PROMPT: '0'
+        run: |
+          set -euo pipefail
+          if [ -z "$GITCODE_TOKEN" ]; then
+            echo 'Missing repository secret: GITCODE_TOKEN' >&2
+            exit 1
+          fi
+          if [ -z "$GH_MIRROR_TOKEN" ]; then
+            echo 'Missing repository secret: GH_MIRROR_TOKEN' >&2
+            exit 1
+          fi
+
+          # Fetch only heads and tags so provider-internal refs stay out of scope.
+          mkdir upstream.git
+          cd upstream.git
+          git init --bare
+          git -c http.extraheader="Authorization: Basic $(printf 'oauth2:%s' "$GITCODE_TOKEN" | base64 -w0)" \
+            fetch --no-tags "$GITCODE_REPO_URL" \
+            '+refs/heads/*:refs/heads/*' '+refs/tags/*:refs/tags/*'
+
+          git remote add github "https://github.com/${{ github.repository }}.git"
+          git config "http.https://github.com/${{ github.repository }}.git.extraheader" \
+            "Authorization: Basic $(printf 'x-access-token:%s' "$GH_MIRROR_TOKEN" | base64 -w0)"
+
+          # Mirror branch and tag deletions from GitCode onto GitHub.
+          git push --prune --force github 'refs/heads/*:refs/heads/*'
+          git push --prune --force github 'refs/tags/*:refs/tags/*'

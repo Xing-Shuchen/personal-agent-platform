@@ -46,14 +46,20 @@ def default_db_path() -> Path:
     return base / "chronicle.sqlite"
 
 
-def connect(path: Path | None = None) -> sqlite3.Connection:
+def connect(path: Path | str | None = None) -> sqlite3.Connection:
+    if str(path) == ":memory:":
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA foreign_keys = ON")
+        return conn
     db_path = Path(path or default_db_path())
     db_path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(db_path)
+    conn = sqlite3.connect(db_path, timeout=5.0)
     conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA foreign_keys = ON")
-    conn.execute("PRAGMA journal_mode = WAL")
     conn.execute("PRAGMA busy_timeout = 5000")
+    conn.execute("PRAGMA foreign_keys = ON")
+    with _migration_lock(db_path):
+        conn.execute("PRAGMA journal_mode = WAL")
     return conn
 
 
