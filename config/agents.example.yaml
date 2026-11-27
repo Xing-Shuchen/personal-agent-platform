@@ -1,6 +1,7 @@
 # Copy to var/config/agents.yaml. This file is local and must not be committed.
 # Turning on an agent also makes its declared proactive jobs eligible for pap tick.
 agents:
+  cadre-tracker: {enabled: false}
   compiler-news: {enabled: false}
   intelligence: {enabled: false}
   librarian: {enabled: false}

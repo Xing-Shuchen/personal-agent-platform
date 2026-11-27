@@ -14,6 +14,7 @@ Codex should complete the local setup interactively. The tracked manifests ship 
 
 | Agent | Capability |
 | --- | --- |
+| `cadre-tracker` | Temporal cadre tenure graph, overlap inference, and shockwave alerts |
 | `compiler-news` | AI compiler and HPC news brief |
 | `intelligence` | High value changes tied to selected context |
 | `librarian` | Reading capture and provenance search |

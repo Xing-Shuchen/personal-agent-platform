@@ -1,0 +1,55 @@
+apiVersion: pap/v1
+kind: Agent
+metadata:
+  name: cadre-tracker
+  description: 追踪副省部级及以上中管干部职务升迁调任轨迹、组织上下级共事图谱与反腐震荡波预警
+spec:
+  enabled: false  # Set locally in var/config/agents.yaml after setup
+  profile:
+    name: cadre-tracker
+    source: profile
+  capabilities:
+    - web.search
+    - web.read
+    - local_state.write
+    - proactive_message.write
+  proactive:
+    enabled: true
+    class: ambient
+    desired_jobs:
+      - name: ccdi-and-appoint-watch
+        schedule: "*/30 7-23 * * *"
+        timezone: Asia/Shanghai
+        skill: cadre-intake
+        args:
+          sources: ccdi,appoint
+          gate_required: true
+        attach_to_session: false
+        delivery: user-home
+      - name: gov-dom-and-media-daily
+        schedule: "15 6,18 * * *"
+        timezone: Asia/Shanghai
+        skill: cadre-intake
+        args:
+          sources: dom,media,wiki
+          gate_required: true
+        attach_to_session: false
+        delivery: user-home
+      - name: cadre-gate-precheck
+        schedule: "*/30 7-23 * * *"
+        timezone: Asia/Shanghai
+        skill: cadre-intake
+        args: {}
+        attach_to_session: false
+        delivery: local
+        runner: command
+        command:
+          - .venv/bin/python
+          - agents/cadre-tracker/runtime/gate_precheck.py
+        enabled: false
+  state:
+    private:
+      - cadre.sqlite3
+      - raw-sources
+      - bundles
+      - reports

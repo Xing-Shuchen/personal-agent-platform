@@ -1,0 +1,18 @@
+name: cadre-tracker
+version: 1.0.0
+description: "政经人事时态图谱追踪与反腐震荡波预警 Agent。"
+routes:
+  urgent_alert:
+    # Delivery target/channel/account must be configured via local env or var/config/agents.yaml
+    priority_floor: 90
+    bypass_quiet_hours: true
+    triggers:
+      - ccdi_investigation
+      - ccdi_sanction
+      - dom_removal_anomaly
+  routine_brief:
+    priority_floor: 70
+    bypass_quiet_hours: false
+    triggers:
+      - appointment
+      - removal

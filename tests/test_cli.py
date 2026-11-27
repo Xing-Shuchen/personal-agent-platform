@@ -29,8 +29,8 @@ def test_validate_json_output():
     assert r.returncode == 0
     data = json.loads(r.stdout)
     assert {d["name"] for d in data} == {
-        "serendipity", "intelligence", "red-team", "world-historian", "compiler-news",
-        "wechat-archivist", "personal-historian", "librarian",
+        "cadre-tracker", "serendipity", "intelligence", "red-team", "world-historian",
+        "compiler-news", "wechat-archivist", "personal-historian", "librarian",
     }
 
 
