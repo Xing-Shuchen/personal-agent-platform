@@ -641,6 +641,36 @@ def _classify_pair_topology(
         ):
             return (1, "parent_child_direct", 2.2, "B_supervises_A")
 
+    # Same-province party/gov dual heads, both 正部级:
+    # e.g. Beijing Party Secretary (party_local, chief) vs Mayor (gov_local, gov_head).
+    # The municipal dual-track block above deliberately skips 正部级 pairs, so this
+    # genuine 党政一把手 co-work relation was previously unmodeled.
+    if prov_a and prov_a == prov_b and prov_a != "中央":
+        a_party_chief = (
+            t_a["org_kind"] == "party_local"
+            and t_a["admin_level"] == "正部级"
+            and t_a["role_tier"] == "chief"
+        )
+        b_party_chief = (
+            t_b["org_kind"] == "party_local"
+            and t_b["admin_level"] == "正部级"
+            and t_b["role_tier"] == "chief"
+        )
+        a_gov_head = (
+            t_a["org_kind"] == "gov_local"
+            and t_a["admin_level"] == "正部级"
+            and t_a["role_tier"] == "gov_head"
+        )
+        b_gov_head = (
+            t_b["org_kind"] == "gov_local"
+            and t_b["admin_level"] == "正部级"
+            and t_b["role_tier"] == "gov_head"
+        )
+        if a_party_chief and b_gov_head:
+            return (1, "same_region_dual_head", 2.4, "A_leads_B")
+        if a_gov_head and b_party_chief:
+            return (1, "same_region_dual_head", 2.4, "B_leads_A")
+
     return None
 
 
